@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteAction
@@ -22,8 +23,13 @@ import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.NoOpResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.ResultDownloadExecutionResult
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
+import com.hoggamers.rankforge.data.export.PointTableLogoRenderResolver
 import com.hoggamers.rankforge.data.local.PointTableDetails
 import com.hoggamers.rankforge.data.local.PointTableDetailsRepository
+import com.hoggamers.rankforge.data.local.PointTableLogoCandidate
+import com.hoggamers.rankforge.data.local.PointTableLogoImageStore
+import com.hoggamers.rankforge.data.local.PointTableLogoImageStoreResult
+import com.hoggamers.rankforge.data.local.PointTableLogoPlacement
 import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -141,6 +147,334 @@ class DownloadResultViewModelTest {
         }
         assertTrue(clearedPreview is DownloadResultPreviewState.ResultImage)
         assertTrue(viewModel.pointTableDetails.value.date == null)
+    }
+
+    @Test
+    fun pointTableDetailsApplyPreservesCurrentFreeDesignTemplate() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        val viewModel = createViewModel(pointTableDetailsRepository = repository)
+        val template = requireNotNull(
+            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+        )
+        viewModel.load("tournament-id")
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        viewModel.selectFreeDesignTemplate("tournament-id", template.id)
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(organizationName = "Updated Org"),
+        )
+
+        val preview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+        assertTrue(preview is DownloadResultPreviewState.ResultImage)
+        assertEquals(template.id, viewModel.selectionContext.value.freeDesignTemplateId)
+    }
+
+    @Test
+    fun lifecycleRefreshPreservesCurrentFreeDesignSelection() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        val viewModel = createViewModel(pointTableDetailsRepository = repository)
+        val template = requireNotNull(
+            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+        )
+        viewModel.load("tournament-id")
+        viewModel.selectFreeDesignTemplate("tournament-id", template.id)
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+
+        viewModel.refreshSelection()
+
+        withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+        assertEquals(DownloadResultDesignType.FREE_DESIGN, viewModel.selectionContext.value.design)
+        assertEquals(template.id, viewModel.selectionContext.value.freeDesignTemplateId)
+    }
+
+    @Test
+    fun existingLogoEditRefreshesUsingCurrentFreeDesignTemplate() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+        }
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = FakePointTableLogoImageStore(),
+        )
+        val template = requireNotNull(
+            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        viewModel.selectFreeDesignTemplate("tournament-id", template.id)
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+        viewModel.openOrganizationLogoEditor(
+            tournamentId = "tournament-id",
+            designKey = "FREE_DESIGN:${template.id}",
+            previewPngBytes = byteArrayOf(1),
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+        viewModel.saveOrganizationLogoPlacement(
+            PointTableLogoPlacementGeometry(0.5f, 0.5f, 0.2f),
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+        assertEquals(template.id, viewModel.selectionContext.value.freeDesignTemplateId)
+    }
+
+    @Test
+    fun newLogoSaveRefreshesUsingCurrentFreeDesignTemplate() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = FakePointTableLogoImageStore(),
+        )
+        val template = requireNotNull(
+            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+        )
+        viewModel.load("tournament-id")
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        viewModel.selectFreeDesignTemplate("tournament-id", template.id)
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+        viewModel.prepareOrganizationLogoCandidate(
+            tournamentId = "tournament-id",
+            designKey = "FREE_DESIGN:${template.id}",
+            previewPngBytes = byteArrayOf(1),
+            selectedUri = "content://picked/logo",
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+        viewModel.saveOrganizationLogoPlacement(
+            PointTableLogoPlacementGeometry(0.5f, 0.5f, 0.2f),
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+        assertEquals(template.id, viewModel.selectionContext.value.freeDesignTemplateId)
+    }
+
+    @Test
+    fun cancellingV6LogoReplacementKeepsCurrentFreeDesignTemplateForApply() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+        }
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = FakePointTableLogoImageStore(),
+        )
+        val template = requireNotNull(
+            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        viewModel.selectFreeDesignTemplate("tournament-id", template.id)
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+        viewModel.prepareOrganizationLogoCandidate(
+            tournamentId = "tournament-id",
+            designKey = "FREE_DESIGN:${template.id}",
+            previewPngBytes = byteArrayOf(1),
+            selectedUri = "content://picked/logo",
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+        viewModel.cancelOrganizationLogoEditor()
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it == null }
+        }
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(organizationName = "Updated Org"),
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+        assertEquals(template.id, viewModel.selectionContext.value.freeDesignTemplateId)
+    }
+
+    @Test
+    fun v6LogoReplacementSaveRefreshesUsingCurrentFreeDesignTemplate() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+        }
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = FakePointTableLogoImageStore(),
+        )
+        val template = requireNotNull(
+            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        viewModel.selectFreeDesignTemplate("tournament-id", template.id)
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+        viewModel.prepareOrganizationLogoCandidate(
+            tournamentId = "tournament-id",
+            designKey = "FREE_DESIGN:${template.id}",
+            previewPngBytes = byteArrayOf(1),
+            selectedUri = "content://picked/logo",
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+        viewModel.saveOrganizationLogoPlacement(
+            PointTableLogoPlacementGeometry(0.5f, 0.6f, 0.25f),
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+        assertEquals(template.id, viewModel.selectionContext.value.freeDesignTemplateId)
+    }
+
+    @Test
+    fun cancellingV6ExistingLogoEditKeepsCurrentFreeDesignTemplateForApply() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+        }
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = FakePointTableLogoImageStore(),
+        )
+        val template = requireNotNull(
+            FreeDesignTemplateRegistry.findById(FreeDesignTemplateRegistry.V6_TEMPLATE_ID),
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        viewModel.selectFreeDesignTemplate("tournament-id", template.id)
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.FREE_DESIGN,
+        )
+        viewModel.openOrganizationLogoEditor(
+            tournamentId = "tournament-id",
+            designKey = "FREE_DESIGN:${template.id}",
+            previewPngBytes = byteArrayOf(1),
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+        viewModel.cancelOrganizationLogoEditor()
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it == null }
+        }
+
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(organizationName = "Updated Org"),
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { state ->
+                state is DownloadResultPreviewState.ResultImage &&
+                    pngDimensions(state.pngBytes) == (template.sourceWidth to template.sourceHeight)
+            }
+        }
+        assertEquals(template.id, viewModel.selectionContext.value.freeDesignTemplateId)
     }
 
     @Test
@@ -365,11 +699,227 @@ class DownloadResultViewModelTest {
     }
 
     @Test
+    fun pointTableDetailsApplyPreservesSavedOrganizationLogoPath() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationName = "Saved Org",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+        }
+        val viewModel = createViewModel(pointTableDetailsRepository = repository)
+        viewModel.load("tournament-id")
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.savePointTableDetails(
+            tournamentId = "tournament-id",
+            details = PointTableDetailsUiState(organizationName = "Updated Org"),
+        )
+
+        assertEquals(
+            "point-table-details/746f/logo/logo-old.png",
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+                repository.saved.first()?.organizationLogoPath
+            },
+        )
+    }
+
+    @Test
+    fun selectedLogoPreparesCandidateAndOpensEditor() = runBlocking {
+        val repository = FakePointTableDetailsRepository()
+        val store = FakePointTableLogoImageStore()
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = store,
+        )
+        viewModel.load("tournament-id")
+        viewModel.prepareOrganizationLogoCandidate(
+            tournamentId = "tournament-id",
+            designKey = "FREE_DESIGN:free_design_v1",
+            previewPngBytes = byteArrayOf(1, 2, 3),
+            selectedUri = "content://picked/logo",
+        )
+
+        val editor = withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        } ?: error("Editor state was not opened")
+        assertEquals("FREE_DESIGN:free_design_v1", editor.designKey)
+        assertEquals(store.preparedCandidate.localRelativePath, editor.candidate?.localRelativePath)
+    }
+
+    @Test
+    fun cancellingReplacementDiscardsCandidateAndKeepsExistingLogo() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+        }
+        val store = FakePointTableLogoImageStore()
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = store,
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.prepareOrganizationLogoCandidate(
+            "tournament-id",
+            "IMAGE",
+            byteArrayOf(1),
+            "content://picked/logo",
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+
+        viewModel.cancelOrganizationLogoEditor()
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            store.discardedCandidate.first { it != null }
+        }
+        assertEquals(
+            "point-table-details/746f/logo/logo-old.png",
+            repository.saved.value?.organizationLogoPath,
+        )
+    }
+
+    @Test
+    fun replacementSaveClearsOldPlacementsAndCleansOldLogoAfterPersistence() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+            placements["IMAGE"] = PointTableLogoPlacement(
+                "tournament-id", "IMAGE", 0.2f, 0.2f, 0.2f,
+            )
+            placements["FREE_DESIGN:free_design_v1"] = PointTableLogoPlacement(
+                "tournament-id", "FREE_DESIGN:free_design_v1", 0.8f, 0.8f, 0.2f,
+            )
+        }
+        val store = FakePointTableLogoImageStore()
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = store,
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.prepareOrganizationLogoCandidate(
+            "tournament-id",
+            "FREE_DESIGN:free_design_v1",
+            byteArrayOf(1),
+            "content://picked/logo",
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+        viewModel.saveOrganizationLogoPlacement(
+            PointTableLogoPlacementGeometry(0.5f, 0.6f, 0.25f),
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it == null }
+        }
+        assertEquals("point-table-details/746f/logo/logo-new.png", repository.saved.value?.organizationLogoPath)
+        assertEquals(1, repository.placements.size)
+        assertEquals(0.6f, repository.placements.getValue("FREE_DESIGN:free_design_v1").centerYRatio)
+        assertEquals(
+            listOf("point-table-details/746f/logo/logo-old.png"),
+            store.deletedPaths,
+        )
+    }
+
+    @Test
+    fun existingLogoEditUpdatesOnlyCurrentDesignPlacement() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+            placements["IMAGE"] = PointTableLogoPlacement(
+                "tournament-id", "IMAGE", 0.2f, 0.2f, 0.2f,
+            )
+            placements["FREE_DESIGN:free_design_v1"] = PointTableLogoPlacement(
+                "tournament-id", "FREE_DESIGN:free_design_v1", 0.8f, 0.8f, 0.2f,
+            )
+        }
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = FakePointTableLogoImageStore(),
+        )
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.pointTableDetails.first { it.organizationLogoPath != null }
+        }
+        viewModel.openOrganizationLogoEditor(
+            "tournament-id",
+            "FREE_DESIGN:free_design_v1",
+            byteArrayOf(1),
+        )
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it != null }
+        }
+        viewModel.saveOrganizationLogoPlacement(
+            PointTableLogoPlacementGeometry(0.4f, 0.45f, 0.3f),
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoEditorState.first { it == null }
+        }
+        assertEquals(
+            "point-table-details/746f/logo/logo-old.png",
+            repository.saved.value?.organizationLogoPath,
+        )
+        assertEquals(2, repository.placements.size)
+        assertEquals(0.45f, repository.placements.getValue("FREE_DESIGN:free_design_v1").centerYRatio)
+        assertTrue(repository.configurationCalls.isEmpty())
+    }
+
+    @Test
+    fun failedCandidatePreparationLeavesSavedLogoAndEditorStateUnchanged() = runBlocking {
+        val repository = FakePointTableDetailsRepository().apply {
+            saved.value = PointTableDetails(
+                tournamentId = "tournament-id",
+                organizationLogoPath = "point-table-details/746f/logo/logo-old.png",
+            )
+        }
+        val store = FakePointTableLogoImageStore().apply {
+            prepareResult = PointTableLogoImageStoreResult.Failed
+        }
+        val viewModel = createViewModel(
+            pointTableDetailsRepository = repository,
+            pointTableLogoImageStore = store,
+        )
+        viewModel.load("tournament-id")
+        viewModel.prepareOrganizationLogoCandidate(
+            "tournament-id",
+            "IMAGE",
+            byteArrayOf(1),
+            "content://picked/logo",
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.logoOperationError.first { it != null }
+        }
+        assertEquals(null, viewModel.logoEditorState.value)
+        assertEquals(
+            "point-table-details/746f/logo/logo-old.png",
+            repository.saved.value?.organizationLogoPath,
+        )
+    }
+
+    @Test
     fun templateSelectionDefaultsToGoldAndRejectsUnknownIds() {
         val viewModel = createViewModel()
         assertEquals(
             FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
-            viewModel.selectedFreeDesignTemplateId.value,
+            viewModel.selectionContext.value.freeDesignTemplateId,
         )
         assertEquals(
             FreeDesignTemplateRegistry.all.map { it.displayName },
@@ -382,7 +932,7 @@ class DownloadResultViewModelTest {
         )
         assertEquals(
             FreeDesignTemplateRegistry.BLUE_TEMPLATE_ID,
-            viewModel.selectedFreeDesignTemplateId.value,
+            viewModel.selectionContext.value.freeDesignTemplateId,
         )
 
         viewModel.selectFreeDesignTemplate(
@@ -391,7 +941,7 @@ class DownloadResultViewModelTest {
         )
         assertEquals(
             FreeDesignTemplateRegistry.BLUE_TEMPLATE_ID,
-            viewModel.selectedFreeDesignTemplateId.value,
+            viewModel.selectionContext.value.freeDesignTemplateId,
         )
     }
 
@@ -429,14 +979,29 @@ class DownloadResultViewModelTest {
         )
     }
 
+    private fun pngDimensions(bytes: ByteArray): Pair<Int, Int> {
+        val bitmap = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
+        return try {
+            bitmap.width to bitmap.height
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     private fun createViewModel(
         freeDesignCoordinator: FreeDesignResultDownloadCoordinator =
             NoOpFreeDesignResultDownloadCoordinator,
         pointTableDetailsRepository: PointTableDetailsRepository =
             FakePointTableDetailsRepository(),
         resultCoordinator: ResultDownloadCoordinator = NoOpResultDownloadCoordinator,
+        pointTableLogoImageStore: PointTableLogoImageStore = FakePointTableLogoImageStore(),
+        pointTableLogoRenderResolver: PointTableLogoRenderResolver? = null,
     ): DownloadResultViewModel {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val logoResolver = pointTableLogoRenderResolver ?: PointTableLogoRenderResolver(
+            pointTableDetailsRepository = pointTableDetailsRepository,
+            pointTableLogoImageStore = pointTableLogoImageStore,
+        )
         return DownloadResultViewModel(
             observeMatches = ObserveMatchesUseCase { flowOf(listOf(match())) },
             getTournamentById = GetTournamentByIdUseCase { flowOf(tournament()) },
@@ -461,11 +1026,15 @@ class DownloadResultViewModelTest {
             customDesignResultDownloadCoordinator = NoOpCustomDesignResultDownloadCoordinator,
             resultDocumentWriter = NoOpResultDocumentWriter,
             pointTableDetailsRepository = pointTableDetailsRepository,
+            pointTableLogoImageStore = pointTableLogoImageStore,
+            pointTableLogoRenderResolver = logoResolver,
         )
     }
 
     private class FakePointTableDetailsRepository : PointTableDetailsRepository {
         val saved = kotlinx.coroutines.flow.MutableStateFlow<PointTableDetails?>(null)
+        val placements = mutableMapOf<String, PointTableLogoPlacement>()
+        val configurationCalls = mutableListOf<PointTableLogoPlacement>()
 
         override suspend fun getPointTableDetails(tournamentId: String): PointTableDetails? =
             saved.value?.takeIf { it.tournamentId == tournamentId }
@@ -473,6 +1042,70 @@ class DownloadResultViewModelTest {
         override suspend fun savePointTableDetails(details: PointTableDetails) {
             saved.value = details
         }
+
+        override suspend fun getPointTableLogoPlacement(
+            tournamentId: String,
+            designKey: String,
+        ): PointTableLogoPlacement? = placements[designKey]
+
+        override suspend fun savePointTableLogoPlacement(placement: PointTableLogoPlacement) {
+            placements[placement.designKey] = placement
+        }
+
+        override suspend fun savePointTableLogoConfiguration(
+            tournamentId: String,
+            organizationLogoPath: String,
+            placement: PointTableLogoPlacement,
+            clearExistingPlacements: Boolean,
+        ): Boolean {
+            configurationCalls += placement
+            saved.value = (saved.value ?: PointTableDetails(tournamentId = tournamentId)).copy(
+                organizationLogoPath = organizationLogoPath,
+            )
+            if (clearExistingPlacements) placements.clear()
+            placements[placement.designKey] = placement
+            return true
+        }
+    }
+
+    private class FakePointTableLogoImageStore : PointTableLogoImageStore {
+        val preparedCandidate = PointTableLogoImageStoreResult.Preserved(
+            "point-table-details/746f/logo/candidate-logo.png",
+            "file:///candidate-logo.png",
+        )
+        var prepareResult: PointTableLogoImageStoreResult = preparedCandidate
+        val discardedCandidate = kotlinx.coroutines.flow.MutableStateFlow<PointTableLogoCandidate?>(null)
+        val deletedPaths = mutableListOf<String>()
+
+        override suspend fun preserve(
+            tournamentId: String,
+            selectedUri: String,
+        ): PointTableLogoImageStoreResult = PointTableLogoImageStoreResult.Failed
+
+        override suspend fun prepareCandidate(
+            tournamentId: String,
+            selectedUri: String,
+        ): PointTableLogoImageStoreResult = prepareResult
+
+        override suspend fun commitCandidate(
+            candidate: PointTableLogoCandidate,
+        ): PointTableLogoImageStoreResult = PointTableLogoImageStoreResult.Preserved(
+            "point-table-details/746f/logo/logo-new.png",
+            "file:///logo-new.png",
+        )
+
+        override suspend fun discardCandidate(candidate: PointTableLogoCandidate) {
+            discardedCandidate.value = candidate
+        }
+
+        override suspend fun deleteLogo(localRelativePath: String): Boolean {
+            deletedPaths += localRelativePath
+            return true
+        }
+
+        override suspend fun cleanup(tournamentId: String): Boolean = true
+
+        override fun displayUriOrNull(localRelativePath: String): String? = "file:///$localRelativePath"
     }
 
     private fun tournament() = Tournament(

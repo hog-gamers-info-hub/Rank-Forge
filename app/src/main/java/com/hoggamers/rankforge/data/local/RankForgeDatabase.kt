@@ -53,8 +53,9 @@ interface RankForgeStateDao {
         MatchCalculatedEvidenceEntity::class,
         AccountDeletionMarkerEntity::class,
         PointTableDetailsEntity::class,
+        PointTableLogoPlacementEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -82,6 +83,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun matchCalculatedEvidenceDao(): MatchCalculatedEvidenceDao
     abstract fun accountDeletionMarkerDao(): AccountDeletionMarkerDao
     abstract fun pointTableDetailsDao(): PointTableDetailsDao
+    abstract fun pointTableLogoPlacementDao(): PointTableLogoPlacementDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -850,6 +852,31 @@ abstract class RankForgeDatabase : RoomDatabase() {
                         "ON `tournaments` (`owner_user_id`)",
                 )
                 db.execSQL("PRAGMA legacy_alter_table = OFF")
+            }
+        }
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `point_table_details` ADD COLUMN `organization_logo_path` TEXT",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE `point_table_logo_placements` (
+                        `tournament_id` TEXT NOT NULL,
+                        `design_key` TEXT NOT NULL,
+                        `center_x_ratio` REAL NOT NULL,
+                        `center_y_ratio` REAL NOT NULL,
+                        `width_ratio` REAL NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `design_key`),
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_point_table_logo_placements_tournament_id` " +
+                        "ON `point_table_logo_placements` (`tournament_id`)",
+                )
             }
         }
     }

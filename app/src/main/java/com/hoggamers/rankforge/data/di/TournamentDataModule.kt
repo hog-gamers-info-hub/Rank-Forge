@@ -15,8 +15,11 @@ import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceDao
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceRepository
 import com.hoggamers.rankforge.data.local.RoomMatchCalculatedEvidenceRepository
 import com.hoggamers.rankforge.data.local.PointTableDetailsDao
+import com.hoggamers.rankforge.data.local.PointTableLogoPlacementDao
 import com.hoggamers.rankforge.data.local.PointTableDetailsRepository
 import com.hoggamers.rankforge.data.local.RoomPointTableDetailsRepository
+import com.hoggamers.rankforge.data.local.PointTableLogoImageStore
+import com.hoggamers.rankforge.data.local.AndroidPointTableLogoImageStore
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheDao
 import com.hoggamers.rankforge.data.local.MatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.MatchResultOcrCacheDao
@@ -96,6 +99,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindPointTableDetailsRepository(
         repository: RoomPointTableDetailsRepository,
     ): PointTableDetailsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPointTableLogoImageStore(
+        store: AndroidPointTableLogoImageStore,
+    ): PointTableLogoImageStore
 
     @Binds
     @Singleton
@@ -207,6 +216,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_23_24,
         RankForgeDatabase.MIGRATION_24_25,
         RankForgeDatabase.MIGRATION_25_26,
+        RankForgeDatabase.MIGRATION_26_27,
     ).build()
 
     @Provides
@@ -287,6 +297,12 @@ object TournamentDataProvidersModule {
     fun providePointTableDetailsDao(
         database: RankForgeDatabase,
     ): PointTableDetailsDao = database.pointTableDetailsDao()
+
+    @Provides
+    @Singleton
+    fun providePointTableLogoPlacementDao(
+        database: RankForgeDatabase,
+    ): PointTableLogoPlacementDao = database.pointTableLogoPlacementDao()
 
     @Provides
     @Singleton

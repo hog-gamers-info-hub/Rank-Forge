@@ -21,6 +21,21 @@ interface FreeDesignResultDownloadCoordinator {
         displayDate: LocalDate? = null,
         organizationName: String = "",
     ): ResultDownloadExecutionResult
+
+    suspend fun executeWithLogo(
+        request: ResultDownloadRequest,
+        logoRenderData: PointTableLogoRenderData?,
+        templateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
+        onSaving: suspend () -> Unit = {},
+        displayDate: LocalDate? = null,
+        organizationName: String = "",
+    ): ResultDownloadExecutionResult = execute(
+        request = request,
+        templateId = templateId,
+        onSaving = onSaving,
+        displayDate = displayDate,
+        organizationName = organizationName,
+    )
 }
 
 object NoOpFreeDesignResultDownloadCoordinator : FreeDesignResultDownloadCoordinator {
@@ -41,6 +56,8 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
     private val composeTournament: (TournamentResultExportModel, FreeDesignTemplate, LocalDate?, String) -> FreeDesignBitmapComposeResult,
     private val templateProvider: (String) -> FreeDesignTemplate?,
     private val saveFile: suspend (ByteArray, String, ResultExportFileFormat) -> ResultFileSaveResult,
+    private val composeMatchWithLogo: ((MatchResultExportModel, FreeDesignTemplate, LocalDate?, String, PointTableLogoRenderData?) -> FreeDesignBitmapComposeResult)? = null,
+    private val composeTournamentWithLogo: ((TournamentResultExportModel, FreeDesignTemplate, LocalDate?, String, PointTableLogoRenderData?) -> FreeDesignBitmapComposeResult)? = null,
 ) : FreeDesignResultDownloadCoordinator {
     @Inject
     constructor(
@@ -58,6 +75,12 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
             FreeDesignTemplateRegistry.findById(templateId)
         },
         saveFile = resultFileSaver::save,
+        composeMatchWithLogo = { model, template, displayDate, organizationName, logoRenderData ->
+            bitmapComposer.compose(model, template, displayDate, organizationName, logoRenderData)
+        },
+        composeTournamentWithLogo = { model, template, displayDate, organizationName, logoRenderData ->
+            bitmapComposer.compose(model, template, displayDate, organizationName, logoRenderData)
+        },
     )
 
     override suspend fun execute(
@@ -67,9 +90,43 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         displayDate: LocalDate?,
         organizationName: String,
     ): ResultDownloadExecutionResult {
+        return executeInternal(
+            request = request,
+            templateId = templateId,
+            onSaving = onSaving,
+            displayDate = displayDate,
+            organizationName = organizationName,
+            logoRenderData = null,
+        )
+    }
+
+    override suspend fun executeWithLogo(
+        request: ResultDownloadRequest,
+        logoRenderData: PointTableLogoRenderData?,
+        templateId: String,
+        onSaving: suspend () -> Unit,
+        displayDate: LocalDate?,
+        organizationName: String,
+    ): ResultDownloadExecutionResult = executeInternal(
+        request = request,
+        templateId = templateId,
+        onSaving = onSaving,
+        displayDate = displayDate,
+        organizationName = organizationName,
+        logoRenderData = logoRenderData,
+    )
+
+    private suspend fun executeInternal(
+        request: ResultDownloadRequest,
+        templateId: String,
+        onSaving: suspend () -> Unit,
+        displayDate: LocalDate?,
+        organizationName: String,
+        logoRenderData: PointTableLogoRenderData?,
+    ): ResultDownloadExecutionResult {
         val generated = try {
             withContext(Dispatchers.Default) {
-                generate(request, templateId, displayDate, organizationName)
+                generate(request, templateId, displayDate, organizationName, logoRenderData)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -110,6 +167,7 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
         templateId: String,
         displayDate: LocalDate?,
         organizationName: String,
+        logoRenderData: PointTableLogoRenderData?,
     ): GeneratedFreeDesignResult? {
         val template = templateProvider(templateId) ?: return null
         return when (request) {
@@ -117,11 +175,12 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
                 when (val buildResult = modelBuilder.buildMatch(request.input)) {
                     is MatchResultExportModelBuildResult.Success -> {
                         val model = buildResult.model
-                        composeMatch(
+                        composeMatchForRender(
                             model,
                             template,
                             displayDate,
                             organizationName,
+                            logoRenderData,
                         ).encodedOrNull()?.let { bytes ->
                             GeneratedFreeDesignResult(
                                 bytes = bytes,
@@ -138,11 +197,12 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
                 when (val buildResult = modelBuilder.buildTournament(request.input)) {
                     is TournamentResultExportModelBuildResult.Success -> {
                         val model = buildResult.model
-                        composeTournament(
+                        composeTournamentForRender(
                             model,
                             template,
                             displayDate,
                             organizationName,
+                            logoRenderData,
                         ).encodedOrNull()?.let { bytes ->
                             GeneratedFreeDesignResult(
                                 bytes = bytes,
@@ -156,6 +216,30 @@ class DefaultFreeDesignResultDownloadCoordinator internal constructor(
                     is TournamentResultExportModelBuildResult.Failure -> null
                 }
         }
+    }
+
+    private fun composeMatchForRender(
+        model: MatchResultExportModel,
+        template: FreeDesignTemplate,
+        displayDate: LocalDate?,
+        organizationName: String,
+        logoRenderData: PointTableLogoRenderData?,
+    ): FreeDesignBitmapComposeResult = if (logoRenderData != null && composeMatchWithLogo != null) {
+        composeMatchWithLogo(model, template, displayDate, organizationName, logoRenderData)
+    } else {
+        composeMatch(model, template, displayDate, organizationName)
+    }
+
+    private fun composeTournamentForRender(
+        model: TournamentResultExportModel,
+        template: FreeDesignTemplate,
+        displayDate: LocalDate?,
+        organizationName: String,
+        logoRenderData: PointTableLogoRenderData?,
+    ): FreeDesignBitmapComposeResult = if (logoRenderData != null && composeTournamentWithLogo != null) {
+        composeTournamentWithLogo(model, template, displayDate, organizationName, logoRenderData)
+    } else {
+        composeTournament(model, template, displayDate, organizationName)
     }
 
     private fun FreeDesignBitmapComposeResult.encodedOrNull(): ByteArray? {
