@@ -1,7 +1,10 @@
 package com.hoggamers.rankforge.data.export
 
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hoggamers.rankforge.data.local.PointTableLogoPlacement
 import com.hoggamers.rankforge.domain.export.MatchResultExportModel
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
@@ -66,6 +69,42 @@ class ResultPngRendererTest {
         assertTrue(!explicitDateBytes.contentEquals(nullDateBytes))
         assertDecodedDimensions(explicitDateBytes)
         assertDecodedDimensions(nullDateBytes)
+    }
+
+    @Test
+    fun logoIsDrawnOnFinalPngCanvasUsingNormalizedPlacement() {
+        val logo = Bitmap.createBitmap(20, 10, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.GREEN)
+        }
+        try {
+            val bytes = pngSuccess(
+                renderer.render(
+                    model = matchModel(),
+                    displayDate = null,
+                    logoRenderData = PointTableLogoRenderData(
+                        bitmap = logo,
+                        placement = PointTableLogoPlacement(
+                            tournamentId = "tournament-id",
+                            designKey = "IMAGE",
+                            centerXRatio = 0.5f,
+                            centerYRatio = 0.5f,
+                            widthRatio = 0.1f,
+                        ),
+                    ),
+                ),
+            )
+            val decoded = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
+            try {
+                assertTrue(!logo.isRecycled)
+                assertEquals(Color.GREEN, decoded.getPixel(842, 595))
+                assertEquals(ResultLayoutSpec.PNG_WIDTH, decoded.width)
+                assertEquals(ResultLayoutSpec.PNG_HEIGHT, decoded.height)
+            } finally {
+                decoded.recycle()
+            }
+        } finally {
+            logo.recycle()
+        }
     }
 
     @Test

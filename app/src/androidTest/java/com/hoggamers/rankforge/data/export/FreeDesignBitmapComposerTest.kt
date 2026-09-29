@@ -2,8 +2,10 @@ package com.hoggamers.rankforge.data.export
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hoggamers.rankforge.data.local.PointTableLogoPlacement
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
 import java.time.LocalDate
@@ -69,6 +71,37 @@ class FreeDesignBitmapComposerTest {
             assertEquals(1254, composed.width)
             assertEquals(1254, composed.height)
         } finally {
+            composed.recycle()
+        }
+    }
+
+    @Test
+    fun logoIsDrawnOnSourceSizedFreeDesignCanvasUsingNormalizedPlacement() {
+        val logo = Bitmap.createBitmap(20, 10, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.MAGENTA)
+        }
+        val result = composer.compose(
+            model = tournamentModel(),
+            template = template,
+            logoRenderData = PointTableLogoRenderData(
+                bitmap = logo,
+                placement = PointTableLogoPlacement(
+                    tournamentId = "tournament-id",
+                    designKey = "FREE_DESIGN:${template.id}",
+                    centerXRatio = 0.5f,
+                    centerYRatio = 0.5f,
+                    widthRatio = 0.1f,
+                ),
+            ),
+        )
+        val composed = (result as FreeDesignBitmapComposeResult.Success).bitmap
+        try {
+            assertTrue(!logo.isRecycled)
+            assertEquals(Color.MAGENTA, composed.getPixel(627, 627))
+            assertEquals(template.sourceWidth, composed.width)
+            assertEquals(template.sourceHeight, composed.height)
+        } finally {
+            logo.recycle()
             composed.recycle()
         }
     }
