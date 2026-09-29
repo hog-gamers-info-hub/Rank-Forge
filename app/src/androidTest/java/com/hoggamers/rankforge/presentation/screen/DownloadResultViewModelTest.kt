@@ -67,7 +67,10 @@ class DownloadResultViewModelTest {
 
         viewModel.savePointTableDetails(
             tournamentId = "tournament-id",
-            details = PointTableDetailsUiState(date = LocalDate.of(2026, 9, 28)),
+            details = PointTableDetailsUiState(
+                organizationName = "HOG Gamers",
+                date = LocalDate.of(2026, 9, 28),
+            ),
         )
 
         val overriddenPreview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
@@ -78,6 +81,7 @@ class DownloadResultViewModelTest {
         }
 
         assertTrue(overriddenPreview is DownloadResultPreviewState.ResultImage)
+        assertEquals("HOG Gamers", viewModel.pointTableDetails.value.organizationName)
         assertEquals(LocalDate.of(2026, 9, 28), viewModel.pointTableDetails.value.date)
 
         viewModel.savePointTableDetails(
@@ -232,18 +236,22 @@ class DownloadResultViewModelTest {
         repository.savePointTableDetails(
             PointTableDetails(
                 tournamentId = "tournament-id",
+                organizationName = "  HOG Gamers  ",
                 displayDate = LocalDate.of(2026, 9, 28),
             ),
         )
         val receivedDisplayDate = CompletableDeferred<LocalDate?>()
+        val receivedOrganizationName = CompletableDeferred<String>()
         val coordinator = object : FreeDesignResultDownloadCoordinator {
             override suspend fun execute(
                 request: com.hoggamers.rankforge.data.export.ResultDownloadRequest,
                 templateId: String,
                 onSaving: suspend () -> Unit,
                 displayDate: LocalDate?,
+                organizationName: String,
             ): ResultDownloadExecutionResult {
                 receivedDisplayDate.complete(displayDate)
+                receivedOrganizationName.complete(organizationName)
                 return ResultDownloadExecutionResult.Failure(
                     ResultDownloadFailure.GENERATION_FAILED,
                 )
@@ -273,6 +281,10 @@ class DownloadResultViewModelTest {
             LocalDate.of(2026, 9, 28),
             withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedDisplayDate.await() },
         )
+        assertEquals(
+            "HOG Gamers",
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedOrganizationName.await() },
+        )
     }
 
     @Test
@@ -284,6 +296,7 @@ class DownloadResultViewModelTest {
                 templateId: String,
                 onSaving: suspend () -> Unit,
                 displayDate: LocalDate?,
+                organizationName: String,
             ): ResultDownloadExecutionResult {
                 receivedDisplayDate.complete(displayDate)
                 return ResultDownloadExecutionResult.Failure(
@@ -391,6 +404,7 @@ class DownloadResultViewModelTest {
                 templateId: String,
                 onSaving: suspend () -> Unit,
                 displayDate: LocalDate?,
+                organizationName: String,
             ): ResultDownloadExecutionResult {
                 receivedTemplateId.complete(templateId)
                 return ResultDownloadExecutionResult.Failure(
