@@ -18,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -144,6 +145,7 @@ class DownloadResultScreenTest {
         composeTestRule.onNodeWithText("Point Table Details").assertIsDisplayed()
         composeTestRule.onNodeWithText("Saved Org").assertIsDisplayed()
         composeTestRule.onNodeWithText("28 Sep 2026").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Add Logo").assertIsDisplayed()
         composeTestRule.onNodeWithText("Cancel").performClick()
 
         composeTestRule.onNodeWithText("Free Design").performClick()
@@ -158,6 +160,92 @@ class DownloadResultScreenTest {
         composeTestRule.onNodeWithText("My Design").performClick()
         composeTestRule.onAllNodesWithContentDescription("Free design settings")
             .assertCountEquals(0)
+    }
+
+    @Test
+    fun savedLogoExposesEditReplaceAndRemoveActions() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialDesign = DownloadResultDesignType.FREE_DESIGN,
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    organizationLogoDisplayUri = "file:///does-not-exist/logo.png",
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Free design settings")
+            .performClick()
+        composeTestRule.onNodeWithText("Edit").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Replace").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Remove").assertIsDisplayed()
+    }
+
+    @Test
+    fun authoritativeFreeDesignContextDrivesLogoEditorDesignKey() {
+        var editDesignKey: String? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    onBack = {},
+                    initialDesign = DownloadResultDesignType.IMAGE,
+                    selectionContext = DownloadResultSelectionContext(
+                        tournamentId = "tournament-id",
+                        result = DownloadResultSelection.Overall,
+                        design = DownloadResultDesignType.FREE_DESIGN,
+                        freeDesignTemplateId = FreeDesignTemplateRegistry.V6_TEMPLATE_ID,
+                    ),
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    organizationLogoDisplayUri = "file:///does-not-exist/logo.png",
+                    onOrganizationLogoEdit = { designKey, _ -> editDesignKey = designKey },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Free design settings").performClick()
+        composeTestRule.onNodeWithText("Edit").performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(
+                "FREE_DESIGN:${FreeDesignTemplateRegistry.V6_TEMPLATE_ID}",
+                editDesignKey,
+            )
+        }
+    }
+
+    @Test
+    fun logoEditorExposesOnlyCancelAndSaveWithoutExtraTransformControls() {
+        val logoFile = File.createTempFile("rank-forge-logo-test", ".png")
+        logoFile.writeBytes(testPngBytes())
+        try {
+            composeTestRule.setContent {
+                RankForgeTheme {
+                    DownloadResultScreen(
+                        matches = emptyList(),
+                        onBack = {},
+                        logoEditorState = PointTableLogoEditorState(
+                            tournamentId = "tournament-id",
+                            designKey = "IMAGE",
+                            previewPngBytes = testPngBytes(),
+                            logoDisplayUri = logoFile.toURI().toString(),
+                            previousLogoPath = null,
+                            candidate = null,
+                            initialPlacement = null,
+                        ),
+                    )
+                }
+            }
+
+            composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+            composeTestRule.onNodeWithText("Save Logo").assertIsDisplayed()
+            composeTestRule.onAllNodesWithText("Rotate").assertCountEquals(0)
+            composeTestRule.onAllNodesWithText("Crop").assertCountEquals(0)
+        } finally {
+            logoFile.delete()
+        }
     }
 
     @Test

@@ -19,6 +19,7 @@ sealed interface ResultPngRenderResult {
 
 class ResultPngRenderer(
     private val canvasRenderer: ResultCanvasRenderer = ResultCanvasRenderer(),
+    private val logoCanvasRenderer: PointTableLogoCanvasRenderer = PointTableLogoCanvasRenderer(),
 ) {
     fun render(model: MatchResultExportModel): ResultPngRenderResult =
         render(model, null)
@@ -26,9 +27,18 @@ class ResultPngRenderer(
     fun render(
         model: MatchResultExportModel,
         displayDate: LocalDate?,
-    ): ResultPngRenderResult = renderBitmap { canvas ->
-        canvasRenderer.render(canvas, model, displayDate)
-    }
+    ): ResultPngRenderResult = renderBitmap(
+        draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
+    )
+
+    fun render(
+        model: MatchResultExportModel,
+        displayDate: LocalDate?,
+        logoRenderData: PointTableLogoRenderData?,
+    ): ResultPngRenderResult = renderBitmap(
+        draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
+        logoRenderData = logoRenderData,
+    )
 
     fun render(model: TournamentResultExportModel): ResultPngRenderResult =
         render(model, null)
@@ -36,12 +46,22 @@ class ResultPngRenderer(
     fun render(
         model: TournamentResultExportModel,
         displayDate: LocalDate?,
-    ): ResultPngRenderResult = renderBitmap { canvas ->
-        canvasRenderer.render(canvas, model, displayDate)
-    }
+    ): ResultPngRenderResult = renderBitmap(
+        draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
+    )
+
+    fun render(
+        model: TournamentResultExportModel,
+        displayDate: LocalDate?,
+        logoRenderData: PointTableLogoRenderData?,
+    ): ResultPngRenderResult = renderBitmap(
+        draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
+        logoRenderData = logoRenderData,
+    )
 
     private fun renderBitmap(
         draw: (Canvas) -> ResultCanvasRenderResult,
+        logoRenderData: PointTableLogoRenderData? = null,
     ): ResultPngRenderResult {
         val bitmap = try {
             Bitmap.createBitmap(
@@ -57,7 +77,17 @@ class ResultPngRenderer(
             val canvas = Canvas(bitmap)
             canvas.scale(ResultLayoutSpec.PNG_SCALE, ResultLayoutSpec.PNG_SCALE)
             when (val renderResult = draw(canvas)) {
-                ResultCanvasRenderResult.Success -> encode(bitmap)
+                ResultCanvasRenderResult.Success -> {
+                    // The base renderer leaves the canvas scaled to logical page units. Draw the
+                    // logo on a fresh canvas so normalized placement uses final PNG pixels.
+                    logoCanvasRenderer.draw(
+                        canvas = Canvas(bitmap),
+                        targetWidth = ResultLayoutSpec.PNG_WIDTH,
+                        targetHeight = ResultLayoutSpec.PNG_HEIGHT,
+                        renderData = logoRenderData,
+                    )
+                    encode(bitmap)
+                }
                 is ResultCanvasRenderResult.Failure ->
                     ResultPngRenderResult.Failure(renderResult.reason)
             }

@@ -71,6 +71,17 @@ interface ResultDownloadCoordinator {
         format = ResultExportFileFormat.PNG,
         onSaving = onSaving,
     )
+
+    suspend fun executeImage(
+        request: ResultDownloadRequest,
+        displayDate: LocalDate?,
+        logoRenderData: PointTableLogoRenderData?,
+        onSaving: suspend () -> Unit = {},
+    ): ResultDownloadExecutionResult = executeImage(
+        request = request,
+        displayDate = displayDate,
+        onSaving = onSaving,
+    )
 }
 
 object NoOpResultDownloadCoordinator : ResultDownloadCoordinator {
@@ -112,15 +123,29 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         displayDate = displayDate,
     )
 
+    override suspend fun executeImage(
+        request: ResultDownloadRequest,
+        displayDate: LocalDate?,
+        logoRenderData: PointTableLogoRenderData?,
+        onSaving: suspend () -> Unit,
+    ): ResultDownloadExecutionResult = executeInternal(
+        request = request,
+        format = ResultExportFileFormat.PNG,
+        onSaving = onSaving,
+        displayDate = displayDate,
+        logoRenderData = logoRenderData,
+    )
+
     private suspend fun executeInternal(
         request: ResultDownloadRequest,
         format: ResultExportFileFormat,
         onSaving: suspend () -> Unit,
         displayDate: LocalDate?,
+        logoRenderData: PointTableLogoRenderData? = null,
     ): ResultDownloadExecutionResult {
         val rendered = try {
             withContext(Dispatchers.Default) {
-                render(request, format, displayDate)
+                render(request, format, displayDate, logoRenderData)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -162,6 +187,7 @@ class DefaultResultDownloadCoordinator @Inject constructor(
         request: ResultDownloadRequest,
         format: ResultExportFileFormat,
         displayDate: LocalDate? = null,
+        logoRenderData: PointTableLogoRenderData? = null,
     ): RenderedResult? = when (request) {
         is ResultDownloadRequest.CurrentMatch -> {
             when (val buildResult = modelBuilder.buildMatch(request.input)) {
@@ -174,6 +200,7 @@ class DefaultResultDownloadCoordinator @Inject constructor(
                             (pngRenderer.render(
                                 model,
                                 displayDate,
+                                logoRenderData,
                             ) as? ResultPngRenderResult.Success)?.pngBytes
                     }
                     bytes?.let {
@@ -197,6 +224,7 @@ class DefaultResultDownloadCoordinator @Inject constructor(
                             (pngRenderer.render(
                                 model,
                                 displayDate,
+                                logoRenderData,
                             ) as? ResultPngRenderResult.Success)?.pngBytes
                     }
                     bytes?.let {

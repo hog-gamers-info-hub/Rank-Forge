@@ -28,13 +28,15 @@ sealed interface FreeDesignBitmapComposeResult {
 class FreeDesignBitmapComposer(
     private val assetManager: AssetManager,
     private val renderer: FreeDesignCanvasRenderer = FreeDesignCanvasRenderer(),
+    private val logoCanvasRenderer: PointTableLogoCanvasRenderer = PointTableLogoCanvasRenderer(),
 ) {
     fun compose(
         model: MatchResultExportModel,
         template: FreeDesignTemplate,
         displayDate: LocalDate? = null,
         organizationName: String = "",
-    ): FreeDesignBitmapComposeResult = compose(template) { canvas ->
+        logoRenderData: PointTableLogoRenderData? = null,
+    ): FreeDesignBitmapComposeResult = compose(template, logoRenderData) { canvas ->
         renderer.render(canvas, model, template, displayDate, organizationName)
     }
 
@@ -43,12 +45,14 @@ class FreeDesignBitmapComposer(
         template: FreeDesignTemplate,
         displayDate: LocalDate? = null,
         organizationName: String = "",
-    ): FreeDesignBitmapComposeResult = compose(template) { canvas ->
+        logoRenderData: PointTableLogoRenderData? = null,
+    ): FreeDesignBitmapComposeResult = compose(template, logoRenderData) { canvas ->
         renderer.render(canvas, model, template, displayDate, organizationName)
     }
 
     private fun compose(
         template: FreeDesignTemplate,
+        logoRenderData: PointTableLogoRenderData?,
         render: (Canvas) -> FreeDesignCanvasRenderResult,
     ): FreeDesignBitmapComposeResult {
         val decodedSource = when (val decoded = decodeAsset(template.assetPath)) {
@@ -93,8 +97,15 @@ class FreeDesignBitmapComposer(
             val canvas = Canvas(composedBitmap)
             canvas.drawBitmap(decodedSource, 0f, 0f, null)
             when (render(canvas)) {
-                FreeDesignCanvasRenderResult.Success ->
+                FreeDesignCanvasRenderResult.Success -> {
+                    logoCanvasRenderer.draw(
+                        canvas = Canvas(composedBitmap),
+                        targetWidth = template.sourceWidth,
+                        targetHeight = template.sourceHeight,
+                        renderData = logoRenderData,
+                    )
                     FreeDesignBitmapComposeResult.Success(composedBitmap)
+                }
                 is FreeDesignCanvasRenderResult.Failure -> {
                     composedBitmap.recycle()
                     FreeDesignBitmapComposeResult.Failure(

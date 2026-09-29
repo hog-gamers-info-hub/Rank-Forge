@@ -103,6 +103,8 @@ import com.hoggamers.rankforge.data.export.FreeDesignBitmapComposer
 import com.hoggamers.rankforge.data.export.FreeDesignBitmapComposeResult
 import com.hoggamers.rankforge.data.export.FreeDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
+import com.hoggamers.rankforge.data.export.PointTableLogoRenderData
+import com.hoggamers.rankforge.data.export.PointTableLogoRenderResolver
 import com.hoggamers.rankforge.data.export.ResultDocumentWriteResult
 import com.hoggamers.rankforge.data.export.ResultDocumentWriter
 import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
@@ -114,6 +116,10 @@ import com.hoggamers.rankforge.data.export.ResultPngRenderer
 import com.hoggamers.rankforge.data.export.ResultDownloadRequest
 import com.hoggamers.rankforge.data.local.PointTableDetails
 import com.hoggamers.rankforge.data.local.PointTableDetailsRepository
+import com.hoggamers.rankforge.data.local.PointTableLogoCandidate
+import com.hoggamers.rankforge.data.local.PointTableLogoImageStore
+import com.hoggamers.rankforge.data.local.PointTableLogoImageStoreResult
+import com.hoggamers.rankforge.data.local.PointTableLogoPlacement
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
 import com.hoggamers.rankforge.domain.export.MatchResultExportModelBuildResult
 import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
@@ -202,11 +208,18 @@ data class DownloadResultUiState(
 data class PointTableDetailsUiState(
     val organizationName: String = "",
     val date: LocalDate? = null,
+    val organizationLogoPath: String? = null,
+)
+
+private data class PointTableLogoPickerRequest(
+    val designKey: String,
+    val previewPngBytes: ByteArray,
 )
 
 private fun PointTableDetails.toUiState(): PointTableDetailsUiState = PointTableDetailsUiState(
     organizationName = organizationName,
     date = displayDate,
+    organizationLogoPath = organizationLogoPath,
 )
 
 sealed interface DownloadResultSelection {
@@ -228,6 +241,13 @@ enum class DownloadResultDesignType {
     FREE_DESIGN,
     MY_DESIGN,
 }
+
+data class DownloadResultSelectionContext(
+    val tournamentId: String? = null,
+    val result: DownloadResultSelection = DownloadResultSelection.Overall,
+    val design: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
+    val freeDesignTemplateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
+)
 
 sealed interface DownloadResultPreviewState {
     data object Idle : DownloadResultPreviewState
@@ -273,15 +293,15 @@ class DownloadResultViewModel @Inject constructor(
     private val customDesignResultDownloadCoordinator: CustomDesignResultDownloadCoordinator,
     private val resultDocumentWriter: ResultDocumentWriter,
     private val pointTableDetailsRepository: PointTableDetailsRepository,
+    private val pointTableLogoImageStore: PointTableLogoImageStore,
+    private val pointTableLogoRenderResolver: PointTableLogoRenderResolver,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadResultUiState())
     val uiState: StateFlow<DownloadResultUiState> = _uiState.asStateFlow()
 
-    private val _selectedFreeDesignTemplateId = MutableStateFlow(
-        FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
-    )
-    val selectedFreeDesignTemplateId: StateFlow<String> =
-        _selectedFreeDesignTemplateId.asStateFlow()
+    private val _selectionContext = MutableStateFlow(DownloadResultSelectionContext())
+    val selectionContext: StateFlow<DownloadResultSelectionContext> =
+        _selectionContext.asStateFlow()
 
     private val _previewState = MutableStateFlow<DownloadResultPreviewState>(DownloadResultPreviewState.Idle)
     val previewState: StateFlow<DownloadResultPreviewState> = _previewState.asStateFlow()
@@ -293,13 +313,18 @@ class DownloadResultViewModel @Inject constructor(
     val downloadState: StateFlow<DownloadResultDownloadState> = _downloadState.asStateFlow()
     private val _pointTableDetails = MutableStateFlow(PointTableDetailsUiState())
     val pointTableDetails: StateFlow<PointTableDetailsUiState> = _pointTableDetails.asStateFlow()
+    private val _organizationLogoDisplayUri = MutableStateFlow<String?>(null)
+    val organizationLogoDisplayUri: StateFlow<String?> = _organizationLogoDisplayUri.asStateFlow()
+    private val _logoEditorState = MutableStateFlow<PointTableLogoEditorState?>(null)
+    val logoEditorState: StateFlow<PointTableLogoEditorState?> = _logoEditorState.asStateFlow()
+    private val _logoOperationError = MutableStateFlow<String?>(null)
+    val logoOperationError: StateFlow<String?> = _logoOperationError.asStateFlow()
+    private val _logoSaveInProgress = MutableStateFlow(false)
+    val logoSaveInProgress: StateFlow<Boolean> = _logoSaveInProgress.asStateFlow()
     private val shareEventsChannel = Channel<ResultShareRequest>(Channel.BUFFERED)
     val shareEvents: Flow<ResultShareRequest> = shareEventsChannel.receiveAsFlow()
 
     private var loadedTournamentId: String? = null
-    private var selectedTournamentId: String? = null
-    private var selectedResult: DownloadResultSelection = DownloadResultSelection.Overall
-    private var selectedDesign: DownloadResultDesignType = DownloadResultDesignType.IMAGE
     private var customDesignId: String? = null
     private var previewJob: kotlinx.coroutines.Job? = null
     private var downloadJob: kotlinx.coroutines.Job? = null
@@ -307,15 +332,27 @@ class DownloadResultViewModel @Inject constructor(
     private var pointTableDetailsLoadJob: kotlinx.coroutines.Job? = null
     private var pendingDocument: PendingDocument? = null
 
+    private val selectedTournamentId: String?
+        get() = _selectionContext.value.tournamentId
+    private val selectedResult: DownloadResultSelection
+        get() = _selectionContext.value.result
+    private val selectedDesign: DownloadResultDesignType
+        get() = _selectionContext.value.design
+
     fun load(tournamentId: String) {
         if (loadedTournamentId == tournamentId) return
         loadedTournamentId = tournamentId
         _pointTableDetails.value = PointTableDetailsUiState()
+        _organizationLogoDisplayUri.value = null
+        _logoOperationError.value = null
+        _logoEditorState.value = null
         pointTableDetailsLoadJob?.cancel()
         pointTableDetailsLoadJob = viewModelScope.launch {
             val details = pointTableDetailsRepository.getPointTableDetails(tournamentId)
             if (loadedTournamentId == tournamentId) {
                 _pointTableDetails.value = details?.toUiState() ?: PointTableDetailsUiState()
+                _organizationLogoDisplayUri.value = details?.organizationLogoPath
+                    ?.let(pointTableLogoImageStore::displayUriOrNull)
                 if (
                     selectedTournamentId == tournamentId &&
                     (
@@ -348,7 +385,11 @@ class DownloadResultViewModel @Inject constructor(
         details: PointTableDetailsUiState,
     ) {
         if (loadedTournamentId != tournamentId) return
-        val normalized = details.copy(organizationName = details.organizationName.trim())
+        val normalized = details.copy(
+            organizationName = details.organizationName.trim(),
+            organizationLogoPath = details.organizationLogoPath
+                ?: _pointTableDetails.value.organizationLogoPath,
+        )
         _pointTableDetails.value = normalized
         viewModelScope.launch {
             pointTableDetailsRepository.savePointTableDetails(
@@ -356,6 +397,7 @@ class DownloadResultViewModel @Inject constructor(
                     tournamentId = tournamentId,
                     organizationName = normalized.organizationName,
                     displayDate = normalized.date,
+                    organizationLogoPath = normalized.organizationLogoPath,
                 ),
             )
             if (
@@ -370,14 +412,178 @@ class DownloadResultViewModel @Inject constructor(
         }
     }
 
+    fun prepareOrganizationLogoCandidate(
+        tournamentId: String,
+        designKey: String,
+        previewPngBytes: ByteArray,
+        selectedUri: String,
+    ) {
+        if (loadedTournamentId != tournamentId || designKey.isBlank() || previewPngBytes.isEmpty()) return
+        _logoOperationError.value = null
+        viewModelScope.launch {
+            val result = try {
+                pointTableLogoImageStore.prepareCandidate(tournamentId, selectedUri)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                PointTableLogoImageStoreResult.Failed
+            }
+            when (result) {
+                is PointTableLogoImageStoreResult.Preserved -> {
+                    val candidate = PointTableLogoCandidate(
+                        tournamentId = tournamentId,
+                        localRelativePath = result.localRelativePath,
+                        displayUri = result.displayUri,
+                    )
+                    _logoEditorState.value = PointTableLogoEditorState(
+                        tournamentId = tournamentId,
+                        designKey = designKey,
+                        previewPngBytes = previewPngBytes.copyOf(),
+                        logoDisplayUri = result.displayUri,
+                        previousLogoPath = _pointTableDetails.value.organizationLogoPath,
+                        candidate = candidate,
+                        initialPlacement = pointTableDetailsRepository
+                            .getPointTableLogoPlacement(tournamentId, designKey),
+                    )
+                }
+                PointTableLogoImageStoreResult.Failed -> {
+                    _logoOperationError.value = "Unable to load the selected logo."
+                }
+            }
+        }
+    }
+
+    fun openOrganizationLogoEditor(
+        tournamentId: String,
+        designKey: String,
+        previewPngBytes: ByteArray,
+    ) {
+        if (loadedTournamentId != tournamentId || designKey.isBlank() || previewPngBytes.isEmpty()) return
+        val logoPath = _pointTableDetails.value.organizationLogoPath ?: run {
+            _logoOperationError.value = "No saved logo is available."
+            return
+        }
+        val displayUri = pointTableLogoImageStore.displayUriOrNull(logoPath) ?: run {
+            _logoOperationError.value = "The saved logo is unavailable."
+            return
+        }
+        _logoOperationError.value = null
+        viewModelScope.launch {
+            _logoEditorState.value = PointTableLogoEditorState(
+                tournamentId = tournamentId,
+                designKey = designKey,
+                previewPngBytes = previewPngBytes.copyOf(),
+                logoDisplayUri = displayUri,
+                previousLogoPath = logoPath,
+                candidate = null,
+                initialPlacement = pointTableDetailsRepository
+                    .getPointTableLogoPlacement(tournamentId, designKey),
+            )
+        }
+    }
+
+    fun cancelOrganizationLogoEditor() {
+        val candidate = _logoEditorState.value?.candidate
+        _logoEditorState.value = null
+        _logoOperationError.value = null
+        if (candidate != null) {
+            viewModelScope.launch { pointTableLogoImageStore.discardCandidate(candidate) }
+        }
+    }
+
+    fun saveOrganizationLogoPlacement(geometry: PointTableLogoPlacementGeometry) {
+        val editor = _logoEditorState.value ?: return
+        if (_logoSaveInProgress.value) return
+        _logoSaveInProgress.value = true
+        _logoOperationError.value = null
+        viewModelScope.launch {
+            try {
+                val placement = PointTableLogoPlacement(
+                    tournamentId = editor.tournamentId,
+                    designKey = editor.designKey,
+                    centerXRatio = geometry.centerXRatio,
+                    centerYRatio = geometry.centerYRatio,
+                    widthRatio = geometry.widthRatio,
+                )
+                if (!placement.isValid()) {
+                    _logoOperationError.value = "The logo placement is invalid."
+                    return@launch
+                }
+                if (editor.candidate != null) {
+                    val committed = when (
+                        val result = pointTableLogoImageStore.commitCandidate(editor.candidate)
+                    ) {
+                        is PointTableLogoImageStoreResult.Preserved -> result
+                        PointTableLogoImageStoreResult.Failed -> {
+                            _logoOperationError.value = "Unable to save the selected logo."
+                            return@launch
+                        }
+                    }
+                    val persisted = pointTableDetailsRepository.savePointTableLogoConfiguration(
+                        tournamentId = editor.tournamentId,
+                        organizationLogoPath = committed.localRelativePath,
+                        placement = placement,
+                        clearExistingPlacements = true,
+                    )
+                    if (!persisted) {
+                        pointTableLogoImageStore.deleteLogo(committed.localRelativePath)
+                        _logoOperationError.value = "Unable to save the selected logo."
+                        return@launch
+                    }
+                    editor.previousLogoPath?.let { pointTableLogoImageStore.deleteLogo(it) }
+                    _pointTableDetails.value = _pointTableDetails.value.copy(
+                        organizationLogoPath = committed.localRelativePath,
+                    )
+                    _organizationLogoDisplayUri.value = committed.displayUri
+                } else {
+                    pointTableDetailsRepository.savePointTableLogoPlacement(placement)
+                }
+                _logoEditorState.value = null
+                refreshSupportedSelectionIfActive(editor.tournamentId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                _logoOperationError.value = "Unable to save the logo placement."
+            } finally {
+                _logoSaveInProgress.value = false
+            }
+        }
+    }
+
+    fun removeOrganizationLogo(tournamentId: String) {
+        if (loadedTournamentId != tournamentId) return
+        val previousPath = _pointTableDetails.value.organizationLogoPath
+        _logoOperationError.value = null
+        viewModelScope.launch {
+            val removed = try {
+                pointTableDetailsRepository.removePointTableLogoConfiguration(tournamentId)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                false
+            }
+            if (!removed) {
+                _logoOperationError.value = "Unable to remove the logo."
+                return@launch
+            }
+            _pointTableDetails.value = _pointTableDetails.value.copy(organizationLogoPath = null)
+            _organizationLogoDisplayUri.value = null
+            pointTableLogoImageStore.cleanup(tournamentId)
+            previousPath?.let { pointTableLogoImageStore.deleteLogo(it) }
+            refreshSupportedSelectionIfActive(tournamentId)
+        }
+    }
+
     fun select(
         tournamentId: String,
         result: DownloadResultSelection,
         design: DownloadResultDesignType,
     ) {
-        selectedTournamentId = tournamentId
-        selectedResult = result
-        selectedDesign = design
+        _selectionContext.value = _selectionContext.value.copy(
+            tournamentId = tournamentId,
+            result = result,
+            design = design,
+        )
         previewJob?.cancel()
         customDesignId = null
         _hasSavedCustomDesign.value = false
@@ -390,8 +596,9 @@ class DownloadResultViewModel @Inject constructor(
                     return@launch
                 }
                 val bytes = when (design) {
-                    DownloadResultDesignType.IMAGE -> renderImagePreview(request)
-                    DownloadResultDesignType.FREE_DESIGN -> renderFreeDesignPreview(request)
+                    DownloadResultDesignType.IMAGE -> renderImagePreview(tournamentId, request)
+                    DownloadResultDesignType.FREE_DESIGN ->
+                        renderFreeDesignPreview(tournamentId, request)
                     DownloadResultDesignType.MY_DESIGN -> renderCustomDesignPreview(request)
                 }
                 if (bytes == null) {
@@ -416,9 +623,12 @@ class DownloadResultViewModel @Inject constructor(
         templateId: String,
     ) {
         if (FreeDesignTemplateRegistry.findById(templateId) == null) return
-        if (_selectedFreeDesignTemplateId.value == templateId) return
+        if (_selectionContext.value.freeDesignTemplateId == templateId) return
 
-        _selectedFreeDesignTemplateId.value = templateId
+        _selectionContext.value = _selectionContext.value.copy(
+            tournamentId = tournamentId,
+            freeDesignTemplateId = templateId,
+        )
         if (selectedDesign == DownloadResultDesignType.FREE_DESIGN) {
             select(
                 tournamentId = tournamentId,
@@ -471,31 +681,56 @@ class DownloadResultViewModel @Inject constructor(
                         com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
                     )
                 } else {
-                    when (design) {
-                        DownloadResultDesignType.IMAGE ->
-                            resultDownloadCoordinator.executeImage(
-                                request = request,
-                                displayDate = pointTableDetails.value.date,
-                                onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
-                            )
-                        DownloadResultDesignType.FREE_DESIGN ->
-                            freeDesignResultDownloadCoordinator.execute(
-                                request = request,
-                                templateId = selectedFreeDesignTemplateId.value,
-                                onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
-                                displayDate = pointTableDetails.value.date,
-                                organizationName = pointTableDetails.value.organizationName.trim(),
-                            )
-                        DownloadResultDesignType.MY_DESIGN ->
-                            customDesignId?.let { id ->
-                                customDesignResultDownloadCoordinator.execute(
-                                    customDesignId = id,
+                    val logoRenderData = when (design) {
+                        DownloadResultDesignType.IMAGE -> resolveLogoRenderData(
+                            tournamentId = tournamentId,
+                            design = design,
+                        )
+                        DownloadResultDesignType.FREE_DESIGN -> resolveLogoRenderData(
+                            tournamentId = tournamentId,
+                            design = design,
+                        )
+                        DownloadResultDesignType.MY_DESIGN -> null
+                    }
+                    try {
+                        when (design) {
+                            DownloadResultDesignType.IMAGE ->
+                                resultDownloadCoordinator.executeImage(
                                     request = request,
-                                    onSaving = { _downloadState.value = DownloadResultDownloadState.Saving },
+                                    displayDate = pointTableDetails.value.date,
+                                    logoRenderData = logoRenderData,
+                                    onSaving = {
+                                        _downloadState.value = DownloadResultDownloadState.Saving
+                                    },
                                 )
-                            } ?: ResultDownloadExecutionResult.Failure(
-                                com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
-                            )
+                            DownloadResultDesignType.FREE_DESIGN ->
+                                freeDesignResultDownloadCoordinator.executeWithLogo(
+                                    request = request,
+                                    logoRenderData = logoRenderData,
+                                    templateId = _selectionContext.value.freeDesignTemplateId,
+                                    onSaving = {
+                                        _downloadState.value = DownloadResultDownloadState.Saving
+                                    },
+                                    displayDate = pointTableDetails.value.date,
+                                    organizationName = pointTableDetails.value.organizationName.trim(),
+                                )
+                            DownloadResultDesignType.MY_DESIGN ->
+                                customDesignId?.let { id ->
+                                    customDesignResultDownloadCoordinator.execute(
+                                        customDesignId = id,
+                                        request = request,
+                                        onSaving = {
+                                            _downloadState.value = DownloadResultDownloadState.Saving
+                                        },
+                                    )
+                                } ?: ResultDownloadExecutionResult.Failure(
+                                    com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
+                                )
+                        }
+                    } finally {
+                        logoRenderData?.bitmap?.let { bitmap ->
+                            if (!bitmap.isRecycled) bitmap.recycle()
+                        }
                     }
                 }
             } catch (cancellation: CancellationException) {
@@ -593,8 +828,16 @@ class DownloadResultViewModel @Inject constructor(
         }
     }
 
-    private suspend fun renderImagePreview(request: ResultDownloadRequest): ByteArray? =
-        withContext(Dispatchers.Default) {
+    private suspend fun renderImagePreview(
+        tournamentId: String,
+        request: ResultDownloadRequest,
+    ): ByteArray? {
+        val logoRenderData = resolveLogoRenderData(
+            tournamentId = tournamentId,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        return try {
+            withContext(Dispatchers.Default) {
             val builder = ResultExportModelBuilder()
             val renderer = ResultPngRenderer()
             when (request) {
@@ -604,6 +847,7 @@ class DownloadResultViewModel @Inject constructor(
                             (renderer.render(
                                 result.model,
                                 pointTableDetails.value.date,
+                                logoRenderData,
                             ) as? ResultPngRenderResult.Success)?.pngBytes
                         is MatchResultExportModelBuildResult.Failure -> null
                     }
@@ -613,53 +857,101 @@ class DownloadResultViewModel @Inject constructor(
                             (renderer.render(
                                 result.model,
                                 pointTableDetails.value.date,
+                                logoRenderData,
                             ) as? ResultPngRenderResult.Success)?.pngBytes
                         is TournamentResultExportModelBuildResult.Failure -> null
                     }
             }
-        }
-
-    private suspend fun renderFreeDesignPreview(request: ResultDownloadRequest): ByteArray? =
-        withContext(Dispatchers.Default) {
-            val template = FreeDesignTemplateRegistry.findById(
-                selectedFreeDesignTemplateId.value,
-            ) ?: return@withContext null
-            val builder = ResultExportModelBuilder()
-            val bitmap = when (request) {
-                is ResultDownloadRequest.CurrentMatch ->
-                    when (val result = builder.buildMatch(request.input)) {
-                        is MatchResultExportModelBuildResult.Success ->
-                            (freeDesignBitmapComposer.compose(
-                                result.model,
-                                template,
-                                pointTableDetails.value.date,
-                                pointTableDetails.value.organizationName.trim(),
-                            ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
-                        is MatchResultExportModelBuildResult.Failure -> null
-                    }
-                is ResultDownloadRequest.WholeTournament ->
-                    when (val result = builder.buildTournament(request.input)) {
-                        is TournamentResultExportModelBuildResult.Success ->
-                            (freeDesignBitmapComposer.compose(
-                                result.model,
-                                template,
-                                pointTableDetails.value.date,
-                                pointTableDetails.value.organizationName.trim(),
-                            ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
-                        is TournamentResultExportModelBuildResult.Failure -> null
-                    }
-            } ?: return@withContext null
-            try {
-                val output = ByteArrayOutputStream()
-                if (bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                    output.toByteArray().takeIf { it.isNotEmpty() }
-                } else {
-                    null
-                }
-            } finally {
-                bitmap.recycle()
+            }
+        } finally {
+            logoRenderData?.bitmap?.let { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
             }
         }
+    }
+
+    private suspend fun renderFreeDesignPreview(
+        tournamentId: String,
+        request: ResultDownloadRequest,
+    ): ByteArray? = withContext(Dispatchers.Default) {
+            val template = FreeDesignTemplateRegistry.findById(
+                _selectionContext.value.freeDesignTemplateId,
+            ) ?: return@withContext null
+            val logoRenderData = resolveLogoRenderData(
+                tournamentId = tournamentId,
+                design = DownloadResultDesignType.FREE_DESIGN,
+            )
+            val builder = ResultExportModelBuilder()
+            try {
+                val bitmap = when (request) {
+                    is ResultDownloadRequest.CurrentMatch ->
+                        when (val result = builder.buildMatch(request.input)) {
+                            is MatchResultExportModelBuildResult.Success ->
+                                (freeDesignBitmapComposer.compose(
+                                    result.model,
+                                    template,
+                                    pointTableDetails.value.date,
+                                    pointTableDetails.value.organizationName.trim(),
+                                    logoRenderData,
+                                ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
+                            is MatchResultExportModelBuildResult.Failure -> null
+                        }
+                    is ResultDownloadRequest.WholeTournament ->
+                        when (val result = builder.buildTournament(request.input)) {
+                            is TournamentResultExportModelBuildResult.Success ->
+                                (freeDesignBitmapComposer.compose(
+                                    result.model,
+                                    template,
+                                    pointTableDetails.value.date,
+                                    pointTableDetails.value.organizationName.trim(),
+                                    logoRenderData,
+                                ) as? FreeDesignBitmapComposeResult.Success)?.bitmap
+                            is TournamentResultExportModelBuildResult.Failure -> null
+                        }
+                } ?: return@withContext null
+                try {
+                    val output = ByteArrayOutputStream()
+                    if (bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                        output.toByteArray().takeIf { it.isNotEmpty() }
+                    } else {
+                        null
+                    }
+                } finally {
+                    bitmap.recycle()
+                }
+            } finally {
+                logoRenderData?.bitmap?.let { bitmap ->
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                }
+            }
+        }
+
+    private suspend fun resolveLogoRenderData(
+        tournamentId: String,
+        design: DownloadResultDesignType,
+    ): PointTableLogoRenderData? {
+        val designKey = pointTableLogoDesignKey(
+            design = design,
+            freeDesignTemplateId = _selectionContext.value.freeDesignTemplateId,
+        ) ?: return null
+        return pointTableLogoRenderResolver.resolve(
+            tournamentId = tournamentId,
+            designKey = designKey,
+            organizationLogoPath = _pointTableDetails.value.organizationLogoPath,
+        )
+    }
+
+    private fun refreshSupportedSelectionIfActive(tournamentId: String) {
+        if (
+            selectedTournamentId == tournamentId &&
+            (
+                selectedDesign == DownloadResultDesignType.IMAGE ||
+                    selectedDesign == DownloadResultDesignType.FREE_DESIGN
+                )
+        ) {
+            select(tournamentId, selectedResult, selectedDesign)
+        }
+    }
 
     private suspend fun renderCustomDesignPreview(request: ResultDownloadRequest): ByteArray? {
         val savedId = when (val result = customDesignSavedIdDiscovery.find()) {
@@ -736,8 +1028,12 @@ fun DownloadResultRoute(
     val previewState by viewModel.previewState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
     val pointTableDetails by viewModel.pointTableDetails.collectAsStateWithLifecycle()
+    val organizationLogoDisplayUri by viewModel.organizationLogoDisplayUri.collectAsStateWithLifecycle()
+    val logoEditorState by viewModel.logoEditorState.collectAsStateWithLifecycle()
+    val logoOperationError by viewModel.logoOperationError.collectAsStateWithLifecycle()
+    val logoSaveInProgress by viewModel.logoSaveInProgress.collectAsStateWithLifecycle()
     val hasSavedCustomDesign by viewModel.hasSavedCustomDesign.collectAsStateWithLifecycle()
-    val selectedFreeDesignTemplateId by viewModel.selectedFreeDesignTemplateId.collectAsStateWithLifecycle()
+    val selectionContext by viewModel.selectionContext.collectAsStateWithLifecycle()
     ResultShareEventEffect(shareEvents = viewModel.shareEvents)
     val lifecycleOwner = LocalLifecycleOwner.current
     val documentLauncher = rememberLauncherForActivityResult(
@@ -746,6 +1042,9 @@ fun DownloadResultRoute(
     )
     var pendingCustomDesignSelection by remember {
         mutableStateOf<DownloadResultSelection?>(null)
+    }
+    var pendingLogoPickerRequest by remember {
+        mutableStateOf<PointTableLogoPickerRequest?>(null)
     }
     val customDesignImagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -758,6 +1057,21 @@ fun DownloadResultRoute(
                     matchId,
                     selection.exportScope,
                     selectedUri.toString(),
+                )
+            }
+        },
+    )
+    val organizationLogoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { selectedUri ->
+            val request = pendingLogoPickerRequest
+            pendingLogoPickerRequest = null
+            if (selectedUri != null && request != null) {
+                viewModel.prepareOrganizationLogoCandidate(
+                    tournamentId = tournamentId,
+                    designKey = request.designKey,
+                    previewPngBytes = request.previewPngBytes,
+                    selectedUri = selectedUri.toString(),
                 )
             }
         },
@@ -786,10 +1100,14 @@ fun DownloadResultRoute(
         onBack = onBack,
         initialDesign = initialDesign,
         initialResult = initialResult,
-        selectedFreeDesignTemplateId = selectedFreeDesignTemplateId,
+        selectionContext = selectionContext.takeIf { it.tournamentId == tournamentId },
         previewState = previewState,
         downloadState = downloadState,
         pointTableDetails = pointTableDetails,
+        organizationLogoDisplayUri = organizationLogoDisplayUri,
+        logoEditorState = logoEditorState,
+        logoOperationError = logoOperationError,
+        logoSaveInProgress = logoSaveInProgress,
         hasSavedCustomDesign = hasSavedCustomDesign,
         onResultSelected = { selection, design ->
             viewModel.select(tournamentId, selection, design)
@@ -817,6 +1135,18 @@ fun DownloadResultRoute(
         onPointTableDetailsApply = { details ->
             viewModel.savePointTableDetails(tournamentId, details)
         },
+        onOrganizationLogoPick = { designKey, previewPngBytes ->
+            pendingLogoPickerRequest = PointTableLogoPickerRequest(designKey, previewPngBytes)
+            organizationLogoPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        },
+        onOrganizationLogoEdit = { designKey, previewPngBytes ->
+            viewModel.openOrganizationLogoEditor(tournamentId, designKey, previewPngBytes)
+        },
+        onOrganizationLogoRemove = { viewModel.removeOrganizationLogo(tournamentId) },
+        onOrganizationLogoCancel = viewModel::cancelOrganizationLogoEditor,
+        onOrganizationLogoSave = viewModel::saveOrganizationLogoPlacement,
         onDeleteSavedCustomDesign = viewModel::deleteSavedCustomDesign,
         onDownload = { selection, design ->
             viewModel.requestDownload(tournamentId, selection, design)
@@ -837,31 +1167,77 @@ fun DownloadResultScreen(
         },
     initialDesign: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
     initialResult: DownloadResultSelection = DownloadResultSelection.Overall,
+    selectionContext: DownloadResultSelectionContext? = null,
     selectedFreeDesignTemplateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
     previewState: DownloadResultPreviewState = DownloadResultPreviewState.Idle,
     downloadState: DownloadResultDownloadState = DownloadResultDownloadState.Idle,
     hasSavedCustomDesign: Boolean = false,
     pointTableDetails: PointTableDetailsUiState = PointTableDetailsUiState(),
+    organizationLogoDisplayUri: String? = null,
+    logoEditorState: PointTableLogoEditorState? = null,
+    logoOperationError: String? = null,
+    logoSaveInProgress: Boolean = false,
     onResultSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onDesignSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onFreeDesignTemplateSelected: (String) -> Unit = {},
     onFreeDesignSettingsClick: () -> Unit = {},
     onPointTableDetailsApply: (PointTableDetailsUiState) -> Unit = {},
+    onOrganizationLogoPick: (String, ByteArray) -> Unit = { _, _ -> },
+    onOrganizationLogoEdit: (String, ByteArray) -> Unit = { _, _ -> },
+    onOrganizationLogoRemove: () -> Unit = {},
+    onOrganizationLogoCancel: () -> Unit = {},
+    onOrganizationLogoSave: (PointTableLogoPlacementGeometry) -> Unit = {},
     onImportYourDesign: (DownloadResultSelection) -> Unit = {},
     onDeleteSavedCustomDesign: () -> Unit = {},
     onDownload: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
 ) {
-    var selectedResult by remember(initialResult) {
+    var localSelectedResult by remember {
         mutableStateOf(initialResult)
     }
-    var selectedDesign by remember(initialDesign) { mutableStateOf(initialDesign) }
-    var selectedTemplateId by remember(selectedFreeDesignTemplateId) {
+    var localSelectedDesign by remember { mutableStateOf(initialDesign) }
+    var localSelectedTemplateId by remember(selectedFreeDesignTemplateId) {
         mutableStateOf(selectedFreeDesignTemplateId)
     }
+    val selectedResult = selectionContext?.result ?: localSelectedResult
+    val selectedDesign = selectionContext?.design ?: localSelectedDesign
+    val selectedTemplateId = selectionContext?.freeDesignTemplateId ?: localSelectedTemplateId
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showPointTableDetailsDialog by remember { mutableStateOf(false) }
     var pointTableDetailsDraft by remember { mutableStateOf(PointTableDetailsUiState()) }
+    var logoEditorWasOpen by remember { mutableStateOf(false) }
     val orderedMatches = remember(matches) { matches.sortedBy { it.matchNumber } }
+
+    LaunchedEffect(logoEditorState) {
+        if (logoEditorState != null) {
+            showPointTableDetailsDialog = false
+            logoEditorWasOpen = true
+        } else if (logoEditorWasOpen) {
+            showPointTableDetailsDialog = true
+            logoEditorWasOpen = false
+        }
+    }
+
+    LaunchedEffect(initialResult, initialDesign) {
+        if (selectionContext == null) {
+            onResultSelected(initialResult, initialDesign)
+            onDesignSelected(initialResult, initialDesign)
+        }
+    }
+
+    if (logoEditorState != null) {
+        PointTableLogoPlacementEditor(
+            state = logoEditorState,
+            onCancel = {
+                onOrganizationLogoCancel()
+            },
+            onSave = { geometry ->
+                onOrganizationLogoSave(geometry)
+            },
+            isSaving = logoSaveInProgress,
+            errorMessage = logoOperationError,
+        )
+        return
+    }
 
     val openPointTableDetails = {
         pointTableDetailsDraft = pointTableDetails
@@ -869,15 +1245,12 @@ fun DownloadResultScreen(
         onFreeDesignSettingsClick()
     }
 
-    LaunchedEffect(initialResult, initialDesign) {
-        onResultSelected(initialResult, initialDesign)
-        onDesignSelected(initialResult, initialDesign)
-    }
-
     LaunchedEffect(orderedMatches) {
         val selectedMatch = selectedResult as? DownloadResultSelection.Match
         if (selectedMatch != null && orderedMatches.none { it.matchId == selectedMatch.matchId }) {
-            selectedResult = DownloadResultSelection.Overall
+            if (selectionContext == null) {
+                localSelectedResult = DownloadResultSelection.Overall
+            }
             onResultSelected(DownloadResultSelection.Overall, selectedDesign)
         }
     }
@@ -915,7 +1288,7 @@ fun DownloadResultScreen(
                 selected = selectedResult == DownloadResultSelection.Overall,
                 onClick = {
                     val selection = DownloadResultSelection.Overall
-                    selectedResult = selection
+                    if (selectionContext == null) localSelectedResult = selection
                     onResultSelected(selection, selectedDesign)
                 },
                 testTag = DOWNLOAD_RESULT_OVERALL_OPTION_TEST_TAG,
@@ -926,7 +1299,7 @@ fun DownloadResultScreen(
                     selected = selectedResult == DownloadResultSelection.Match(match.matchId),
                     onClick = {
                         val selection = DownloadResultSelection.Match(match.matchId)
-                        selectedResult = selection
+                        if (selectionContext == null) localSelectedResult = selection
                         onResultSelected(selection, selectedDesign)
                     },
                     testTag = DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX + match.matchNumber,
@@ -955,7 +1328,7 @@ fun DownloadResultScreen(
                     selected = selectedDesign == DownloadResultDesignType.IMAGE,
                     onClick = {
                         val design = DownloadResultDesignType.IMAGE
-                        selectedDesign = design
+                        if (selectionContext == null) localSelectedDesign = design
                         onDesignSelected(selectedResult, design)
                     },
                     testTag = DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG,
@@ -965,7 +1338,7 @@ fun DownloadResultScreen(
                     selected = selectedDesign == DownloadResultDesignType.FREE_DESIGN,
                     onClick = {
                         val design = DownloadResultDesignType.FREE_DESIGN
-                        selectedDesign = design
+                        if (selectionContext == null) localSelectedDesign = design
                         onDesignSelected(selectedResult, design)
                     },
                     testTag = DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG,
@@ -975,7 +1348,7 @@ fun DownloadResultScreen(
                     selected = selectedDesign == DownloadResultDesignType.MY_DESIGN,
                     onClick = {
                         val design = DownloadResultDesignType.MY_DESIGN
-                        selectedDesign = design
+                        if (selectionContext == null) localSelectedDesign = design
                         onDesignSelected(selectedResult, design)
                     },
                     testTag = DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG,
@@ -1068,7 +1441,7 @@ fun DownloadResultScreen(
                             assetPath = template.assetPath,
                             selected = selectedTemplateId == option.id,
                             onClick = {
-                                selectedTemplateId = option.id
+                                if (selectionContext == null) localSelectedTemplateId = option.id
                                 onFreeDesignTemplateSelected(option.id)
                             },
                             testTag = DOWNLOAD_RESULT_FREE_TEMPLATE_OPTION_TEST_TAG_PREFIX + option.id,
@@ -1116,6 +1489,25 @@ fun DownloadResultScreen(
             onDateChange = { date ->
                 pointTableDetailsDraft = pointTableDetailsDraft.copy(date = date)
             },
+            organizationLogoDisplayUri = organizationLogoDisplayUri,
+            logoOperationError = logoOperationError,
+            onOrganizationLogoPick = {
+                val designKey = pointTableLogoDesignKey(selectedDesign, selectedTemplateId)
+                val previewBytes = (previewState as? DownloadResultPreviewState.ResultImage)?.pngBytes
+                if (designKey != null && previewBytes != null) {
+                    onOrganizationLogoPick(designKey, previewBytes)
+                }
+            },
+            onOrganizationLogoEdit = {
+                val designKey = pointTableLogoDesignKey(selectedDesign, selectedTemplateId)
+                val previewBytes = (previewState as? DownloadResultPreviewState.ResultImage)?.pngBytes
+                if (designKey != null && previewBytes != null) {
+                    onOrganizationLogoEdit(designKey, previewBytes)
+                }
+            },
+            onOrganizationLogoRemove = {
+                onOrganizationLogoRemove()
+            },
             onDismissRequest = { showPointTableDetailsDialog = false },
             onApply = {
                 onPointTableDetailsApply(
@@ -1135,6 +1527,11 @@ private fun PointTableDetailsDialog(
     value: PointTableDetailsUiState,
     onOrganizationNameChange: (String) -> Unit,
     onDateChange: (LocalDate?) -> Unit,
+    organizationLogoDisplayUri: String?,
+    logoOperationError: String?,
+    onOrganizationLogoPick: () -> Unit,
+    onOrganizationLogoEdit: () -> Unit,
+    onOrganizationLogoRemove: () -> Unit,
     onDismissRequest: () -> Unit,
     onApply: () -> Unit,
 ) {
@@ -1172,6 +1569,65 @@ private fun PointTableDetailsDialog(
                     onValueChange = onOrganizationNameChange,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Organisation Logo",
+                    color = PointTableDetailsDialogBody,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                if (organizationLogoDisplayUri == null) {
+                    TextButton(
+                        onClick = onOrganizationLogoPick,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 0.dp,
+                            vertical = 0.dp,
+                        ),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = PointTableDetailsDialogAction,
+                        ),
+                    ) {
+                        Text("Add Logo", fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        PointTableLogoThumbnail(displayUri = organizationLogoDisplayUri)
+                        TextButton(
+                            onClick = onOrganizationLogoEdit,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 4.dp,
+                                vertical = 0.dp,
+                            ),
+                        ) { Text("Edit") }
+                        TextButton(
+                            onClick = onOrganizationLogoPick,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 4.dp,
+                                vertical = 0.dp,
+                            ),
+                        ) { Text("Replace") }
+                        TextButton(
+                            onClick = onOrganizationLogoRemove,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 4.dp,
+                                vertical = 0.dp,
+                            ),
+                        ) { Text("Remove") }
+                    }
+                }
+                if (logoOperationError != null) {
+                    Text(
+                        text = logoOperationError,
+                        color = Color(0xFFFFB4AB),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 Box(
                     modifier = Modifier
@@ -1346,11 +1802,8 @@ private fun DownloadResultBitmapPreview(
         }
     }
     val previewBitmap = bitmap ?: return
-    DisposableEffect(previewBitmap) {
-            onDispose {
-                if (!previewBitmap.isRecycled) previewBitmap.recycle()
-            }
-        }
+    // This bitmap is UI-owned. Compose's BitmapPainter may still draw during disposal, so it
+    // must remain unrecycled until it is no longer reachable by the composition.
     if (showDeleteControl || showSettingsControl) {
         Box(
             modifier = modifier,
