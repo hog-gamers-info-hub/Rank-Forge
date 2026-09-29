@@ -9,11 +9,11 @@ internal data class MatchResultEliminationAnchorMatch(
 
 internal object MatchResultEliminationAnchorText {
     private val leadingAnchorPattern = Regex(
-        "^\\s*(?:(\\d+|[Oo])\\s*)?Eliminat",
+        "^\\s*(?:(\\d+|[Oo])\\s*)?(?:Eliminat|Eiminat)",
         RegexOption.IGNORE_CASE,
     )
     private val degradedPlayerBoundaryPattern = Regex(
-        "^\\s*(?:(?:\\d+|[Oo])\\s*)?Eliminat\\S*\\s+(.+?)\\s*$",
+        "^\\s*(?:(?:\\d+|[Oo])\\s*)?(?:Eliminat|Eiminat)\\S*\\s+(.+?)\\s*$",
         RegexOption.IGNORE_CASE,
     )
 

@@ -44,93 +44,74 @@ class MatchResultMlKitKillFallbackResolver {
                 }
                 .sortedWith(compareBy<LocalObservation> { it.bounds.centerX() }.thenBy { it.bounds.centerY() })
 
-            val verification = if (positionCrop.position in 6..12 && (slot == 1 || slot == 2)) {
-                resolveSharedMiddleCell(observations)
-            } else {
-                resolveCell(observations)
-            }
+            val verification = resolveCell(
+                observations = observations,
+                ppAnchorBounds = currentPpSemantic.eliminationAnchorBounds[slot],
+            )
             verification?.let { slot to it }
         }.toMap()
     }
 
-    private fun resolveCell(observations: List<LocalObservation>): MatchResultNumericVerification? {
+    private fun resolveCell(
+        observations: List<LocalObservation>,
+        ppAnchorBounds: RawOcrBoundingBox?,
+    ): MatchResultNumericVerification? {
         if (observations.isEmpty()) return null
 
-        val candidates = buildList {
-            parseValue(observations.joinToString(" ") { it.text })?.let { add(it) }
-            observations.forEach { observation ->
-                parseStrongValue(observation.text)?.let { add(it) }
-            }
-        }.distinctBy { it.rawText to it.value }
-        val values = candidates.mapNotNull { it.value }.distinct()
-        return when (values.size) {
-            0 -> null
-            1 -> MatchResultNumericVerification.Verified(values.single(), candidates)
-            else -> MatchResultNumericVerification.Unresolved(candidates)
+        val mlAnchors = observations.mapNotNull { observation ->
+            MatchResultEliminationAnchorText.find(observation.text)?.let { observation to it }
         }
-    }
-
-    private fun resolveSharedMiddleCell(
-        observations: List<LocalObservation>,
-    ): MatchResultNumericVerification? {
-        val anchor = observations.asSequence()
-            .mapNotNull { observation ->
-                MatchResultEliminationAnchorText.find(observation.text)?.let { observation to it }
-            }
-            .firstOrNull()
-            ?: return resolveCell(observations)
-
-        val (anchorObservation, anchorMatch) = anchor
-        if (anchorMatch.prefixType != MatchResultEliminationPrefixType.EMPTY_PREFIX) {
-            return anchorMatch.kill?.let { value ->
-                MatchResultNumericVerification.Verified(
-                    value = value,
-                    candidates = listOf(candidate(anchorMatch.rawText, value)),
-                )
-            }
+        val directCandidates = observations.mapNotNull { observation ->
+            parseDirectAttachedKill(observation.text)
         }
+        if (directCandidates.isNotEmpty()) return resolveCandidates(directCandidates)
 
+        val anchorBounds = ppAnchorBounds ?: mlAnchors.firstOrNull()?.first?.bounds ?: return null
         val precedingCandidates = observations
             .asSequence()
-            .filter { it.bounds.centerX() < anchorObservation.bounds.centerX() }
+            .filter { observation ->
+                MatchResultKillFieldLayout.isLocallyNearStandaloneKillAnchor(
+                    candidateBounds = observation.bounds,
+                    anchorBounds = anchorBounds,
+                )
+            }
             .mapNotNull { observation -> parseStandaloneNumeric(observation.text) }
             .toList()
-        if (precedingCandidates.isEmpty()) return null
+        return resolveCandidates(precedingCandidates)
+    }
 
-        val values = precedingCandidates.mapNotNull { it.value }.distinct()
+    private fun parseDirectAttachedKill(text: String): MatchResultNumericCandidate? {
+        val rawText = text.trim()
+        MatchResultEliminationAnchorText.find(rawText)?.kill?.let { value ->
+            return candidate(rawText, value)
+        }
+
+        if (!rawText.startsWith("D")) return null
+        val anchorText = rawText.removePrefix("D").trimStart()
+        val anchor = MatchResultEliminationAnchorText.find(anchorText) ?: return null
+        if (anchor.kill != null) return null
+        return candidate(rawText, 0)
+    }
+
+    private fun resolveCandidates(
+        candidates: List<MatchResultNumericCandidate>,
+    ): MatchResultNumericVerification? {
+        if (candidates.isEmpty()) return null
+        val values = candidates.mapNotNull { it.value }.distinct()
         return when (values.size) {
-            1 -> MatchResultNumericVerification.Verified(values.single(), precedingCandidates)
-            else -> MatchResultNumericVerification.Unresolved(precedingCandidates)
+            1 -> MatchResultNumericVerification.Verified(values.single(), candidates)
+            else -> MatchResultNumericVerification.Unresolved(candidates)
         }
     }
 
     private fun parseStandaloneNumeric(text: String): MatchResultNumericCandidate? {
         val prefix = STANDALONE_NUMERIC_PATTERN.matchEntire(text)?.groupValues?.get(1)
             ?: return null
-        val value = if (prefix.equals("O", ignoreCase = true)) 0 else prefix.toIntOrNull()
+        val value = when {
+            prefix.equals("O", ignoreCase = true) || prefix == "D" -> 0
+            else -> prefix.toIntOrNull()
+        }
         return value?.takeIf { it >= 0 }?.let { candidate(text.trim(), it) }
-    }
-
-    private fun parseStrongValue(text: String): MatchResultNumericCandidate? {
-        val parsed = MatchResultPositionSemanticTextParser.parse(text)
-        if (parsed.isResolvedKill()) {
-            return candidate(text, parsed.kill!!)
-        }
-        return NUMERIC_PREFIX_PATTERN.find(text)?.groupValues?.get(1)?.let { prefix ->
-            val value = if (prefix.equals("O", ignoreCase = true)) 0 else prefix.toIntOrNull()
-            value?.takeIf { it >= 0 }?.let { candidate(text, it) }
-        }
-    }
-
-    private fun parseValue(text: String): MatchResultNumericCandidate? {
-        val parsed = MatchResultPositionSemanticTextParser.parse(text)
-        if (parsed.isResolvedKill()) {
-            return candidate(text, parsed.kill!!)
-        }
-        return NUMERIC_PREFIX_PATTERN.find(text)?.groupValues?.get(1)?.let { prefix ->
-            val value = if (prefix.equals("O", ignoreCase = true)) 0 else prefix.toIntOrNull()
-            value?.takeIf { it >= 0 }?.let { candidate(text, it) }
-        }
     }
 
     private fun candidate(rawText: String, value: Int) = MatchResultNumericCandidate(
@@ -146,8 +127,7 @@ class MatchResultMlKitKillFallbackResolver {
     )
 
     private companion object {
-        val NUMERIC_PREFIX_PATTERN = Regex("^\\s*(\\d+|[Oo])")
-        val STANDALONE_NUMERIC_PATTERN = Regex("^\\s*(\\d+|[Oo])\\s*$")
+        val STANDALONE_NUMERIC_PATTERN = Regex("^\\s*(\\d+|[Oo]|D)\\s*$")
     }
 }
 

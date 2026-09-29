@@ -34,6 +34,7 @@ data class MatchResultPositionSemanticResult(
     val isAutoAcceptable: Boolean,
     val basicKillEvidence: Map<Int, ParsedEliminationText?> = emptyMap(),
     val playerBoundaryEvidence: Map<Int, MatchResultPlayerBoundaryDecision> = emptyMap(),
+    val eliminationAnchorBounds: Map<Int, RawOcrBoundingBox> = emptyMap(),
 )
 
 data class MatchResultPositionSemanticBatchResult(
@@ -177,6 +178,9 @@ class MatchResultPositionOcrFieldMapper {
             playerBoundaryEvidence = slotSemantics.mapNotNull { (slot, semantics) ->
                 semantics.playerBoundary?.let { slot to it }
             }.toMap(),
+            eliminationAnchorBounds = slotSemantics.mapNotNull { (slot, semantics) ->
+                semantics.eliminationAnchorBounds?.let { slot to it }
+            }.toMap(),
         )
     }
 
@@ -210,14 +214,16 @@ class MatchResultPositionOcrFieldMapper {
                 it.centerX() in playerRange(input.cropWidth, first) &&
                     !it.text.parseElimination().markerMatched
             }
-            val elimination = rowLines.firstOrNull {
+            val eliminationLine = rowLines.firstOrNull {
                 it.centerX() in MatchResultKillFieldLayout.horizontalRange(input.position, input.cropWidth, first) &&
                     it.text.parseElimination().markerMatched
-            }?.text?.let(MatchResultPositionSemanticTextParser::parse)
+            }
+            val elimination = eliminationLine?.text?.let(MatchResultPositionSemanticTextParser::parse)
             return SlotSemantic(
                 playerText = playerLines.sortedForPlayerText().joinToString(" ") { it.text.trim() }.trim()
                     .ifBlank { if (!first) elimination?.playerSuffix.orEmpty() else "" },
                 elimination = elimination,
+                eliminationAnchorBounds = eliminationLine?.geometry?.boundingBox,
             )
         }
 
@@ -225,8 +231,8 @@ class MatchResultPositionOcrFieldMapper {
             it.centerX() in scaledRange(input.cropWidth, RIGHT_MERGED_RANGE)
         }
         val middleElimination = middleLines
-            .mapNotNull(::parseSharedMiddleElimination)
-            .firstOrNull()
+            .map { line -> line to parseSharedMiddleElimination(line) }
+            .firstOrNull { (_, parsed) -> parsed != null }
         if (first) {
             val playerLines = rowLines.filter {
                 it.centerX() in scaledRange(input.cropWidth, RIGHT_LEFT_PLAYER_RANGE) &&
@@ -234,7 +240,8 @@ class MatchResultPositionOcrFieldMapper {
             }
             return SlotSemantic(
                 playerText = playerLines.sortedForPlayerText().joinToString(" ") { it.text.trim() }.trim(),
-                elimination = middleElimination,
+                elimination = middleElimination?.second,
+                eliminationAnchorBounds = middleElimination?.first?.geometry?.boundingBox,
             )
         }
         val playerBoundary = findStrongPlayerBoundary(middleLines)
@@ -272,11 +279,14 @@ class MatchResultPositionOcrFieldMapper {
         val rightElimination = rowLines
             .filter { it.centerX() in scaledRange(input.cropWidth, RIGHT_KILL_RANGE) }
             .firstOrNull { it.text.parseElimination().markerMatched }
-            ?.text?.let(MatchResultPositionSemanticTextParser::parse)
+        val parsedRightElimination = rightElimination
+            ?.text
+            ?.let(MatchResultPositionSemanticTextParser::parse)
         return SlotSemantic(
             playerText = playerText,
-            elimination = rightElimination,
+            elimination = parsedRightElimination,
             playerBoundary = playerBoundary.decision,
+            eliminationAnchorBounds = rightElimination?.geometry?.boundingBox,
         )
     }
 
@@ -303,6 +313,9 @@ class MatchResultPositionOcrFieldMapper {
     private fun parseSharedMiddleElimination(line: RawOcrLine): ParsedEliminationText? {
         val parsed = line.text.parseElimination()
         if (parsed.isResolvedKill()) {
+            return parsed
+        }
+        if (parsed.markerMatched) {
             return parsed
         }
 
@@ -433,6 +446,7 @@ class MatchResultPositionOcrFieldMapper {
         val playerText: String,
         val elimination: ParsedEliminationText?,
         val playerBoundary: MatchResultPlayerBoundaryDecision? = null,
+        val eliminationAnchorBounds: RawOcrBoundingBox? = null,
     )
 
     private data class StrongPlayerBoundaryAnchor(
@@ -554,6 +568,10 @@ class MatchResultPositionOcrFieldMapper {
             "Elimination",
             "Eliminatio",
             "Eliminati",
+            "Eiminations",
+            "Eimination",
+            "Eiminatio",
+            "Eiminati",
         )
         val RIGHT_LEFT_PLAYER_RANGE = 0.05..0.40
         val RIGHT_MERGED_RANGE = 0.40..0.81
@@ -566,11 +584,11 @@ class MatchResultPositionOcrFieldMapper {
 object MatchResultPositionSemanticTextParser {
     // Longest supported marker first so "Eliminatiok..." consumes "Eliminatio".
     private val markerPattern = Regex(
-        "^\\s*(?:(\\d+|[Oo])\\s*)?(Eliminations?|Eliminatio|Eliminati)(.*)$",
+        "^\\s*(?:(\\d+|[Oo])\\s*)?(Eliminations?|Eliminatio|Eliminati|Eiminations?|Eiminatio|Eiminati)(.*)$",
         RegexOption.IGNORE_CASE,
     )
     private val truncatedStrongPrefixPattern = Regex(
-        "^(\\d+|[Oo])\\s*Eliminat$",
+        "^(\\d+|[Oo])\\s*(?:Eliminat|Eiminat)$",
         RegexOption.IGNORE_CASE,
     )
 

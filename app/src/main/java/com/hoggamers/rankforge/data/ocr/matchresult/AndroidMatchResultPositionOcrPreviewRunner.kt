@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
@@ -28,6 +30,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionKillFal
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
+import com.paddle.ocr.model.OCRRunResult
 import java.io.File
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -154,7 +157,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         }
         if (source !== decodedSource && !decodedSource.isRecycled) decodedSource.recycle()
         val evidence = try {
-            when (val result = positionCropGenerator.observe(source)) {
+            when (val result = positionCropGenerator.observe(source, identity.role)) {
                 is MatchResultPositionCropObservationResult.Observed -> {
                     result.evidence
                 }
@@ -225,6 +228,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                 try {
                     val panelSemantics = runPanelPpProduction(
                         inputBitmap = inputBitmap,
+                        screenshotRole = prepared.identity.role,
                         role = assignedRole,
                         inputPlan = inputPlan,
                         allowUpperPositionElevenFallback = allowUpperFallback,
@@ -348,6 +352,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
 
     private suspend fun runPanelPpProduction(
         inputBitmap: Bitmap,
+        screenshotRole: MatchResultScreenshotRole,
         role: MatchResultScreenshotRole,
         inputPlan: MatchResultPpInputPlan,
         allowUpperPositionElevenFallback: Boolean,
@@ -356,6 +361,16 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     ): List<MatchResultPositionSemanticResult> {
         val engine = paddleEngineProvider.getOrCreate()
         val runResult = engine.recognize(inputBitmap)
+        if (BuildConfig.DEBUG) {
+            logRawPpOcr(
+                runResult = runResult,
+                screenshotRole = screenshotRole,
+                processingRole = role,
+                inputWidth = inputBitmap.width,
+                inputHeight = inputBitmap.height,
+                source = "panel",
+            )
+        }
         val panelBlocks = PaddleRawOcrGeometryMapper.map(
             runResult = runResult,
             cropWidth = inputBitmap.width,
@@ -498,6 +513,54 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         }
     }
 
+}
+
+private fun logRawPpOcr(
+    runResult: OCRRunResult,
+    screenshotRole: MatchResultScreenshotRole,
+    processingRole: MatchResultScreenshotRole,
+    inputWidth: Int,
+    inputHeight: Int,
+    source: String,
+) {
+    if (!BuildConfig.DEBUG) return
+    debugLog(
+        "===== PP OCR RAW START ===== screenshotRole=$screenshotRole " +
+            "processingRole=$processingRole source=$source input=${inputWidth}x$inputHeight",
+    )
+    runResult.results.forEachIndexed { index, result ->
+        val points = result.box.points
+        val left = points.minOf { it.x }
+        val top = points.minOf { it.y }
+        val right = points.maxOf { it.x }
+        val bottom = points.maxOf { it.y }
+        val centerX = (left + right) / 2.0f
+        val centerY = (top + bottom) / 2.0f
+        debugLog(
+            "observation=$index text=\"${result.text.escapeForDebugLog()}\" " +
+                "left=$left top=$top right=$right bottom=$bottom " +
+                "centerX=$centerX centerY=$centerY " +
+                "width=${right - left} height=${bottom - top} " +
+                "confidence=${result.confidence}",
+        )
+    }
+    debugLog(
+        "===== PP OCR RAW END ===== screenshotRole=$screenshotRole " +
+            "processingRole=$processingRole source=$source count=${runResult.results.size}",
+    )
+}
+
+private fun String.escapeForDebugLog(): String = replace("\\", "\\\\")
+    .replace("\r", "\\r")
+    .replace("\n", "\\n")
+    .replace("\"", "\\\"")
+
+private fun debugLog(message: String) {
+    try {
+        Log.d("RESULT_PP_RAW", message)
+    } catch (_: RuntimeException) {
+        // Diagnostics must never affect OCR state when Android Log is unavailable.
+    }
 }
 
 class MatchResultPpOnlyPairReconciliationRunner(

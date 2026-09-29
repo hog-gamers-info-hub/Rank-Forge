@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.domain.ocr.matchresult
 
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
+import kotlin.math.abs
 
 /** The existing position-local kill-cell geometry shared by PP mapping and ML Kit recovery. */
 object MatchResultKillFieldLayout {
@@ -29,5 +31,15 @@ object MatchResultKillFieldLayout {
             right = horizontalRange.endInclusive,
             bottom = rowBounds?.bottom?.toDouble() ?: 1.0,
         )
+    }
+
+    fun isLocallyNearStandaloneKillAnchor(
+        candidateBounds: RawOcrBoundingBox,
+        anchorBounds: RawOcrBoundingBox,
+    ): Boolean {
+        val anchorHeight = (anchorBounds.bottom - anchorBounds.top).toDouble()
+        val localRadiusPx = (1.5 * anchorHeight).coerceIn(12.0, 28.0)
+        val candidateCenterX = (candidateBounds.left + candidateBounds.right) / 2.0
+        return abs(candidateCenterX - anchorBounds.left) <= localRadiusPx
     }
 }
