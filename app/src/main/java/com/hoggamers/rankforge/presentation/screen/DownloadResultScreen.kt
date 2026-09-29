@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -60,6 +61,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -67,6 +69,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -1570,54 +1573,93 @@ private fun PointTableDetailsDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Organisation Logo",
-                    color = PointTableDetailsDialogBody,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
                 if (organizationLogoDisplayUri == null) {
-                    TextButton(
-                        onClick = onOrganizationLogoPick,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = 0.dp,
-                            vertical = 0.dp,
-                        ),
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = PointTableDetailsDialogAction,
-                        ),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                role = Role.Button,
+                                onClick = onOrganizationLogoPick,
+                            ),
                     ) {
-                        Text("Add Logo", fontWeight = FontWeight.SemiBold)
+                        PointIqUnderlineTextField(
+                            value = "",
+                            placeholder = "Organisation Logo",
+                            fieldDescription = "Organisation Logo",
+                            onValueChange = {},
+                            modifier = Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            enabled = false,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .size(48.dp)
+                                .clickable(
+                                    role = Role.Button,
+                                    onClick = onOrganizationLogoPick,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.noun_upload_3927_vector),
+                                contentDescription = "Upload logo",
+                                tint = PointTableDetailsDialogAction,
+                                modifier = Modifier
+                                    .offset(y = (-2).dp)
+                                    .size(24.dp),
+                            )
+                        }
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .drawBehind {
+                                val strokeWidth = 1.dp.toPx()
+                                val bottomY = size.height - 9.dp.toPx() - strokeWidth / 2f
+                                drawLine(
+                                    color = PointTableDetailsDialogFieldInactive,
+                                    start = Offset(0f, bottomY),
+                                    end = Offset(size.width, bottomY),
+                                    strokeWidth = strokeWidth,
+                                )
+                            },
                     ) {
-                        PointTableLogoThumbnail(displayUri = organizationLogoDisplayUri)
-                        TextButton(
-                            onClick = onOrganizationLogoEdit,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 4.dp,
-                                vertical = 0.dp,
-                            ),
-                        ) { Text("Edit") }
-                        TextButton(
-                            onClick = onOrganizationLogoPick,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 4.dp,
-                                vertical = 0.dp,
-                            ),
-                        ) { Text("Replace") }
-                        TextButton(
-                            onClick = onOrganizationLogoRemove,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 4.dp,
-                                vertical = 0.dp,
-                            ),
-                        ) { Text("Remove") }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier.size(28.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                PointTableLogoThumbnail(displayUri = organizationLogoDisplayUri)
+                            }
+                            TextButton(
+                                onClick = onOrganizationLogoEdit,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 4.dp,
+                                    vertical = 0.dp,
+                                ),
+                            ) { Text("Edit") }
+                            TextButton(
+                                onClick = onOrganizationLogoPick,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 4.dp,
+                                    vertical = 0.dp,
+                                ),
+                            ) { Text("Replace") }
+                            TextButton(
+                                onClick = onOrganizationLogoRemove,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 4.dp,
+                                    vertical = 0.dp,
+                                ),
+                            ) { Text("Remove") }
+                        }
                     }
                 }
                 if (logoOperationError != null) {
