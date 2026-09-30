@@ -43,7 +43,7 @@ data class MatchLobbyPlayersOcrResult(
     }
 }
 
-const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 12
+const val MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION = 13
 
 fun interface MatchLobbyPlayersOcrRunner {
     suspend fun process(tournamentId: String, matchId: String): MatchLobbyPlayersOcrResult
@@ -114,12 +114,17 @@ class AndroidMatchLobbyPlayersOcrRunner @Inject constructor(
                 ?.toContribution()
                 ?.also { contribution ->
                     fingerprints[position]?.let { fingerprint ->
-                        try {
-                            cacheRepository.saveByOwner(fingerprint, contribution.slots, ownerUserId)
-                        } catch (cancellation: CancellationException) {
-                            throw cancellation
-                        } catch (_: Throwable) {
-                            // Cache persistence is an optimization and must not block OCR Review.
+                        if ((freshScreenshots[position] as? MatchLobbySlotNumberOcrScreenshotResult.Processed)
+                                ?.resolutionSource ==
+                            LobbySemanticResolutionSource.CURRENT_ANCHOR_GRID
+                        ) {
+                            try {
+                                cacheRepository.saveByOwner(fingerprint, contribution.slots, ownerUserId)
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Throwable) {
+                                // Cache persistence is an optimization and must not block OCR Review.
+                            }
                         }
                     }
                 }

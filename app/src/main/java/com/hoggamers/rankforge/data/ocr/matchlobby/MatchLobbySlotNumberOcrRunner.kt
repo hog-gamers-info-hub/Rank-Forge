@@ -114,6 +114,8 @@ sealed interface MatchLobbySlotNumberOcrScreenshotResult {
         val teamCropPreviews: MatchLobbyTeamCropPreviewResult = MatchLobbyTeamCropPreviewResult.Unavailable(
             MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE,
         ),
+        val resolutionSource: LobbySemanticResolutionSource =
+            LobbySemanticResolutionSource.CURRENT_ANCHOR_GRID,
     ) : MatchLobbySlotNumberOcrScreenshotResult {
         init {
             require(slots.map { it.visibleSlotPosition } == RosterVisibleSlotPosition.entries) {
@@ -258,11 +260,35 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
                     LobbyPanelSemanticMappingFailure.SEMANTIC_POSITION_CONFLICT ->
                         MatchLobbySlotNumberOcrUnavailableReason.SEMANTIC_POSITION_CONFLICT
                 }
-                releasePanel(panel, position)?.let { failure ->
-                    if (failure is CancellationException) throw failure
-                    return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_RELEASE_FAILED)
+                if (ppRecognition.fragments.isEmpty()) {
+                    releasePanel(panel, position)?.let { failure ->
+                        if (failure is CancellationException) throw failure
+                        return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_RELEASE_FAILED)
+                    }
+                    return unavailableOutcome(position, reason)
                 }
-                return unavailableOutcome(position, reason)
+                when (
+                    val fallback = LobbyFixedQuadrantFallbackMapper.map(
+                        panelWidth = panelBitmap.width,
+                        panelHeight = panelBitmap.height,
+                        fragments = ppRecognition.fragments,
+                    )
+                ) {
+                    is LobbyFixedQuadrantFallbackMappingResult.Unavailable -> {
+                        releasePanel(panel, position)?.let { failure ->
+                            if (failure is CancellationException) throw failure
+                            return unavailableOutcome(position, MatchLobbySlotNumberOcrUnavailableReason.PANEL_RELEASE_FAILED)
+                        }
+                        return unavailableOutcome(position, fallback.reason.toSlotNumberUnavailableReason())
+                    }
+                    is LobbyFixedQuadrantFallbackMappingResult.Available -> {
+                        createFixedQuadrantFallbackOutcome(
+                            position = position,
+                            panelImage = panel.croppedPanelImage,
+                            mapping = fallback,
+                        )
+                    }
+                }
             }
             is LobbyPanelSemanticMappingResult.Available -> {
                 val semanticPosition = mapping.screenshotPosition
@@ -300,6 +326,49 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         return resolved
     }
 
+    private fun createFixedQuadrantFallbackOutcome(
+        position: RosterScreenshotPosition,
+        panelImage: OcrPreprocessingImage,
+        mapping: LobbyFixedQuadrantFallbackMappingResult.Available,
+    ): LobbyPhysicalProcessingOutcome.FallbackCandidate {
+        val previews = mutableListOf<LobbyFixedQuadrantFallbackPreview>()
+        val unavailable = mutableListOf<MatchLobbyTeamCropPreviewOutcome.Unavailable>()
+        mapping.teams.forEach { team ->
+            try {
+                val image = teamCropPreviewFactory.create(
+                    panelImage = panelImage,
+                    crop = LobbyTeamCrop(
+                        visibleSlotPosition = team.visibleSlotPosition,
+                        // The fixed mapper deliberately keeps missing OCR evidence nullable.
+                        detectedSlotNumber = team.detectedSlotNumber ?: 0,
+                        bounds = team.bounds,
+                    ),
+                )
+                previews += LobbyFixedQuadrantFallbackPreview(
+                    visibleSlotPosition = team.visibleSlotPosition,
+                    detectedSlotNumber = team.detectedSlotNumber,
+                    image = image,
+                    playerRowPreviews = team.rowPreviews,
+                    bounds = team.bounds,
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                unavailable += MatchLobbyTeamCropPreviewOutcome.Unavailable(
+                    visibleSlotPosition = team.visibleSlotPosition,
+                    reason = MatchLobbyTeamCropPreviewUnavailableReason.BITMAP_CREATION_FAILED,
+                )
+            }
+        }
+        return LobbyPhysicalProcessingOutcome.FallbackCandidate(
+            storedPosition = position,
+            slots = mapping.slots,
+            semanticHint = mapping.semanticHint,
+            previews = previews,
+            unavailable = unavailable,
+        )
+    }
+
     private fun releasePanel(
         panel: com.hoggamers.rankforge.domain.ocr.review.RosterOcrPreparedPanel,
         position: RosterScreenshotPosition,
@@ -330,6 +399,14 @@ class AndroidMatchLobbySlotNumberOcrRunner @Inject constructor(
         reason: MatchLobbySlotNumberOcrUnavailableReason,
     ): LobbyPhysicalProcessingOutcome.Unavailable =
         LobbyPhysicalProcessingOutcome.Unavailable(position, reason)
+
+    private fun MatchLobbyTeamCropPreviewUnavailableReason.toSlotNumberUnavailableReason(): MatchLobbySlotNumberOcrUnavailableReason =
+        when (this) {
+            MatchLobbyTeamCropPreviewUnavailableReason.INVALID_TEAM_GRID_GEOMETRY,
+            MatchLobbyTeamCropPreviewUnavailableReason.INVALID_CROP_BOUNDS,
+            -> MatchLobbySlotNumberOcrUnavailableReason.INVALID_ASSET_CROP
+            else -> MatchLobbySlotNumberOcrUnavailableReason.SEMANTIC_POSITION_UNRESOLVED
+        }
 }
 
 internal fun createMatchLobbyTeamCropPreviewOutcomes(

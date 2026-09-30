@@ -54,7 +54,7 @@ import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
 class MatchLobbyPlayersOcrRunnerTest {
     @Test
     fun ppPlayerAuthorityUsesCurrentCachePipelineVersion() {
-        assertEquals(12, MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION)
+        assertEquals(13, MATCH_LOBBY_OCR_CACHE_PIPELINE_VERSION)
     }
 
     @Test
@@ -394,6 +394,81 @@ class MatchLobbyPlayersOcrRunnerTest {
         assertEquals(4, cache.saveCount)
     }
 
+    @Test
+    fun fixedQuadrantFallbackContributionIsNotPersisted() = runTest {
+        val cache = FakeCacheRepository()
+        val assets = FakeAssetRepository(mapOf(1 to asset(1)))
+        val runner = runner(
+            assets = assets,
+            cache = cache,
+            extractor = PositionTrackingExtractor(),
+            resolutionSources = mapOf(
+                RosterScreenshotPosition.ONE to LobbySemanticResolutionSource.FIXED_QUADRANT_ANCHOR,
+            ),
+        )
+
+        runner.process("tournament-1", "match-1")
+        runner.process("tournament-1", "match-1")
+
+        assertEquals(0, cache.saveCount)
+        assertTrue(cache.entries.isEmpty())
+    }
+
+    @Test
+    fun contextDependentEliminationAndPreviewSequenceContributionsAreNotPersisted() = runTest {
+        listOf(
+            LobbySemanticResolutionSource.ELIMINATION,
+            LobbySemanticResolutionSource.PREVIEW_SEQUENCE,
+        ).forEach { source ->
+            val cache = FakeCacheRepository()
+            val runner = runner(
+                assets = FakeAssetRepository(mapOf(1 to asset(1))),
+                cache = cache,
+                extractor = PositionTrackingExtractor(),
+                resolutionSources = mapOf(RosterScreenshotPosition.ONE to source),
+            )
+
+            runner.process("tournament-1", "match-1")
+
+            assertEquals(0, cache.saveCount)
+            assertTrue(cache.entries.isEmpty())
+        }
+    }
+
+    @Test
+    fun sequenceFallbackCannotLeakFromThreeScreenshotsIntoLaterTwoScreenshotRun() = runTest {
+        val assets = FakeAssetRepository((1..3).associateWith(::asset))
+        val cache = FakeCacheRepository()
+        val extractor = PositionTrackingExtractor()
+        val sequenceSources = RosterScreenshotPosition.entries.associateWith {
+            LobbySemanticResolutionSource.PREVIEW_SEQUENCE
+        }
+        val firstRunner = runner(
+            assets = assets,
+            cache = cache,
+            extractor = extractor,
+            resolutionSources = sequenceSources,
+        )
+        firstRunner.process("tournament-1", "match-1")
+        assertTrue(cache.entries.isEmpty())
+
+        assets.assets.remove(3)
+        val secondRunner = runner(
+            assets = assets,
+            cache = cache,
+            extractor = extractor,
+            semanticSlotNumbers = mapOf(
+                RosterScreenshotPosition.ONE to listOf(1, 2, 3, 4),
+                RosterScreenshotPosition.TWO to listOf(5, 6, 7, 8),
+            ),
+            resolutionSources = sequenceSources,
+        )
+        val result = secondRunner.process("tournament-1", "match-1")
+
+        assertEquals(null, result.slots[8].players[0].playerName)
+        assertEquals(0, cache.saveCount)
+    }
+
     private fun runner(
         assets: FakeAssetRepository,
         cache: FakeCacheRepository,
@@ -403,12 +478,17 @@ class MatchLobbyPlayersOcrRunnerTest {
                 position.tournamentSlotRange.toList()
             },
         unavailableVisibleSlots: Set<RosterVisibleSlotPosition> = emptySet(),
+        resolutionSources: Map<RosterScreenshotPosition, LobbySemanticResolutionSource> = emptyMap(),
     ): AndroidMatchLobbyPlayersOcrRunner {
         extractor.semanticSlotNumbers = semanticSlotNumbers
         return AndroidMatchLobbyPlayersOcrRunner(
             assetRepository = assets,
             cacheRepository = cache,
-            slotNumberOcrRunner = FakeSlotNumberOcrRunner(semanticSlotNumbers, unavailableVisibleSlots),
+            slotNumberOcrRunner = FakeSlotNumberOcrRunner(
+                semanticSlotNumbers,
+                unavailableVisibleSlots,
+                resolutionSources,
+            ),
             screenshotOwnerProvider = ownerProvider,
         )
     }
@@ -421,6 +501,7 @@ class MatchLobbyPlayersOcrRunnerTest {
         private val semanticSlotNumbers: Map<RosterScreenshotPosition, List<Int?>> =
             RosterScreenshotPosition.entries.associateWith { it.tournamentSlotRange.toList() },
         private val unavailableVisibleSlots: Set<RosterVisibleSlotPosition> = emptySet(),
+        private val resolutionSources: Map<RosterScreenshotPosition, LobbySemanticResolutionSource> = emptyMap(),
     ) : MatchLobbySlotNumberOcrRunner {
         var processCount = 0
         override suspend fun process(tournamentId: String, matchId: String): MatchLobbySlotNumberOcrResult =
@@ -472,6 +553,8 @@ class MatchLobbyPlayersOcrRunnerTest {
                                     )
                                 },
                             ),
+                            resolutionSource = resolutionSources[position]
+                                ?: LobbySemanticResolutionSource.CURRENT_ANCHOR_GRID,
                         )
                     }
                 },
