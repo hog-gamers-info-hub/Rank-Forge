@@ -129,10 +129,26 @@ class LobbyOcrAnchorResolver {
         val strongestAssignments = validAssignments.filter {
             it.selectedCount == maximumObserved
         }
+        val validStrongAssignments = validAssignments.filter { assignment ->
+            assignment.selectedCount >= STRONG_EVIDENCE_MINIMUM_ANCHORS &&
+                assignment.hasValidStrongEvidenceGeometry() &&
+                assignment.reconstructsInsideImage(
+                    screenshotIndex = screenshotIndex,
+                    imageDimensions = imageDimensions,
+                )
+        }
 
         return when {
-            maximumObserved >= STRONG_EVIDENCE_MINIMUM_ANCHORS ->
-                strongestAssignments.bestByExistingRanking()
+            maximumObserved >= STRONG_EVIDENCE_MINIMUM_ANCHORS -> {
+                val maximumValidStrong = validStrongAssignments.maxOfOrNull { it.selectedCount }
+                if (maximumValidStrong == null) {
+                    Assignment(List(expectedSlots.size) { null })
+                } else {
+                    validStrongAssignments
+                        .filter { it.selectedCount == maximumValidStrong }
+                        .bestByExistingRanking()
+                }
+            }
 
             maximumObserved == TWO_ANCHOR_COUNT ->
                 resolveUniqueTwoAnchorAssignment(
@@ -147,6 +163,112 @@ class LobbyOcrAnchorResolver {
         }
     }
 
+    private fun Assignment.hasValidStrongEvidenceGeometry(): Boolean {
+        val topLeft = anchors[ROLE_INDEX_TOP_LEFT]
+        val topRight = anchors[ROLE_INDEX_TOP_RIGHT]
+        val bottomLeft = anchors[ROLE_INDEX_BOTTOM_LEFT]
+        val bottomRight = anchors[ROLE_INDEX_BOTTOM_RIGHT]
+
+        return when (selectedCount) {
+            FOUR_ANCHOR_COUNT -> {
+                val topLeftAnchor = requireNotNull(topLeft)
+                val topRightAnchor = requireNotNull(topRight)
+                val bottomLeftAnchor = requireNotNull(bottomLeft)
+                val bottomRightAnchor = requireNotNull(bottomRight)
+                val topHorizontalPitch = topRightAnchor.centerX - topLeftAnchor.centerX
+                val bottomHorizontalPitch = bottomRightAnchor.centerX - bottomLeftAnchor.centerX
+                val leftVerticalPitch = bottomLeftAnchor.centerY - topLeftAnchor.centerY
+                val rightVerticalPitch = bottomRightAnchor.centerY - topRightAnchor.centerY
+                if (listOf(
+                        topHorizontalPitch,
+                        bottomHorizontalPitch,
+                        leftVerticalPitch,
+                        rightVerticalPitch,
+                    ).any { pitch -> !pitch.isFinite() || pitch <= 0.0 }
+                ) {
+                    return false
+                }
+                strongEvidenceGeometry(
+                    horizontalPitch = (topHorizontalPitch + bottomHorizontalPitch) / 2.0,
+                    verticalPitch = (leftVerticalPitch + rightVerticalPitch) / 2.0,
+                    rowErrors = listOf(
+                        abs(topLeftAnchor.centerY - topRightAnchor.centerY),
+                        abs(bottomLeftAnchor.centerY - bottomRightAnchor.centerY),
+                    ),
+                    columnErrors = listOf(
+                        abs(topLeftAnchor.centerX - bottomLeftAnchor.centerX),
+                        abs(topRightAnchor.centerX - bottomRightAnchor.centerX),
+                    ),
+                )
+            }
+
+            THREE_ANCHOR_COUNT -> when {
+                topLeft == null -> strongEvidenceGeometry(
+                    horizontalPitch = requireNotNull(bottomRight).centerX - requireNotNull(bottomLeft).centerX,
+                    verticalPitch = requireNotNull(bottomRight).centerY - requireNotNull(topRight).centerY,
+                    rowErrors = listOf(
+                        abs(requireNotNull(bottomLeft).centerY - requireNotNull(bottomRight).centerY),
+                    ),
+                    columnErrors = listOf(
+                        abs(requireNotNull(topRight).centerX - requireNotNull(bottomRight).centerX),
+                    ),
+                )
+
+                topRight == null -> strongEvidenceGeometry(
+                    horizontalPitch = requireNotNull(bottomRight).centerX - requireNotNull(bottomLeft).centerX,
+                    verticalPitch = requireNotNull(bottomLeft).centerY - requireNotNull(topLeft).centerY,
+                    rowErrors = listOf(
+                        abs(requireNotNull(bottomLeft).centerY - requireNotNull(bottomRight).centerY),
+                    ),
+                    columnErrors = listOf(
+                        abs(requireNotNull(topLeft).centerX - requireNotNull(bottomLeft).centerX),
+                    ),
+                )
+
+                bottomLeft == null -> strongEvidenceGeometry(
+                    horizontalPitch = requireNotNull(topRight).centerX - requireNotNull(topLeft).centerX,
+                    verticalPitch = requireNotNull(bottomRight).centerY - requireNotNull(topRight).centerY,
+                    rowErrors = listOf(
+                        abs(requireNotNull(topLeft).centerY - requireNotNull(topRight).centerY),
+                    ),
+                    columnErrors = listOf(
+                        abs(requireNotNull(topRight).centerX - requireNotNull(bottomRight).centerX),
+                    ),
+                )
+
+                bottomRight == null -> strongEvidenceGeometry(
+                    horizontalPitch = requireNotNull(topRight).centerX - requireNotNull(topLeft).centerX,
+                    verticalPitch = requireNotNull(bottomLeft).centerY - requireNotNull(topLeft).centerY,
+                    rowErrors = listOf(
+                        abs(requireNotNull(topLeft).centerY - requireNotNull(topRight).centerY),
+                    ),
+                    columnErrors = listOf(
+                        abs(requireNotNull(topLeft).centerX - requireNotNull(bottomLeft).centerX),
+                    ),
+                )
+
+                else -> false
+            }
+
+            else -> false
+        }
+    }
+
+    private fun strongEvidenceGeometry(
+        horizontalPitch: Double,
+        verticalPitch: Double,
+        rowErrors: List<Double>,
+        columnErrors: List<Double>,
+    ): Boolean {
+        if (!horizontalPitch.isFinite() || horizontalPitch <= 0.0) return false
+        if (!verticalPitch.isFinite() || verticalPitch <= 0.0) return false
+        return rowErrors.all { error ->
+            error.isFinite() && error <= verticalPitch * STRONG_EVIDENCE_MAX_ALIGNMENT_RATIO
+        } && columnErrors.all { error ->
+            error.isFinite() && error <= horizontalPitch * STRONG_EVIDENCE_MAX_ALIGNMENT_RATIO
+        }
+    }
+
     private fun resolveUniqueTwoAnchorAssignment(
         screenshotIndex: Int,
         assignments: List<Assignment>,
@@ -155,6 +277,7 @@ class LobbyOcrAnchorResolver {
     ): Assignment {
         val usablePairs = assignments.filter { assignment ->
             assignment.selectedCount == TWO_ANCHOR_COUNT &&
+                assignment.hasValidTwoAnchorGeometry(imageDimensions) &&
                 assignment.reconstructsInsideImage(
                     screenshotIndex = screenshotIndex,
                     imageDimensions = imageDimensions,
@@ -163,6 +286,109 @@ class LobbyOcrAnchorResolver {
 
         return usablePairs.singleOrNull()
             ?: Assignment(List(assignmentSize) { null })
+    }
+
+    private fun Assignment.hasValidTwoAnchorGeometry(
+        imageDimensions: OcrImageDimensions,
+    ): Boolean {
+        if (selectedCount != TWO_ANCHOR_COUNT) return false
+
+        val topLeft = anchors[ROLE_INDEX_TOP_LEFT]
+        val topRight = anchors[ROLE_INDEX_TOP_RIGHT]
+        val bottomLeft = anchors[ROLE_INDEX_BOTTOM_LEFT]
+        val bottomRight = anchors[ROLE_INDEX_BOTTOM_RIGHT]
+
+        return when {
+            topLeft != null && topRight != null ->
+                horizontalPairIsValid(topLeft, topRight, imageDimensions)
+
+            bottomLeft != null && bottomRight != null ->
+                horizontalPairIsValid(bottomLeft, bottomRight, imageDimensions)
+
+            topLeft != null && bottomLeft != null ->
+                verticalPairIsValid(topLeft, bottomLeft, imageDimensions)
+
+            topRight != null && bottomRight != null ->
+                verticalPairIsValid(topRight, bottomRight, imageDimensions)
+
+            topLeft != null && bottomRight != null -> {
+                if (topLeft.centerX >= bottomRight.centerX ||
+                    topLeft.centerY >= bottomRight.centerY
+                ) {
+                    false
+                } else {
+                    diagonalPairIsValid(
+                        horizontalSeparation = bottomRight.centerX - topLeft.centerX,
+                        verticalSeparation = bottomRight.centerY - topLeft.centerY,
+                        imageDimensions = imageDimensions,
+                    )
+                }
+            }
+
+            topRight != null && bottomLeft != null -> {
+                if (bottomLeft.centerX >= topRight.centerX ||
+                    topRight.centerY >= bottomLeft.centerY
+                ) {
+                    false
+                } else {
+                    diagonalPairIsValid(
+                        horizontalSeparation = topRight.centerX - bottomLeft.centerX,
+                        verticalSeparation = bottomLeft.centerY - topRight.centerY,
+                        imageDimensions = imageDimensions,
+                    )
+                }
+            }
+
+            else -> false
+        }
+    }
+
+    private fun horizontalPairIsValid(
+        left: Candidate,
+        right: Candidate,
+        imageDimensions: OcrImageDimensions,
+    ): Boolean {
+        val horizontalSeparation = right.centerX - left.centerX
+        val verticalDifference = abs(left.centerY - right.centerY)
+        return horizontalSeparation.isFinite() &&
+            verticalDifference.isFinite() &&
+            horizontalSeparation >= imageDimensions.width * TWO_ANCHOR_MIN_HORIZONTAL_SEPARATION_RATIO &&
+            verticalDifference <= TWO_ANCHOR_ROW_ALIGNMENT_TOLERANCE_PX
+    }
+
+    private fun verticalPairIsValid(
+        top: Candidate,
+        bottom: Candidate,
+        imageDimensions: OcrImageDimensions,
+    ): Boolean {
+        val verticalSeparation = bottom.centerY - top.centerY
+        val horizontalDifference = abs(top.centerX - bottom.centerX)
+        return verticalSeparation.isFinite() &&
+            horizontalDifference.isFinite() &&
+            verticalSeparation >= imageDimensions.height * TWO_ANCHOR_MIN_VERTICAL_SEPARATION_RATIO &&
+            horizontalDifference <= TWO_ANCHOR_COLUMN_ALIGNMENT_TOLERANCE_PX
+    }
+
+    private fun diagonalPairIsValid(
+        horizontalSeparation: Double,
+        verticalSeparation: Double,
+        imageDimensions: OcrImageDimensions,
+    ): Boolean {
+        if (!horizontalSeparation.isFinite() || horizontalSeparation <= 0.0) return false
+        if (!verticalSeparation.isFinite() || verticalSeparation <= 0.0) return false
+        if (horizontalSeparation < imageDimensions.width * TWO_ANCHOR_MIN_HORIZONTAL_SEPARATION_RATIO) {
+            return false
+        }
+        if (verticalSeparation < imageDimensions.height * TWO_ANCHOR_MIN_VERTICAL_SEPARATION_RATIO) {
+            return false
+        }
+
+        val expectedRatio = LobbyGridGeometryCalibrationProfiles
+            .InitialObservedPitchRatio
+            .columnToRowPitchRatio
+        val observedRatio = horizontalSeparation / verticalSeparation
+        val relativeRatioError = abs(observedRatio - expectedRatio) / expectedRatio
+        return relativeRatioError <= TWO_ANCHOR_DIAGONAL_RATIO_TOLERANCE
     }
 
     private fun Assignment.reconstructsInsideImage(
@@ -366,7 +592,20 @@ class LobbyOcrAnchorResolver {
 
     private companion object {
         const val TWO_ANCHOR_COUNT = 2
+        const val TWO_ANCHOR_MIN_HORIZONTAL_SEPARATION_RATIO = 0.20
+        const val TWO_ANCHOR_MIN_VERTICAL_SEPARATION_RATIO = 0.20
+        const val TWO_ANCHOR_ROW_ALIGNMENT_TOLERANCE_PX = 10.0
+        const val TWO_ANCHOR_COLUMN_ALIGNMENT_TOLERANCE_PX = 10.0
+        const val TWO_ANCHOR_DIAGONAL_RATIO_TOLERANCE = 0.15
+        const val THREE_ANCHOR_COUNT = 3
+        const val FOUR_ANCHOR_COUNT = 4
         const val STRONG_EVIDENCE_MINIMUM_ANCHORS = 3
+        const val STRONG_EVIDENCE_MAX_ALIGNMENT_RATIO = 0.10
+
+        const val ROLE_INDEX_TOP_LEFT = 0
+        const val ROLE_INDEX_TOP_RIGHT = 1
+        const val ROLE_INDEX_BOTTOM_LEFT = 2
+        const val ROLE_INDEX_BOTTOM_RIGHT = 3
 
         val candidateComparator = compareBy<Candidate> { it.hierarchyPriority }
             .thenBy { it.boundingBox.left }
