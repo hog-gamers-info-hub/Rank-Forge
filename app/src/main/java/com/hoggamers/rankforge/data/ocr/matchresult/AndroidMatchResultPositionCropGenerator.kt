@@ -1,11 +1,9 @@
 package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
-import android.util.Log
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
-import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
@@ -76,7 +74,6 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
 
     suspend fun observe(
         source: Bitmap,
-        role: MatchResultScreenshotRole? = null,
     ): MatchResultPositionCropObservationResult = withContext(Dispatchers.Default) {
         if (!source.isUsable()) {
             return@withContext MatchResultPositionCropObservationResult.InvalidSource
@@ -99,11 +96,7 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
         }
 
         val recognizedText = try {
-            recognizer.process(inputImage).awaitPositionCropText().also { text ->
-                if (BuildConfig.DEBUG) {
-                    text.logRawMlKit(role)
-                }
-            }
+            recognizer.process(inputImage).awaitPositionCropText()
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -161,7 +154,7 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
         role: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean = false,
     ): MatchResultPositionCropGenerationResult {
-        return when (val observation = observe(source, role)) {
+        return when (val observation = observe(source)) {
             MatchResultPositionCropObservationResult.InvalidSource ->
                 MatchResultPositionCropGenerationResult.InvalidSource
             MatchResultPositionCropObservationResult.OcrFailed ->
@@ -237,46 +230,6 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
 
     private fun Bitmap.isUsable(): Boolean = !isRecycled && width > 0 && height > 0
 
-}
-
-private fun Text.logRawMlKit(role: MatchResultScreenshotRole?) {
-    if (!BuildConfig.DEBUG) return
-    val roleName = role?.name ?: "UNKNOWN"
-    debugLog("===== ML KIT RAW START ===== screenshotRole=$roleName")
-    var observationIndex = 0
-    textBlocks.forEachIndexed { blockIndex, block ->
-        block.lines.forEachIndexed { lineIndex, line ->
-            line.elements.forEachIndexed { elementIndex, element ->
-                val bounds = element.boundingBox
-                val geometry = bounds?.let {
-                    val centerX = (it.left + it.right) / 2.0
-                    val centerY = (it.top + it.bottom) / 2.0
-                    "left=${it.left} top=${it.top} right=${it.right} bottom=${it.bottom} " +
-                        "centerX=$centerX centerY=$centerY " +
-                        "width=${it.width()} height=${it.height()}"
-                } ?: "bounds=null"
-                debugLog(
-                    "observation=$observationIndex block=$blockIndex line=$lineIndex " +
-                        "element=$elementIndex text=\"${element.text.escapeForDebugLog()}\" $geometry",
-                )
-                observationIndex += 1
-            }
-        }
-    }
-    debugLog("===== ML KIT RAW END ===== screenshotRole=$roleName count=$observationIndex")
-}
-
-private fun String.escapeForDebugLog(): String = replace("\\", "\\\\")
-    .replace("\r", "\\r")
-    .replace("\n", "\\n")
-    .replace("\"", "\\\"")
-
-private fun debugLog(message: String) {
-    try {
-        Log.d("RESULT_MLKIT_RAW", message)
-    } catch (_: RuntimeException) {
-        // Diagnostics must never affect OCR state when Android Log is unavailable.
-    }
 }
 
 /**
