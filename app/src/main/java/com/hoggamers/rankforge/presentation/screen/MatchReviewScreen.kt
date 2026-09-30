@@ -1503,7 +1503,7 @@ private fun MatchReviewContent(
     }
     val compactAddTeamEnabled = uiState.status != MatchStatus.FINALIZED &&
         (ocrUiState as? MatchOcrReviewUiState.Ready)
-            ?.nextManualResultPositionOrNull() != null
+            ?.nextAddTeamPositionOrNull() != null
     val hasCombinedPositionCropPreviews = uiState.resultScreenshots.any { slot ->
         slot.hasSelection() && transientResultPositionCropPreviews[slot.role]
             ?.sortedCrops()

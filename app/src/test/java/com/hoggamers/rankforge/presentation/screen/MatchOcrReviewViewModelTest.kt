@@ -7,6 +7,7 @@ import com.hoggamers.rankforge.data.ocr.MatchOcrCacheAvailability
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReadResult
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.data.local.LobbyCalculatedEvidence
 import com.hoggamers.rankforge.data.local.LobbyTeamCalculatedEvidence
 import com.hoggamers.rankforge.data.local.ResultCalculatedEvidence
@@ -1376,6 +1377,108 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun manualCalculationWithAllRowsActiveHasNoAddTeamCandidate() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = manualReadyState())
+
+        val before = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertNull(before.nextAddTeamPositionOrNull())
+
+        viewModel.onCompactAddTeam()
+
+        assertEquals(before, viewModel.uiState.value)
+    }
+
+    @Test
+    fun manualCalculationWithoutCorrectionDraftCannotAddTeam() = runTest(dispatcher) {
+        val viewModel = viewModelWith(
+            repository = createRepository(),
+            initialUiState = manualReadyState(correctionDraft = null),
+        )
+
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertNull(ready.nextAddTeamPositionOrNull())
+        assertNull(ready.correctionDraft)
+    }
+
+    @Test
+    fun manualCalculationRestoresDeletedLastPositionWithoutManualReveal() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = manualReadyState())
+
+        viewModel.onExcludeRow(11)
+        var ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(12, ready.nextAddTeamPositionOrNull())
+        assertTrue(ready.correctionDraft!!.rows[11].isExcluded)
+
+        viewModel.onCompactAddTeam()
+
+        ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val restored = ready.correctionDraft!!.rows[11]
+        assertEquals("12", restored.placementDraftValue)
+        assertEquals("", restored.killsDraftValue)
+        assertEquals("", restored.assignedTeamSlotDraftValue)
+        assertFalse(restored.isExcluded)
+        assertTrue(ready.manuallyRevealedPositions.isEmpty())
+        assertNull(ready.nextAddTeamPositionOrNull())
+    }
+
+    @Test
+    fun manualCalculationRestoresDeletedPositionWithFreshSeededValues() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = manualReadyState())
+
+        viewModel.onPlacementChanged(4, "99")
+        viewModel.onKillsChanged(4, "7")
+        viewModel.onAssignedTeamSlotChanged(4, "6")
+        viewModel.onExcludeRow(4)
+        viewModel.onCompactAddTeam()
+
+        val restored = (viewModel.uiState.value as MatchOcrReviewUiState.Ready)
+            .correctionDraft!!
+            .rows[4]
+        assertEquals("5", restored.placementDraftValue)
+        assertEquals("", restored.killsDraftValue)
+        assertEquals("", restored.assignedTeamSlotDraftValue)
+        assertFalse(restored.isExcluded)
+    }
+
+    @Test
+    fun manualCalculationRestoresDeletedPositionsInStructuralOrder() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = manualReadyState())
+
+        viewModel.onExcludeRow(7)
+        viewModel.onExcludeRow(2)
+        viewModel.onExcludeRow(10)
+
+        assertEquals(3, (viewModel.uiState.value as MatchOcrReviewUiState.Ready).nextAddTeamPositionOrNull())
+        viewModel.onCompactAddTeam()
+        assertEquals(8, (viewModel.uiState.value as MatchOcrReviewUiState.Ready).nextAddTeamPositionOrNull())
+        viewModel.onCompactAddTeam()
+        assertEquals(11, (viewModel.uiState.value as MatchOcrReviewUiState.Ready).nextAddTeamPositionOrNull())
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertNull(ready.nextAddTeamPositionOrNull())
+        assertTrue(ready.manuallyRevealedPositions.isEmpty())
+        assertTrue(ready.correctionDraft!!.rows.none { it.isExcluded })
+    }
+
+    @Test
+    fun manualCalculationCanRepeatDeleteAndRestoreAtCapacity() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = manualReadyState())
+
+        repeat(3) {
+            viewModel.onExcludeRow(4)
+            assertEquals(5, (viewModel.uiState.value as MatchOcrReviewUiState.Ready).nextAddTeamPositionOrNull())
+            viewModel.onCompactAddTeam()
+        }
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertNull(ready.nextAddTeamPositionOrNull())
+        assertFalse(ready.correctionDraft!!.rows[4].isExcluded)
+    }
+
+    @Test
     fun onExcludeRowDoesNotFinalizePersistOrCloudSync() = runTest(dispatcher) {
         val repository = createRepository()
         val beforeMatch = repository.observeMatchById(MATCH_ID).first()
@@ -2064,6 +2167,31 @@ class MatchOcrReviewViewModelTest {
             hasUnavailableEvidence = true,
             correctionDraft = draft,
             matchResultOcrPreview = preview,
+        )
+    }
+
+    private fun manualReadyState(
+        correctionDraft: MatchOcrReviewCorrectionDraft? = seededManualCorrectionDraft(),
+    ): MatchOcrReviewUiState.Ready = readyState(
+        correctionDraft = correctionDraft,
+        rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows(),
+    ).copy(
+        calculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.MANUAL,
+    )
+
+    private fun seededManualCorrectionDraft(): MatchOcrReviewCorrectionDraft {
+        val rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows()
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        return MatchOcrReviewCorrectionDraftReducer.validate(
+            initialDraft.copy(
+                rows = initialDraft.rows.map { row ->
+                    val expectedPlacement = (row.rowIndex + 1).toString()
+                    row.copy(
+                        originalPlacementValue = expectedPlacement,
+                        placementDraftValue = expectedPlacement,
+                    )
+                },
+            ),
         )
     }
 

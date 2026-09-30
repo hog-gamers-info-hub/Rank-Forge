@@ -368,6 +368,24 @@ internal fun MatchOcrReviewUiState.Ready.nextManualResultPositionOrNull(): Int? 
     return nextPosition.takeIf { it in 1..12 }
 }
 
+internal fun MatchOcrReviewUiState.Ready.nextAddTeamPositionOrNull(): Int? =
+    when (calculatedEvidenceOrigin) {
+        MatchCalculatedEvidenceOrigin.AUTOMATIC -> nextManualResultPositionOrNull()
+        MatchCalculatedEvidenceOrigin.MANUAL -> {
+            val validRowIndexes = rows
+                .asSequence()
+                .map(MatchOcrReviewRowUiState::rowIndex)
+                .filter { it in 0 until 12 }
+                .toSet()
+            correctionDraft
+                ?.rows
+                ?.asSequence()
+                ?.filter { row -> row.isExcluded && row.rowIndex in validRowIndexes }
+                ?.map { row -> row.rowIndex + 1 }
+                ?.minOrNull()
+        }
+    }
+
 private fun MatchResultOcrPreviewRowUiState.hasRealOcrContent(): Boolean =
     slots.any { slot ->
         slot.playerOcrText.isNotBlank() || slot.killOcrText.isNotBlank()
