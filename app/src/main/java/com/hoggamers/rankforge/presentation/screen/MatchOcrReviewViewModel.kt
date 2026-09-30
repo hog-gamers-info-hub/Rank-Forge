@@ -645,7 +645,15 @@ class MatchOcrReviewViewModel @Inject constructor(
                 state
             } else {
                 state.nextManualResultPositionOrNull()?.let { position ->
-                    state.copy(manuallyRevealedPositions = state.manuallyRevealedPositions + position)
+                    val currentDraft = state.correctionDraft
+                        ?: MatchOcrReviewCorrectionDraftReducer.createInitialDraft(state.rows)
+                    state.copy(
+                        manuallyRevealedPositions = state.manuallyRevealedPositions + position,
+                        correctionDraft = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(
+                            draft = currentDraft,
+                            rowIndex = position - 1,
+                        ),
+                    )
                 } ?: state
             }
         }
@@ -655,14 +663,23 @@ class MatchOcrReviewViewModel @Inject constructor(
         _uiState.update { state ->
             if (state is MatchOcrReviewUiState.Ready) {
                 if (state.finalization.isFinalized) return@update state
+                val position = rowIndex + 1
+                val wasManuallyRevealed = position in state.manuallyRevealedPositions
                 val currentDraft = state.correctionDraft
                     ?: MatchOcrReviewCorrectionDraftReducer.createInitialDraft(state.rows)
                 state.copy(
-                    manuallyRevealedPositions = state.manuallyRevealedPositions - (rowIndex + 1),
-                    correctionDraft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
-                        draft = currentDraft,
-                        rowIndex = rowIndex,
-                    ),
+                    manuallyRevealedPositions = state.manuallyRevealedPositions - position,
+                    correctionDraft = if (wasManuallyRevealed) {
+                        MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(
+                            draft = currentDraft,
+                            rowIndex = rowIndex,
+                        )
+                    } else {
+                        MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
+                            draft = currentDraft,
+                            rowIndex = rowIndex,
+                        )
+                    },
                     finalization = state.finalization.copy(
                         showWarningConfirmation = false,
                         error = null,

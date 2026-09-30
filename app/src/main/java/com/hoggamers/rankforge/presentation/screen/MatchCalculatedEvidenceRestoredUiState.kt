@@ -21,6 +21,22 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
             teamNamesBySlot = teamNamesBySlot,
         )
     }
+    val positionsByNumber = positions.associateBy { it.position }
+    val restoredManualPositions = result.manuallyAddedPositions
+        .asSequence()
+        .filter { it in 1..12 }
+        .distinct()
+        .filter { it in positionsByNumber }
+        .filterNot { it in excludedSourcePositions }
+        .filter { position ->
+            val savedPosition = positionsByNumber.getValue(position)
+            savedPosition.sourceScreenshotRole == null &&
+                savedPosition.cropLeft == null &&
+                savedPosition.cropTop == null &&
+                savedPosition.cropRight == null &&
+                savedPosition.cropBottom == null
+        }
+        .toSet()
     val restoredTeamNames = teamNamesBySlot + positions.mapNotNull { position ->
         val slot = position.slotNumber ?: return@mapNotNull null
         val name = position.teamName?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -29,20 +45,41 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
     val previewRows = positions
         .filter { it.hasRestorableGeometry() }
         .map { it.toRestoredPreviewRow() }
-    val reviewRows = positions.map { it.toRestoredReviewRow() }
+    val manualFallbackRowsByPosition = MatchResultOcrPreviewUiStateMapper.manualFallbackRows()
+        .associateBy { it.rowIndex + 1 }
+    val reviewRows = positions.map { position ->
+        if (position.position in restoredManualPositions) {
+            manualFallbackRowsByPosition.getValue(position.position)
+        } else {
+            position.toRestoredReviewRow()
+        }
+    }
     val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(reviewRows)
     val correctionDraft = MatchOcrReviewCorrectionDraftReducer.validate(
         initialDraft.copy(
             rows = initialDraft.rows.map { draft ->
+                val positionNumber = draft.rowIndex + 1
+                val savedPosition = positionsByNumber.getValue(positionNumber)
                 val row = reviewRows.first { it.rowIndex == draft.rowIndex }
+                val isRestoredManual = positionNumber in restoredManualPositions
                 draft.copy(
-                    placementDraftValue = row.detectedPlacementDisplayValue,
-                    killsDraftValue = if (draft.playerKillDrafts.isNotEmpty()) {
+                    placementDraftValue = if (isRestoredManual) {
+                        savedPosition.placement?.toString().orEmpty()
+                    } else {
+                        row.detectedPlacementDisplayValue
+                    },
+                    killsDraftValue = if (isRestoredManual) {
+                        savedPosition.totalKills?.toString().orEmpty()
+                    } else if (draft.playerKillDrafts.isNotEmpty()) {
                         draft.killsDraftValue
                     } else {
                         row.detectedKillDisplayValue
                     },
-                    assignedTeamSlotDraftValue = row.suggestedTeamSlotDisplayValue,
+                    assignedTeamSlotDraftValue = if (isRestoredManual) {
+                        savedPosition.slotNumber?.toString().orEmpty()
+                    } else {
+                        row.suggestedTeamSlotDisplayValue
+                    },
                     isExcluded = draft.rowIndex + 1 in excludedSourcePositions,
                 )
             },
@@ -78,6 +115,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         teamNamesBySlot = restoredTeamNames,
         evidenceSource = MatchOcrReviewEvidenceSource.RESTORED_CALCULATED,
         calculatedEvidenceOrigin = result.calculationOrigin,
+        manuallyRevealedPositions = restoredManualPositions,
     )
 }
 

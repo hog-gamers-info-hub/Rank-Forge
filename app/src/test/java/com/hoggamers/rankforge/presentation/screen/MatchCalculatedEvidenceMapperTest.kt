@@ -32,6 +32,63 @@ import org.junit.Test
 
 class MatchCalculatedEvidenceMapperTest {
     @Test
+    fun mapsGeometrylessManuallyRevealedPositionsIntoPersistedMetadata() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val ocrState = sourceOcrState
+            .withVisiblePositionCrops(1..11)
+            .copy(manuallyRevealedPositions = setOf(12))
+
+        val evidence = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+
+        assertEquals(listOf(12), evidence.result.manuallyAddedPositions)
+    }
+
+    @Test
+    fun mapsNoManualPositionsAsEmptyMetadata() {
+        val (reviewState, ocrState) = mapperInput()
+
+        val evidence = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+
+        assertEquals(emptyList<Int>(), evidence.result.manuallyAddedPositions)
+    }
+
+    @Test
+    fun screenshotPresenceWinsOverManuallyRevealedMetadata() {
+        val (reviewState, ocrState) = mapperInput()
+        val evidence = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(
+                reviewState,
+                ocrState.copy(manuallyRevealedPositions = setOf(12)),
+            ),
+        )
+
+        assertEquals(emptyList<Int>(), evidence.result.manuallyAddedPositions)
+    }
+
+    @Test
+    fun acceptedCorrectionsSynchronizeManualPositionMetadata() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val evidence = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, sourceOcrState))
+        val manualOcrState = sourceOcrState
+            .withVisiblePositionCrops(1..11)
+            .copy(manuallyRevealedPositions = setOf(12))
+
+        val restoredManual = MatchCalculatedEvidenceMapper.applyAcceptedResultCorrections(
+            evidence = evidence,
+            reviewState = reviewState,
+            ocrState = manualOcrState,
+        )
+        assertEquals(listOf(12), restoredManual.result.manuallyAddedPositions)
+
+        val deletedManual = MatchCalculatedEvidenceMapper.applyAcceptedResultCorrections(
+            evidence = restoredManual,
+            reviewState = reviewState,
+            ocrState = manualOcrState.copy(manuallyRevealedPositions = emptySet()),
+        )
+        assertEquals(emptyList<Int>(), deletedManual.result.manuallyAddedPositions)
+    }
+
+    @Test
     fun mapsManualCalculationOriginIntoPersistedResultEvidence() {
         val (reviewState, ocrState) = mapperInput()
 
@@ -735,6 +792,30 @@ class MatchCalculatedEvidenceMapperTest {
                             hasDetectedPositionAnchor = hasDetectedPositionAnchor,
                         ),
                     ),
+                ),
+            ),
+        )
+    }
+
+    private fun MatchOcrReviewUiState.Ready.withVisiblePositionCrops(
+        positions: IntRange,
+    ): MatchOcrReviewUiState.Ready {
+        val role = MatchResultScreenshotRole.MATCH_RESULT_UPPER
+        return copy(
+            matchResultOcrPreview = MatchResultOcrPreviewUiState.Ready(
+                roles = listOf(role),
+                rows = emptyList(),
+                ignoredLowerRows = emptyList(),
+                manualReviewRows = emptyList(),
+                authoritativePositionCropsByRole = mapOf(
+                    role to positions.map { position ->
+                        MatchResultPositionCrop(
+                            position = position,
+                            column = MatchResultPositionColumn.LEFT,
+                            bounds = OcrPixelCropRect(0, 0, 1, 1),
+                            hasDetectedPositionAnchor = true,
+                        )
+                    },
                 ),
             ),
         )

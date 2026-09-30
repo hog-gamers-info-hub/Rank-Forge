@@ -265,6 +265,36 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun restoredManualPositionKeepsIdentityAcrossDeleteAndAdd() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(createFinalizeUseCase(InMemoryTournamentRepository()))
+
+        viewModel.restoreCalculatedEvidence(
+            tournamentId = TOURNAMENT_ID,
+            matchId = MATCH_ID,
+            evidence = calculatedEvidenceWithManualPosition12(),
+        )
+        advanceUntilIdle()
+
+        var ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(setOf(12), ready.manuallyRevealedPositions)
+
+        viewModel.onExcludeRow(11)
+        ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(ready.manuallyRevealedPositions.isEmpty())
+        assertFalse(ready.correctionDraft!!.rows[11].isExcluded)
+
+        viewModel.onCompactAddTeam()
+        ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val manualDraft = ready.correctionDraft!!.rows[11]
+        assertEquals(setOf(12), ready.manuallyRevealedPositions)
+        assertEquals("", manualDraft.placementDraftValue)
+        assertEquals("", manualDraft.killsDraftValue)
+        assertEquals("", manualDraft.assignedTeamSlotDraftValue)
+        assertFalse(manualDraft.isExcluded)
+        assertTrue(manualDraft.playerKillDrafts.isEmpty())
+    }
+
+    @Test
     fun fullyAbsentFreshPreviewRowIsEffectivelyExcluded() {
         val preview = MatchResultOcrPreviewUiState.Ready(
             roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
@@ -1249,6 +1279,12 @@ class MatchOcrReviewViewModelTest {
 
         val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
         assertEquals(setOf(7), ready.manuallyRevealedPositions)
+        val manualDraft = ready.correctionDraft!!.rows[6]
+        assertEquals("", manualDraft.placementDraftValue)
+        assertEquals("", manualDraft.killsDraftValue)
+        assertEquals("", manualDraft.assignedTeamSlotDraftValue)
+        assertFalse(manualDraft.isExcluded)
+        assertTrue(manualDraft.playerKillDrafts.isEmpty())
     }
 
     @Test
@@ -1263,7 +1299,7 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun deletingManuallyRevealedPositionHidesItAndDoesNotResurrectIt() = runTest(dispatcher) {
+    fun deletingManuallyRevealedPositionRemovesItWithoutExcludingIt() = runTest(dispatcher) {
         val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..6))
 
         viewModel.onCompactAddTeam()
@@ -1271,8 +1307,44 @@ class MatchOcrReviewViewModelTest {
         viewModel.onCompactAddTeam()
 
         val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
-        assertEquals(setOf(8), ready.manuallyRevealedPositions)
-        assertTrue(ready.correctionDraft!!.rows[6].isExcluded)
+        assertEquals(setOf(7), ready.manuallyRevealedPositions)
+        assertFalse(ready.correctionDraft!!.rows[6].isExcluded)
+    }
+
+    @Test
+    fun deletingAndReaddingManualPositionClearsTemporaryDraftValues() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..11))
+
+        viewModel.onCompactAddTeam()
+        viewModel.onPlacementChanged(11, "12")
+        viewModel.onKillsChanged(11, "7")
+        viewModel.onAssignedTeamSlotChanged(11, "5")
+        viewModel.onExcludeRow(11)
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        val manualDraft = ready.correctionDraft!!.rows[11]
+        assertEquals(setOf(12), ready.manuallyRevealedPositions)
+        assertEquals("", manualDraft.placementDraftValue)
+        assertEquals("", manualDraft.killsDraftValue)
+        assertEquals("", manualDraft.assignedTeamSlotDraftValue)
+        assertFalse(manualDraft.isExcluded)
+        assertTrue(manualDraft.playerKillDrafts.isEmpty())
+    }
+
+    @Test
+    fun repeatedManualAddDeleteCyclesKeepTheSameFreshPosition() = runTest(dispatcher) {
+        val viewModel = viewModelWith(repository = createRepository(), initialUiState = automaticReadyState(1..11))
+
+        repeat(3) {
+            viewModel.onCompactAddTeam()
+            viewModel.onExcludeRow(11)
+        }
+        viewModel.onCompactAddTeam()
+
+        val ready = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertEquals(setOf(12), ready.manuallyRevealedPositions)
+        assertFalse(ready.correctionDraft!!.rows[11].isExcluded)
     }
 
     @Test
@@ -2447,6 +2519,35 @@ class MatchOcrReviewViewModelTest {
             ),
         ),
     )
+
+    private fun calculatedEvidenceWithManualPosition12(): MatchCalculatedEvidence =
+        MatchCalculatedEvidence(
+            result = ResultCalculatedEvidence(
+                positions = (1..11).map { position ->
+                    ResultPositionCalculatedEvidence(
+                        position = position,
+                        sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        cropLeft = 0,
+                        cropTop = position,
+                        cropRight = 100,
+                        cropBottom = position + 10,
+                        slotNumber = position,
+                        playerNames = List(4) { "Not detected" },
+                        playerKills = List(4) { null },
+                        totalKills = 0,
+                        placement = position,
+                        playerKillApplicable = List(4) { false },
+                    )
+                } + ResultPositionCalculatedEvidence(
+                    position = 12,
+                    playerNames = List(4) { "Not detected" },
+                    playerKills = List(4) { null },
+                    placement = null,
+                    playerKillApplicable = List(4) { false },
+                ),
+                manuallyAddedPositions = listOf(12),
+            ),
+        )
 
     private companion object {
         const val TOURNAMENT_ID = "synthetic-tournament"

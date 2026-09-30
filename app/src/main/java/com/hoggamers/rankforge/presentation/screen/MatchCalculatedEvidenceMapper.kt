@@ -40,6 +40,7 @@ internal object MatchCalculatedEvidenceMapper {
                     ?.filter { it.isExcluded }
                     ?.map { it.rowIndex + 1 }
                     .orEmpty(),
+                manuallyAddedPositions = ocrState.persistedManualResultPositions(),
                 calculationOrigin = ocrState.calculatedEvidenceOrigin,
             ),
         )
@@ -79,7 +80,11 @@ internal object MatchCalculatedEvidenceMapper {
             return evidence
         }
 
-        val correctionDraft = ocrState.correctionDraft ?: return evidence
+        val correctionDraft = ocrState.correctionDraft ?: return evidence.copy(
+            result = evidence.result.copy(
+                manuallyAddedPositions = ocrState.persistedManualResultPositions(),
+            ),
+        )
         val updatedPositions = evidence.result.positions.map { savedPosition ->
             val rowDraft = correctionDraft.rows.singleOrNull { row ->
                 row.rowIndex == savedPosition.position - 1
@@ -144,8 +149,26 @@ internal object MatchCalculatedEvidenceMapper {
                 excludedSourcePositions = correctionDraft.rows
                     .filter { it.isExcluded }
                     .map { it.rowIndex + 1 },
+                manuallyAddedPositions = ocrState.persistedManualResultPositions(),
             ),
         )
+    }
+
+    private fun MatchOcrReviewUiState.Ready.persistedManualResultPositions(): List<Int> {
+        val visibleOcrPositions = (matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
+            ?.visiblePositionCropsByRole()
+            ?.values
+            ?.flatten()
+            ?.map { it.position }
+            ?.toSet()
+            .orEmpty()
+        return manuallyRevealedPositions
+            .asSequence()
+            .filter { it in LOGICAL_RESULT_POSITIONS }
+            .filterNot { it in visibleOcrPositions }
+            .distinct()
+            .sorted()
+            .toList()
     }
 
     private fun MatchLobbySlotNumberOcrResult.toLobbyCalculatedEvidence(
