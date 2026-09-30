@@ -26,6 +26,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -71,6 +72,78 @@ class MatchCalculatedEvidenceMapperTest {
         assertEquals(listOf(true, false, true, false), result.playerKillApplicable)
         assertEquals(listOf(2, null, 5, null), result.playerKills)
         assertEquals(7, result.totalKills)
+    }
+
+    @Test
+    fun absentCalculatedPositionDoesNotPersistScreenshotGeometry() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val ocrState = sourceOcrState.withUpperPosition11(
+            hasDetectedPositionAnchor = false,
+            row = blankPreviewRow(11),
+        )
+
+        val result = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+            .result.positions.single { it.position == 11 }
+
+        assertNull(result.sourceScreenshotRole)
+        assertNull(result.cropLeft)
+        assertNull(result.cropTop)
+        assertNull(result.cropRight)
+        assertNull(result.cropBottom)
+    }
+
+    @Test
+    fun position11AnchorAlonePreservesScreenshotGeometry() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val ocrState = sourceOcrState.withUpperPosition11(
+            hasDetectedPositionAnchor = true,
+            row = blankPreviewRow(11),
+        )
+
+        val result = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+            .result.positions.single { it.position == 11 }
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.sourceScreenshotRole)
+        assertEquals(111, result.cropLeft)
+        assertEquals(112, result.cropTop)
+        assertEquals(131, result.cropRight)
+        assertEquals(142, result.cropBottom)
+    }
+
+    @Test
+    fun position11RealPlayerOcrPreservesScreenshotGeometryWithoutAnchor() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val ocrState = sourceOcrState.withUpperPosition11(
+            hasDetectedPositionAnchor = false,
+            row = previewRow(11, resultSlot(1, "OT S1zlofr", "")),
+        )
+
+        val result = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+            .result.positions.single { it.position == 11 }
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.sourceScreenshotRole)
+        assertEquals(111, result.cropLeft)
+        assertEquals(112, result.cropTop)
+        assertEquals(131, result.cropRight)
+        assertEquals(142, result.cropBottom)
+    }
+
+    @Test
+    fun position11RealKillOcrPreservesScreenshotGeometryWithoutAnchor() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val ocrState = sourceOcrState.withUpperPosition11(
+            hasDetectedPositionAnchor = false,
+            row = previewRow(11, resultSlot(1, "", "2")),
+        )
+
+        val result = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+            .result.positions.single { it.position == 11 }
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.sourceScreenshotRole)
+        assertEquals(111, result.cropLeft)
+        assertEquals(112, result.cropTop)
+        assertEquals(131, result.cropRight)
+        assertEquals(142, result.cropBottom)
     }
 
     @Test
@@ -629,6 +702,43 @@ class MatchCalculatedEvidenceMapperTest {
             killOcrText = killText,
             killStatusLabel = "processed",
         )
+
+    private fun blankPreviewRow(position: Int): MatchResultOcrPreviewRowUiState =
+        previewRow(position, resultSlot(1, "", ""))
+
+    private fun previewRow(
+        position: Int,
+        vararg slots: MatchResultOcrPreviewSlotUiState,
+    ): MatchResultOcrPreviewRowUiState = MatchResultOcrPreviewRowUiState(
+        position = position,
+        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        sourceLabel = "UPPER",
+        placementText = "",
+        slots = slots.toList(),
+    )
+
+    private fun MatchOcrReviewUiState.Ready.withUpperPosition11(
+        hasDetectedPositionAnchor: Boolean,
+        row: MatchResultOcrPreviewRowUiState,
+    ): MatchOcrReviewUiState.Ready {
+        val preview = matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
+        return copy(
+            matchResultOcrPreview = preview.copy(
+                roles = listOf(MatchResultScreenshotRole.MATCH_RESULT_UPPER),
+                rows = listOf(row),
+                authoritativePositionCropsByRole = mapOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER to listOf(
+                        MatchResultPositionCrop(
+                            position = 11,
+                            column = MatchResultPositionColumn.RIGHT,
+                            bounds = OcrPixelCropRect(111, 112, 131, 142),
+                            hasDetectedPositionAnchor = hasDetectedPositionAnchor,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
 
     private fun reviewRow(position: Int): MatchOcrReviewRowUiState = MatchOcrReviewRowUiState(
         rowIndex = position - 1,
