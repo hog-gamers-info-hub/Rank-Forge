@@ -195,7 +195,7 @@ internal object MatchCalculatedEvidenceMapper {
         val reviewRowsByPosition = rows.associateBy { it.rowIndex + 1 }
         val resultTeamNamesBySlot = this.teamNamesBySlot
         val correctionDraft = this.correctionDraft
-        val cropsByPosition = preview?.authoritativePositionCropsByRole
+        val cropsByPosition = preview?.visiblePositionCropsByRole()
             .orEmpty()
             .flatMap { (storedRole, state) ->
                 state.map { storedRole to it }
