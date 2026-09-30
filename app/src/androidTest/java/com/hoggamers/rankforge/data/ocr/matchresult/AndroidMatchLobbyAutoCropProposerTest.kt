@@ -55,7 +55,7 @@ class AndroidMatchLobbyAutoCropProposerTest {
     }
 
     @Test
-    fun validOriginalProposalUsesOneMlKitPassAndSkipsEnhancement() = runBlocking {
+    fun validEnhancedProposalUsesOneEnhancedMlKitPass() = runBlocking {
         val factory = SequencedRecognizerFactory(listOf(validText()))
         val enhancer = RecordingEnhancer()
 
@@ -63,11 +63,13 @@ class AndroidMatchLobbyAutoCropProposerTest {
 
         assertTrue(result is MatchLobbyAutoCropResult.Proposed)
         assertEquals(1, factory.processCount)
-        assertEquals(0, enhancer.invocationCount)
+        assertEquals(1, enhancer.invocationCount)
+        assertSame(enhancer.lastBitmap, factory.bitmapInputs.single())
+        assertTrue(requireNotNull(enhancer.lastBitmap).isRecycled)
     }
 
     @Test
-    fun validTwoAnchorOriginalProposalAlsoSkipsEnhancement() = runBlocking {
+    fun validTwoAnchorEnhancedProposalUsesEnhancedMlKit() = runBlocking {
         val factory = SequencedRecognizerFactory(
             listOf(
                 text(
@@ -82,26 +84,26 @@ class AndroidMatchLobbyAutoCropProposerTest {
 
         assertTrue(result is MatchLobbyAutoCropResult.Proposed)
         assertEquals(1, factory.processCount)
-        assertEquals(0, enhancer.invocationCount)
+        assertEquals(1, enhancer.invocationCount)
+        assertSame(enhancer.lastBitmap, factory.bitmapInputs.single())
     }
 
     @Test
-    fun insufficientOriginalEvidenceUsesOneEnhancementAndTwoMlKitPasses() = runBlocking {
-        val factory = SequencedRecognizerFactory(listOf(emptyText(), validText()))
+    fun insufficientEnhancedEvidenceReturnsNoProposalWithoutOriginalFallback() = runBlocking {
+        val factory = SequencedRecognizerFactory(listOf(emptyText()))
         val enhancer = RecordingEnhancer()
 
         val result = proposer(factory, enhancer).propose(sourceFile)
 
-        assertTrue(result is MatchLobbyAutoCropResult.Proposed)
-        assertEquals(2, factory.processCount)
+        assertEquals(MatchLobbyAutoCropResult.NoProposal, result)
+        assertEquals(1, factory.processCount)
         assertEquals(1, enhancer.invocationCount)
         assertTrue(requireNotNull(enhancer.lastBitmap).isRecycled)
-        assertTrue(factory.bitmapInputs[0] !== factory.bitmapInputs[1])
-        assertSame(enhancer.lastBitmap, factory.bitmapInputs[1])
+        assertSame(enhancer.lastBitmap, factory.bitmapInputs.single())
     }
 
     @Test
-    fun ambiguousTwoAnchorOriginalEvidenceUsesFallback() = runBlocking {
+    fun ambiguousEnhancedEvidenceReturnsNoProposalWithoutOriginalFallback() = runBlocking {
         val factory = SequencedRecognizerFactory(
             listOf(
                 text(
@@ -109,33 +111,32 @@ class AndroidMatchLobbyAutoCropProposerTest {
                     Anchor("1", 700, 236),
                     Anchor("2", 1076, 236),
                 ),
-                validText(),
             ),
         )
         val enhancer = RecordingEnhancer()
 
         val result = proposer(factory, enhancer).propose(sourceFile)
 
-        assertTrue(result is MatchLobbyAutoCropResult.Proposed)
-        assertEquals(2, factory.processCount)
+        assertEquals(MatchLobbyAutoCropResult.NoProposal, result)
+        assertEquals(1, factory.processCount)
         assertEquals(1, enhancer.invocationCount)
     }
 
     @Test
-    fun failedFallbackReturnsNoProposalWithoutThirdMlKitPass() = runBlocking {
-        val factory = SequencedRecognizerFactory(listOf(emptyText(), emptyText()))
+    fun failedEnhancedAttemptReturnsNoProposalAfterOneMlKitPass() = runBlocking {
+        val factory = SequencedRecognizerFactory(listOf(emptyText()))
         val enhancer = RecordingEnhancer()
 
         val result = proposer(factory, enhancer).propose(sourceFile)
 
         assertEquals(MatchLobbyAutoCropResult.NoProposal, result)
-        assertEquals(2, factory.processCount)
+        assertEquals(1, factory.processCount)
         assertEquals(1, enhancer.invocationCount)
         assertTrue(requireNotNull(enhancer.lastBitmap).isRecycled)
     }
 
     @Test
-    fun mlKitFailureDoesNotTriggerEnhancementFallback() = runBlocking {
+    fun mlKitFailureAfterEnhancementReturnsNoProposal() = runBlocking {
         val factory = FailingRecognizerFactory()
         val enhancer = RecordingEnhancer()
 
@@ -143,7 +144,8 @@ class AndroidMatchLobbyAutoCropProposerTest {
 
         assertEquals(MatchLobbyAutoCropResult.NoProposal, result)
         assertEquals(1, factory.createCount)
-        assertEquals(0, enhancer.invocationCount)
+        assertEquals(1, enhancer.invocationCount)
+        assertTrue(requireNotNull(enhancer.lastBitmap).isRecycled)
     }
 
     private fun proposer(
