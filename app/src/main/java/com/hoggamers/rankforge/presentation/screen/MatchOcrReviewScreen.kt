@@ -1117,6 +1117,7 @@ internal fun MatchOcrReviewCorrectionSummary(
     showResetAllCorrectionsAction: Boolean = true,
     showFinalizeAction: Boolean = true,
 ) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1151,7 +1152,7 @@ internal fun MatchOcrReviewCorrectionSummary(
         if (showResetAllCorrectionsAction) {
             Button(
                 onClick = onResetAllCorrections,
-                enabled = !finalization.isFinalized,
+                enabled = reviewInteractionsEnabled && !finalization.isFinalized,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MatchOcrReviewTestTags.RESET_ALL),
@@ -1188,6 +1189,8 @@ internal fun MatchOcrReviewRow(
     showPlayerRows: Boolean = true,
     showAggregateResultFields: Boolean = true,
 ) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
+    val effectiveCorrectionEnabled = correctionEnabled && reviewInteractionsEnabled
     val compactResetCallback: (() -> Unit)? = if (compactResetAction && correctionDraft != null) {
         { onResetRowCorrection(row.rowIndex) }
     } else {
@@ -1215,18 +1218,18 @@ internal fun MatchOcrReviewRow(
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
                 onCompactDelete = compactDeleteCallback,
-                compactDeleteEnabled = correctionEnabled,
+                compactDeleteEnabled = effectiveCorrectionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
                 onCompactAdjustTeamPoints = onAdjustTeamPoints,
-                compactAdjustEnabled = adjustTeamPointsEnabled,
+                compactAdjustEnabled = reviewInteractionsEnabled && adjustTeamPointsEnabled,
                 compactAdjustTestTag = adjustTeamPointsTestTag,
                 onCompactAddTeam = onCompactAddTeam,
-                compactAddTeamEnabled = compactAddTeamEnabled,
+                compactAddTeamEnabled = reviewInteractionsEnabled && compactAddTeamEnabled,
                 onCompactReset = compactResetCallback,
-                compactResetEnabled = correctionEnabled,
+                compactResetEnabled = effectiveCorrectionEnabled,
                 compactResetTestTag = compactResetTestTag,
                 correctionDraft = correctionDraft,
-                correctionEnabled = correctionEnabled,
+                correctionEnabled = effectiveCorrectionEnabled,
                 showPlayerRows = showPlayerRows,
                 showAggregateResultFields = showAggregateResultFields,
                 onPlayerKillsChanged = onPlayerKillsChanged,
@@ -1236,15 +1239,15 @@ internal fun MatchOcrReviewRow(
                 teamNamesBySlot = teamNamesBySlot,
                 correctionDraft = correctionDraft,
                 onCompactDelete = compactDeleteCallback,
-                compactDeleteEnabled = correctionEnabled,
+                compactDeleteEnabled = effectiveCorrectionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
                 onCompactAdjustTeamPoints = onAdjustTeamPoints,
-                compactAdjustEnabled = adjustTeamPointsEnabled,
+                compactAdjustEnabled = reviewInteractionsEnabled && adjustTeamPointsEnabled,
                 compactAdjustTestTag = adjustTeamPointsTestTag,
                 onCompactAddTeam = onCompactAddTeam,
-                compactAddTeamEnabled = compactAddTeamEnabled,
+                compactAddTeamEnabled = reviewInteractionsEnabled && compactAddTeamEnabled,
                 onCompactReset = compactResetCallback,
-                compactResetEnabled = correctionEnabled,
+                compactResetEnabled = effectiveCorrectionEnabled,
                 compactResetTestTag = compactResetTestTag,
             )
             else -> MatchOcrReviewCompactRow(
@@ -1252,18 +1255,18 @@ internal fun MatchOcrReviewRow(
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
                 onCompactDelete = compactDeleteCallback,
-                compactDeleteEnabled = correctionEnabled,
+                compactDeleteEnabled = effectiveCorrectionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
                 onCompactAdjustTeamPoints = onAdjustTeamPoints,
-                compactAdjustEnabled = adjustTeamPointsEnabled,
+                compactAdjustEnabled = reviewInteractionsEnabled && adjustTeamPointsEnabled,
                 compactAdjustTestTag = adjustTeamPointsTestTag,
                 onCompactAddTeam = onCompactAddTeam,
-                compactAddTeamEnabled = compactAddTeamEnabled,
+                compactAddTeamEnabled = reviewInteractionsEnabled && compactAddTeamEnabled,
                 onCompactReset = compactResetCallback,
-                compactResetEnabled = correctionEnabled,
+                compactResetEnabled = effectiveCorrectionEnabled,
                 compactResetTestTag = compactResetTestTag,
                 correctionDraft = correctionDraft,
-                correctionEnabled = correctionEnabled,
+                correctionEnabled = effectiveCorrectionEnabled,
                 showPlayerRows = showPlayerRows,
                 showAggregateResultFields = showAggregateResultFields,
                 onPlayerKillsChanged = onPlayerKillsChanged,
@@ -1282,7 +1285,7 @@ internal fun MatchOcrReviewRow(
                 onKillsChanged = onKillsChanged,
                 onAssignedTeamSlotChanged = onAssignedTeamSlotChanged,
                 onResetRowCorrection = onResetRowCorrection,
-                correctionEnabled = correctionEnabled,
+                correctionEnabled = effectiveCorrectionEnabled,
                 availableTeamSlotOptions = availableTeamSlotOptions,
                 showWarningDetails = showWarningDetails,
                 compactFieldRow = compactFieldRow,
@@ -1449,6 +1452,10 @@ private fun MatchOcrReviewPositionHeader(
             compactDeleteTestTag != null
         ) {
             val actionMenuExpanded = remember { mutableStateOf(false) }
+            val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
+            LaunchedEffect(reviewInteractionsEnabled) {
+                if (!reviewInteractionsEnabled) actionMenuExpanded.value = false
+            }
             Box {
                 IconButton(
                     onClick = { actionMenuExpanded.value = true },
@@ -1464,7 +1471,7 @@ private fun MatchOcrReviewPositionHeader(
                     )
                 }
                 DropdownMenu(
-                    expanded = actionMenuExpanded.value,
+                    expanded = actionMenuExpanded.value && reviewInteractionsEnabled,
                     onDismissRequest = { actionMenuExpanded.value = false },
                 ) {
                     DropdownMenuItem(
@@ -1868,9 +1875,10 @@ internal fun MatchOcrReviewFinalizeAction(
     finalization: MatchOcrReviewFinalizationUiState,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     Button(
         onClick = onFinalizeOcrCorrection,
-        enabled = correctionDraft.blockerCount == 0 &&
+        enabled = reviewInteractionsEnabled && correctionDraft.blockerCount == 0 &&
             !finalization.isFinalizing &&
             !finalization.isFinalized,
         colors = ButtonDefaults.buttonColors(
@@ -1900,9 +1908,11 @@ internal fun MatchOcrReviewFinalizeAction(
 
 @Composable
 private fun MatchOcrReviewBackAction(onBack: () -> Unit) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
     Button(
         onClick = onBack,
+        enabled = reviewInteractionsEnabled,
         modifier = Modifier
             .fillMaxWidth()
             .testTag(MatchOcrReviewTestTags.BACK_ACTION),

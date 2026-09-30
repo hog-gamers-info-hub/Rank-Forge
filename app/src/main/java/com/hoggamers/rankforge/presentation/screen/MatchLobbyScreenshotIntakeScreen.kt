@@ -221,6 +221,7 @@ fun MatchLobbyScreenshotIntakeScreen(
     val teamCropPreviewsByScreenshotIndex = LocalMatchLobbyTeamCropPreviews.current
     val sourceSectionVisible = LocalMatchLobbySourceSectionVisible.current
     val screenshotActionExpansion = LocalMatchReviewScreenshotActionExpansion.current
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -326,6 +327,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                             onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
                             onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
                             compactActions = compactActions,
+                            interactionsEnabled = reviewInteractionsEnabled,
                             modifier = Modifier.align(Alignment.Top),
                         )
                     }
@@ -368,7 +370,10 @@ fun MatchLobbyScreenshotIntakeScreen(
                             slot = slot,
                             hasSelection = hasSelection,
                             isActive = hasSelection && activeSlotIndex == slot.index,
-                            enabled = hasSelection || (uiState.isAvailable && !uiState.isFinalized && !slot.isMutationBusy),
+                            enabled = reviewInteractionsEnabled && (
+                                hasSelection ||
+                                    (uiState.isAvailable && !uiState.isFinalized && !slot.isMutationBusy)
+                                ),
                             compactSelectors = compactSelectors,
                             onClick = onClick,
                         )
@@ -381,6 +386,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                             onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
                             onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
                             compactActions = compactActions,
+                            interactionsEnabled = reviewInteractionsEnabled,
                         )
                     }
                 }
@@ -402,6 +408,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                     )
                     HorizontalPager(
                         state = pagerState,
+                        userScrollEnabled = reviewInteractionsEnabled,
                         pageSize = PageSize.Fill,
                         pageSpacing = RankForgeSpacing.ExtraSmall,
                         modifier = Modifier
@@ -421,6 +428,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                                 onRemove = onRemove,
                                 onPreviewPreparationFinished = onPreviewPreparationFinished,
                                 screenshotActionExpansion = screenshotActionExpansion,
+                                interactionsEnabled = reviewInteractionsEnabled,
                             )
                         }
                     }
@@ -435,7 +443,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                         MatchReviewScreenshotUploadButton(
                             label = stringResource(R.string.pointiq_match_review_upload_lobby_screenshots),
                             onClick = { (onSelectBatch ?: { onSelect(nextEmptySlot.index) })() },
-                            enabled = uiState.isAvailable &&
+                            enabled = reviewInteractionsEnabled && uiState.isAvailable &&
                                 !uiState.isFinalized &&
                                 !nextEmptySlot.isMutationBusy,
                             modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG),
@@ -453,6 +461,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                         onCrop = onCrop,
                         onRemove = onRemove,
                         compactActions = compactActions,
+                        interactionsEnabled = reviewInteractionsEnabled,
                     )
                 }
             }
@@ -462,6 +471,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                     onSaveLobbyForNextMatches = onSaveLobbyForNextMatches,
                     onUnsaveLobbyForNextMatches = onUnsaveLobbyForNextMatches,
                     compactActions = compactActions,
+                    interactionsEnabled = reviewInteractionsEnabled,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -484,10 +494,11 @@ private fun LobbyTemplateToggle(
     onSaveLobbyForNextMatches: () -> Unit,
     onUnsaveLobbyForNextMatches: () -> Unit,
     compactActions: Boolean,
+    interactionsEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val isSaved = uiState.isLobbySavedForNextMatches
-    val enabled = if (isSaved) {
+    val enabled = interactionsEnabled && if (isSaved) {
         uiState.canUnsaveLobbyForNextMatches
     } else {
         uiState.canSaveLobbyForNextMatches
@@ -725,6 +736,7 @@ private fun LobbyScreenshotDetail(
     onRemove: (Int) -> Unit,
     onPreviewPreparationFinished: (Int, String?) -> Unit,
     screenshotActionExpansion: MatchReviewScreenshotActionExpansion?,
+    interactionsEnabled: Boolean,
 ) {
     val previewImageUri = if (
         (!slot.isPreviewPreparationInProgress ||
@@ -750,7 +762,8 @@ private fun LobbyScreenshotDetail(
         }
         if (previewImageUri != null || slot.isPreviewPreparationInProgress) {
             val screenshotActionKey = "lobby-${slot.index}"
-            val supportsExpandableActions = compactActions && !isFinalized && screenshotActionExpansion != null
+            val supportsExpandableActions = interactionsEnabled && compactActions &&
+                !isFinalized && screenshotActionExpansion != null
             val previewKey = listOf(
                 slot.index,
                 slot.fingerprint,
@@ -855,9 +868,10 @@ private fun LobbyScreenshotDetail(
                         removeContentDescription = stringResource(
                             R.string.match_review_screenshot_remove_content_description,
                         ),
-                        replaceEnabled = isAvailable && !isFinalized && !slot.isMutationBusy,
-                        editEnabled = !isFinalized && !slot.isMutationBusy,
-                        removeEnabled = !isFinalized && !slot.isMutationBusy,
+                        replaceEnabled = interactionsEnabled && isAvailable &&
+                            !isFinalized && !slot.isMutationBusy,
+                        editEnabled = interactionsEnabled && !isFinalized && !slot.isMutationBusy,
+                        removeEnabled = interactionsEnabled && !isFinalized && !slot.isMutationBusy,
                         replaceTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index,
                         editTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index,
                         removeTestTag = MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + slot.index,
@@ -888,6 +902,7 @@ private fun LobbyScreenshotDetail(
                 onCrop = onCrop,
                 onRemove = onRemove,
                 compactActions = true,
+                interactionsEnabled = interactionsEnabled,
             )
         }
     }
@@ -897,6 +912,7 @@ private fun LobbyScreenshotDetail(
 private fun LobbyTeamCropPreviewPager(
     previews: List<MatchLobbyTeamCropPreview>,
 ) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -922,6 +938,7 @@ private fun LobbyTeamCropPreviewPager(
         ) {
             HorizontalPager(
                 state = pagerState,
+                userScrollEnabled = reviewInteractionsEnabled,
                 pageSize = PageSize.Fill,
                 pageSpacing = RankForgeSpacing.ExtraSmall,
                 modifier = Modifier.fillMaxWidth(),
@@ -1042,6 +1059,7 @@ private fun LobbyScreenshotActions(
     onCrop: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     compactActions: Boolean,
+    interactionsEnabled: Boolean = true,
 ) {
     if (slot.isPreviewPreparationInProgress) return
     if (!isFinalized && slot.hasLinkedAsset) {
@@ -1052,21 +1070,21 @@ private fun LobbyScreenshotActions(
             LobbyScreenshotActionButton(
                 compactActions = compactActions,
                 onClick = { onSelect(slot.index) },
-                enabled = isAvailable && !isFinalized && !slot.isMutationBusy,
+                enabled = interactionsEnabled && isAvailable && !isFinalized && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),
                 label = stringResource(R.string.match_lobby_screenshot_replace_action),
             )
             LobbyScreenshotActionButton(
                 compactActions = compactActions,
                 onClick = { onCrop(slot.index) },
-                enabled = !isFinalized && !slot.isMutationBusy,
+                enabled = interactionsEnabled && !isFinalized && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index),
                 label = stringResource(R.string.match_lobby_screenshot_crop_action),
             )
             LobbyScreenshotActionButton(
                 compactActions = compactActions,
                 onClick = { onRemove(slot.index) },
-                enabled = !isFinalized && !slot.isMutationBusy,
+                enabled = interactionsEnabled && !isFinalized && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + slot.index),
                 label = stringResource(R.string.match_lobby_screenshot_remove_action),
             )
@@ -1074,7 +1092,7 @@ private fun LobbyScreenshotActions(
     } else if (!isFinalized) {
         Button(
             onClick = { (onSelectBatch ?: { onSelect(slot.index) })() },
-            enabled = isAvailable && !isFinalized && !slot.isMutationBusy,
+            enabled = interactionsEnabled && isAvailable && !isFinalized && !slot.isMutationBusy,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),

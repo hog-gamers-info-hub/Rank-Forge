@@ -188,6 +188,21 @@ internal data class MatchReviewScreenshotActionExpansion(
 internal val LocalMatchReviewScreenshotActionExpansion =
     staticCompositionLocalOf<MatchReviewScreenshotActionExpansion?> { null }
 
+internal val LocalMatchReviewInteractionsEnabled = staticCompositionLocalOf { true }
+
+internal fun shouldLockMatchReviewInteractions(
+    lobbySlots: List<MatchLobbyScreenshotSlotUiState>,
+    resultSlots: List<MatchResultScreenshotSlotUiState>,
+): Boolean {
+    val lobbyCropStillRunning = lobbySlots.any { slot ->
+        slot.isPreviewPreparationInProgress && !slot.hasConfirmedCrop
+    }
+    val resultCropStillRunning = resultSlots.any { slot ->
+        slot.isPreviewPreparationInProgress && !slot.hasConfirmedCrop
+    }
+    return lobbyCropStillRunning || resultCropStillRunning
+}
+
 internal enum class MatchReviewResumeRecoveryAction {
     NONE,
     ARMED,
@@ -907,6 +922,12 @@ fun MatchReviewScreen(
 ) {
     PointIqMatchReviewSystemBars()
 
+    val reviewInteractionsLocked = shouldLockMatchReviewInteractions(
+        lobbySlots = lobbyUiState.slots,
+        resultSlots = uiState.resultScreenshots,
+    )
+    val reviewInteractionsEnabled = !reviewInteractionsLocked
+
     var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
     var manualModeOpened by rememberSaveable { mutableStateOf(false) }
     val closeManualMode = {
@@ -914,16 +935,21 @@ fun MatchReviewScreen(
         ocrReviewOpened = false
     }
 
-    BackHandler(enabled = !uiState.isDeleting) {
-        if (manualModeOpened) {
-            closeManualMode()
-        } else {
-            onBackToDetails()
+    BackHandler(enabled = reviewInteractionsLocked || !uiState.isDeleting) {
+        if (reviewInteractionsEnabled) {
+            if (manualModeOpened) {
+                closeManualMode()
+            } else {
+                onBackToDetails()
+            }
         }
     }
 
     val renderMatchReviewContent: @Composable () -> Unit = {
-        MatchReviewContent(
+        CompositionLocalProvider(
+            LocalMatchReviewInteractionsEnabled provides reviewInteractionsEnabled,
+        ) {
+            MatchReviewContent(
             uiState = uiState,
             lobbyUiState = lobbyUiState,
             onEnterPlacements = onEnterPlacements,
@@ -983,7 +1009,8 @@ fun MatchReviewScreen(
             onOcrDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
             onCompactAddTeam = onCompactAddTeam,
             onSaveTeamPointAdjustment = onSaveTeamPointAdjustment,
-        )
+            )
+        }
     }
 
     when {
@@ -1410,6 +1437,10 @@ private fun MatchReviewContent(
     onCompactAddTeam: () -> Unit,
     onSaveTeamPointAdjustment: (Int, Int) -> Unit,
 ) {
+    val reviewInteractionsEnabled = !shouldLockMatchReviewInteractions(
+        lobbySlots = lobbyUiState.slots,
+        resultSlots = uiState.resultScreenshots,
+    )
     var showFinalizeConfirmation by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showCorrectionConfirmation by remember { mutableStateOf(false) }
@@ -1434,7 +1465,21 @@ private fun MatchReviewContent(
             expandedScreenshotKey = if (expandedScreenshotKey == key) null else key
         },
     )
+    LaunchedEffect(reviewInteractionsEnabled) {
+        if (!reviewInteractionsEnabled) {
+            showOverflowMenu = false
+            showResultScopeDialog = false
+            showResultFormatDialog = false
+            showDeleteConfirmation = false
+            showFinalizeConfirmation = false
+            showCorrectionConfirmation = false
+            showAdjustTeamPointsDialog = false
+            showOcrPreflight = false
+            expandedScreenshotKey = null
+        }
+    }
     fun openResultDownload() {
+        if (!reviewInteractionsEnabled) return
         selectedResultScope = null
         selectedResultFormat = null
         showResultFormatDialog = false
@@ -1674,7 +1719,10 @@ private fun MatchReviewContent(
                 } else {
                     Modifier
                         .imePadding()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(
+                            rememberScrollState(),
+                            enabled = reviewInteractionsEnabled,
+                        )
                         .padding(horizontal = 16.dp, vertical = RankForgeSpacing.Large)
                 },
             ),
@@ -1701,7 +1749,7 @@ private fun MatchReviewContent(
             ) {
                 IconButton(
                     onClick = onBackToDetails,
-                    enabled = !uiState.isDeleting,
+                    enabled = reviewInteractionsEnabled && !uiState.isDeleting,
                     modifier = Modifier.size(40.dp),
                 ) {
                     Icon(
@@ -1729,7 +1777,7 @@ private fun MatchReviewContent(
                     )
                     IconButton(
                         onClick = { showOverflowMenu = true },
-                        enabled = !uiState.isDeleting,
+                        enabled = reviewInteractionsEnabled && !uiState.isDeleting,
                         modifier = Modifier
                             .size(40.dp)
                             .testTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG),
@@ -1741,7 +1789,7 @@ private fun MatchReviewContent(
                         )
                     }
                     DropdownMenu(
-                        expanded = showOverflowMenu,
+                        expanded = showOverflowMenu && reviewInteractionsEnabled,
                         onDismissRequest = { showOverflowMenu = false },
                         containerColor = PointIqMatchReviewBackground,
                         tonalElevation = 0.dp,
@@ -1754,7 +1802,7 @@ private fun MatchReviewContent(
                                     showOverflowMenu = false
                                     onClearResult()
                                 },
-                                enabled = !isClearResultInProgress,
+                                enabled = reviewInteractionsEnabled && !isClearResultInProgress,
                                 colors = overflowItemColors,
                                 modifier = Modifier.testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
                             )
@@ -1763,7 +1811,7 @@ private fun MatchReviewContent(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.match_review_download_result_action)) },
                                 onClick = ::openResultDownload,
-                                enabled = uiState.canDownloadResult,
+                                enabled = reviewInteractionsEnabled && uiState.canDownloadResult,
                                 colors = overflowItemColors,
                                 modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
                             )
@@ -1782,7 +1830,7 @@ private fun MatchReviewContent(
                                     showOverflowMenu = false
                                     onRequestNextMatchCreation()
                                 },
-                                enabled = uiState.canCreateNextMatch,
+                                enabled = reviewInteractionsEnabled && uiState.canCreateNextMatch,
                                 colors = overflowItemColors,
                                 modifier = Modifier.testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
                             )
@@ -1797,6 +1845,7 @@ private fun MatchReviewContent(
                                     adjustmentTeamSlotNumber = null
                                     showAdjustTeamPointsDialog = true
                                 },
+                                enabled = reviewInteractionsEnabled,
                                 colors = overflowItemColors,
                                 modifier = Modifier.testTag(
                                     MATCH_REVIEW_ADJUST_TEAM_POINTS_ACTION_TEST_TAG,
@@ -1814,7 +1863,7 @@ private fun MatchReviewContent(
                                 showOverflowMenu = false
                                 showDeleteConfirmation = true
                             },
-                            enabled = !uiState.isDeleting,
+                            enabled = reviewInteractionsEnabled && !uiState.isDeleting,
                             colors = overflowItemColors,
                             modifier = Modifier.testTag(MATCH_REVIEW_DELETE_ACTION_TEST_TAG),
                         )
@@ -1845,7 +1894,7 @@ private fun MatchReviewContent(
                 Text(text = stringResource(R.string.match_review_finalized_read_only))
                 Button(
                     onClick = onPrepareCsvExport,
-                    enabled = uiState.canPrepareMatchCsvExport,
+                    enabled = reviewInteractionsEnabled && uiState.canPrepareMatchCsvExport,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_CSV_EXPORT_ACTION_TEST_TAG),
@@ -2172,7 +2221,7 @@ private fun MatchReviewContent(
         if (showSimplifiedClearResult) {
             ReviewMatchActionButton(
                 label = "Clear Result",
-                enabled = !isClearResultInProgress,
+                enabled = reviewInteractionsEnabled && !isClearResultInProgress,
                 onClick = onClearResult,
                 modifier = Modifier.testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
             )
@@ -2200,7 +2249,7 @@ private fun MatchReviewContent(
                         onOcrReviewOpenedChange(true)
                         onOpenManualReview()
                     },
-                    enabled = uiState.isEditable,
+                    enabled = reviewInteractionsEnabled && uiState.isEditable,
                 )
             } else if (!showLegacyManualReviewContent) {
                 ReviewMatchCalculationButton(
@@ -2215,7 +2264,7 @@ private fun MatchReviewContent(
                             showOcrPreflight = true
                         }
                     },
-                    enabled = uiState.isEditable,
+                    enabled = reviewInteractionsEnabled && uiState.isEditable,
                     modifier = Modifier.testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
                 )
             } else {
@@ -2224,7 +2273,7 @@ private fun MatchReviewContent(
                         onOcrReviewOpenedChange(true)
                         onOpenOcrReview()
                     },
-                    enabled = uiState.isEditable,
+                    enabled = reviewInteractionsEnabled && uiState.isEditable,
                     colors = ButtonDefaults.buttonColors(),
                     shape = ButtonDefaults.shape,
                     modifier = Modifier
@@ -2249,7 +2298,7 @@ private fun MatchReviewContent(
         if (showLegacyManualReviewContent && showClearResult) {
             Button(
                 onClick = onClearResult,
-                enabled = !isClearResultInProgress,
+                enabled = reviewInteractionsEnabled && !isClearResultInProgress,
                 colors = if (!showLegacyManualReviewContent) {
                     ButtonDefaults.buttonColors(
                         containerColor = PointIqMatchReviewBlue,
@@ -2274,6 +2323,7 @@ private fun MatchReviewContent(
         if (showLegacyManualReviewContent && uiState.isEditable) {
             Button(
                 onClick = onEnterPlacements,
+                enabled = reviewInteractionsEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG),
@@ -2282,6 +2332,7 @@ private fun MatchReviewContent(
             }
             TextButton(
                 onClick = onEnterKills,
+                enabled = reviewInteractionsEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG),
@@ -2290,7 +2341,7 @@ private fun MatchReviewContent(
             }
             Button(
                 onClick = { showFinalizeConfirmation = true },
-                enabled = uiState.isValid && !uiState.isFinalizing &&
+                enabled = reviewInteractionsEnabled && uiState.isValid && !uiState.isFinalizing &&
                     !uiState.isScreenshotPreservationInProgress &&
                     !uiState.isScreenshotUploadInProgress,
                 modifier = Modifier
@@ -2318,7 +2369,7 @@ private fun MatchReviewContent(
             if (showLegacyManualReviewContent) {
                 Button(
                     onClick = ::openResultDownload,
-                    enabled = uiState.canDownloadResult,
+                    enabled = reviewInteractionsEnabled && uiState.canDownloadResult,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF176AF7),
                         contentColor = Color.White,
@@ -2339,7 +2390,7 @@ private fun MatchReviewContent(
             } else {
                 ReviewMatchActionButton(
                     label = stringResource(R.string.match_review_download_result_action),
-                    enabled = uiState.canDownloadResult,
+                    enabled = reviewInteractionsEnabled && uiState.canDownloadResult,
                     onClick = ::openResultDownload,
                     modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
                 )
@@ -2380,7 +2431,7 @@ private fun MatchReviewContent(
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(
                     onClick = onRequestNextMatchCreation,
-                    enabled = uiState.canCreateNextMatch,
+                    enabled = reviewInteractionsEnabled && uiState.canCreateNextMatch,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = PointIqMatchReviewBlue,
                         contentColor = Color.White,
@@ -2412,6 +2463,7 @@ private fun MatchReviewContent(
         if (showLegacyManualReviewContent && uiState.status == MatchStatus.FINALIZED) {
             Button(
                 onClick = { showCorrectionConfirmation = true },
+                enabled = reviewInteractionsEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG),
@@ -2447,7 +2499,7 @@ private fun MatchReviewContent(
         if (showLegacyManualReviewContent) {
             Button(
                 onClick = { showDeleteConfirmation = true },
-                enabled = !uiState.isDeleting,
+                enabled = reviewInteractionsEnabled && !uiState.isDeleting,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError,
@@ -2463,7 +2515,7 @@ private fun MatchReviewContent(
             }
             TextButton(
                 onClick = onBackToDetails,
-                enabled = !uiState.isDeleting,
+                enabled = reviewInteractionsEnabled && !uiState.isDeleting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_DETAILS_ACTION_TEST_TAG),
@@ -2474,16 +2526,18 @@ private fun MatchReviewContent(
         }
     }
 
-    uiState.pendingNextMatchTeamCountConfirmation?.let { confirmation ->
-        TeamCountConfirmationDialog(
-            confirmation = confirmation,
-            onCancel = onCancelNextMatchTeamCountConfirmation,
-            onUseEnteredTeams = onUseEnteredTeamsForNextMatch,
-            onUseDefaults = onUseDefaultsForNextMatch,
-        )
+    if (reviewInteractionsEnabled) {
+        uiState.pendingNextMatchTeamCountConfirmation?.let { confirmation ->
+            TeamCountConfirmationDialog(
+                confirmation = confirmation,
+                onCancel = onCancelNextMatchTeamCountConfirmation,
+                onUseEnteredTeams = onUseEnteredTeamsForNextMatch,
+                onUseDefaults = onUseDefaultsForNextMatch,
+            )
+        }
     }
 
-    if (showDeleteConfirmation && !uiState.isDeleting) {
+    if (reviewInteractionsEnabled && showDeleteConfirmation && !uiState.isDeleting) {
         PointIqConfirmationDialog(
             modifier = Modifier.testTag(MATCH_REVIEW_DELETE_DIALOG_TEST_TAG),
             onDismissRequest = { showDeleteConfirmation = false },
@@ -2505,7 +2559,7 @@ private fun MatchReviewContent(
         )
     }
 
-    if (showFinalizeConfirmation) {
+    if (reviewInteractionsEnabled && showFinalizeConfirmation) {
         PointIqConfirmationDialog(
             onDismissRequest = { showFinalizeConfirmation = false },
             title = stringResource(R.string.match_review_finalize_title),
@@ -2520,7 +2574,7 @@ private fun MatchReviewContent(
             confirmModifier = Modifier.testTag(MATCH_REVIEW_FINALIZE_CONFIRM_ACTION_TEST_TAG),
         )
     }
-    if (showCorrectionConfirmation) {
+    if (reviewInteractionsEnabled && showCorrectionConfirmation) {
         AlertDialog(
             onDismissRequest = { showCorrectionConfirmation = false },
             title = { Text(stringResource(R.string.start_match_correction_title)) },
@@ -2543,7 +2597,7 @@ private fun MatchReviewContent(
             },
         )
     }
-    if (showAdjustTeamPointsDialog && uiState.isEditable) {
+    if (reviewInteractionsEnabled && showAdjustTeamPointsDialog && uiState.isEditable) {
         AdjustTeamPointsDialog(
             teams = uiState.rows.filter { row -> row.teamName.isNotBlank() },
             initialTeamSlotNumber = adjustmentTeamSlotNumber,
@@ -2555,7 +2609,7 @@ private fun MatchReviewContent(
             },
         )
     }
-    if (showResultScopeDialog) {
+    if (reviewInteractionsEnabled && showResultScopeDialog) {
         ResultDownloadScopeDialog(
             selectedScope = selectedResultScope,
             onScopeSelected = { selectedResultScope = it },
@@ -2568,7 +2622,7 @@ private fun MatchReviewContent(
             },
         )
     }
-    if (showResultFormatDialog) {
+    if (reviewInteractionsEnabled && showResultFormatDialog) {
         ResultDownloadFormatDialog(
             selectedFormat = selectedResultFormat,
             availability = customDesignFormatAvailabilityUiState,
@@ -2666,6 +2720,7 @@ private fun MatchReviewFinalizeAction(
     finalization: MatchOcrReviewFinalizationUiState,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
+    val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val blockers = deriveMatchReviewFinalizationBlockers(
         correctionDraft = correctionDraft,
         teamNamesBySlot = teamNamesBySlot,
@@ -2688,7 +2743,7 @@ private fun MatchReviewFinalizeAction(
                     R.string.match_review_finalize_result_action
                 },
             ),
-            enabled = !blockers.hasBlockers &&
+            enabled = interactionsEnabled && !blockers.hasBlockers &&
                 !finalization.isFinalizing &&
                 !finalization.isFinalized,
             onClick = onFinalizeOcrCorrection,
@@ -3701,6 +3756,7 @@ private fun MatchReviewLobbyPlayersPager(
     lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
     teamNamesBySlot: Map<Int, String>,
 ) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val orderedSlots = lobbyPlayers.sortedBy { it.slotNumber }
     val pagerState = rememberPagerState(pageCount = { orderedSlots.size })
 
@@ -3720,6 +3776,7 @@ private fun MatchReviewLobbyPlayersPager(
         if (orderedSlots.isNotEmpty()) {
             HorizontalPager(
                 state = pagerState,
+                userScrollEnabled = reviewInteractionsEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                 .testTag(MATCH_REVIEW_LOBBY_PLAYERS_PAGER_TEST_TAG),
@@ -3985,6 +4042,7 @@ private fun MatchReviewResultOcrDetailsContent(
             )
         }
         onManualBack?.let { onBack ->
+            val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
             val shape = RoundedCornerShape(8.dp)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3992,6 +4050,7 @@ private fun MatchReviewResultOcrDetailsContent(
             ) {
                 Button(
                     onClick = onBack,
+                    enabled = reviewInteractionsEnabled,
                     shape = shape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Transparent,
@@ -4159,6 +4218,7 @@ private fun MatchReviewResultPreviewPager(
     reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
     teamNamesBySlot: Map<Int, String>,
 ) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val rows = preview.rows
     val pagerState = rememberPagerState(pageCount = { rows.size })
 
@@ -4178,6 +4238,7 @@ private fun MatchReviewResultPreviewPager(
         if (rows.isNotEmpty()) {
             HorizontalPager(
                 state = pagerState,
+                userScrollEnabled = reviewInteractionsEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(MATCH_REVIEW_RESULT_OCR_PREVIEW_PAGER_TEST_TAG),
@@ -4223,6 +4284,7 @@ private fun MatchReviewResultRowsPagerContent(
     showPlayerRows: Boolean = true,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
 ) {
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val previewRowsByPosition = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
         ?.rows
         .orEmpty()
@@ -4264,6 +4326,7 @@ private fun MatchReviewResultRowsPagerContent(
         if (rows.isNotEmpty()) {
             HorizontalPager(
                 state = pagerState,
+                userScrollEnabled = reviewInteractionsEnabled,
                 pageSpacing = RankForgeSpacing.ExtraSmall,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4340,6 +4403,7 @@ private fun ResultScreenshotSelector(
     ocrPositionContent: @Composable (Int) -> Unit = {},
     screenshotActionExpansion: MatchReviewScreenshotActionExpansion,
 ) {
+    val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current
     DisposableEffect(resultPositionCropPreviews) {
         onDispose { onPositionCropPreviewsDisposed(resultPositionCropPreviews) }
     }
@@ -4447,6 +4511,7 @@ private fun ResultScreenshotSelector(
                 )
                 HorizontalPager(
                     state = pagerState,
+                    userScrollEnabled = interactionsEnabled,
                     pageSize = androidx.compose.foundation.pager.PageSize.Fill,
                     pageSpacing = RankForgeSpacing.ExtraSmall,
                     verticalAlignment = Alignment.Top,
@@ -4494,7 +4559,7 @@ private fun ResultScreenshotSelector(
             MatchReviewScreenshotUploadButton(
                 label = stringResource(R.string.pointiq_match_review_upload_result_screenshots),
                 onClick = { (onSelectBatch ?: { onSelectScreenshot(role) })() },
-                enabled = isEditable && !slot.isMutationBusy,
+                enabled = interactionsEnabled && isEditable && !slot.isMutationBusy,
                 modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG),
             )
         }
@@ -4645,6 +4710,7 @@ private fun ResultScreenshotPage(
     onPreviewPreparationFinished: (MatchResultScreenshotRole, String?) -> Unit,
     screenshotActionExpansion: MatchReviewScreenshotActionExpansion,
 ) {
+    val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val role = if (screenshotNumber == 1) {
         MatchResultScreenshotRole.MATCH_RESULT_UPPER
     } else {
@@ -4663,6 +4729,7 @@ private fun ResultScreenshotPage(
     val hasPositionCropPreviews = showPositionCropPreviews && positionCropPreviews.isNotEmpty()
     val screenshotActionKey = "result-${role.name}"
     val supportsExpandableActions = showSourceScreenshot &&
+        interactionsEnabled &&
         isEditable &&
         previewImageUri != null &&
         !slot.isPreviewPreparationInProgress
@@ -4788,9 +4855,11 @@ private fun ResultScreenshotPage(
                                 removeContentDescription = stringResource(
                                     R.string.match_review_screenshot_remove_content_description,
                                 ),
-                                replaceEnabled = !slot.isMutationBusy,
-                                editEnabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isMutationBusy,
-                                removeEnabled = slot.hasLinkedAsset && !slot.isMutationBusy,
+                                replaceEnabled = interactionsEnabled && !slot.isMutationBusy,
+                                editEnabled = interactionsEnabled && slot.hasLinkedAsset &&
+                                    !slot.isLocalFileMissing && !slot.isMutationBusy,
+                                removeEnabled = interactionsEnabled && slot.hasLinkedAsset &&
+                                    !slot.isMutationBusy,
                                 replaceTestTag = role.replaceActionTestTag(),
                                 editTestTag = role.cropActionTestTag(),
                                 removeTestTag = role.removeActionTestTag(),
@@ -4907,6 +4976,7 @@ private fun ResultPositionCropPreviews(
     ocrPositionContent: @Composable (Int) -> Unit,
 ) {
     if (items.isEmpty()) return
+    val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val pagerState = rememberPagerState(pageCount = { items.size })
     var previousManuallyRevealedPositions by remember {
         mutableStateOf(manuallyRevealedPositions)
@@ -4957,6 +5027,7 @@ private fun ResultPositionCropPreviews(
                 StableHeightHorizontalPager(
                     state = pagerState,
                     pageCount = items.size,
+                    userScrollEnabled = reviewInteractionsEnabled,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(MATCH_REVIEW_RESULT_POSITION_CROPS_COMBINED_PAGER_TEST_TAG),
@@ -5005,6 +5076,7 @@ private fun ResultPositionCropPreviews(
 private fun StableHeightHorizontalPager(
     state: PagerState,
     pageCount: Int,
+    userScrollEnabled: Boolean = true,
     modifier: Modifier = Modifier,
     pageContent: @Composable (Int) -> Unit,
 ) {
@@ -5038,6 +5110,7 @@ private fun StableHeightHorizontalPager(
         val pager = subcompose("pager") {
             HorizontalPager(
                 state = state,
+                userScrollEnabled = userScrollEnabled,
                 pageSize = androidx.compose.foundation.pager.PageSize.Fill,
                 pageSpacing = RankForgeSpacing.ExtraSmall,
                 verticalAlignment = Alignment.Top,
@@ -5231,6 +5304,7 @@ private fun ResultScreenshotActionRow(
     onOpenCrop: (MatchResultScreenshotRole) -> Unit,
     onRemoveScreenshot: (MatchResultScreenshotRole) -> Unit,
 ) {
+    val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val isUpper = role == MatchResultScreenshotRole.MATCH_RESULT_UPPER
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -5238,7 +5312,7 @@ private fun ResultScreenshotActionRow(
     ) {
         TextButton(
             onClick = { onSelectScreenshot(role) },
-            enabled = !slot.isMutationBusy,
+            enabled = interactionsEnabled && !slot.isMutationBusy,
             contentPadding = PaddingValues(
                 horizontal = RankForgeSpacing.Small,
                 vertical = RankForgeSpacing.ExtraSmall,
@@ -5258,7 +5332,8 @@ private fun ResultScreenshotActionRow(
         }
         TextButton(
             onClick = { onOpenCrop(role) },
-            enabled = slot.hasLinkedAsset && !slot.isLocalFileMissing && !slot.isMutationBusy,
+            enabled = interactionsEnabled && slot.hasLinkedAsset &&
+                !slot.isLocalFileMissing && !slot.isMutationBusy,
             contentPadding = PaddingValues(
                 horizontal = RankForgeSpacing.Small,
                 vertical = RankForgeSpacing.ExtraSmall,
@@ -5280,7 +5355,7 @@ private fun ResultScreenshotActionRow(
         }
         TextButton(
             onClick = { onRemoveScreenshot(role) },
-            enabled = slot.hasLinkedAsset && !slot.isMutationBusy,
+            enabled = interactionsEnabled && slot.hasLinkedAsset && !slot.isMutationBusy,
             contentPadding = PaddingValues(
                 horizontal = RankForgeSpacing.Small,
                 vertical = RankForgeSpacing.ExtraSmall,

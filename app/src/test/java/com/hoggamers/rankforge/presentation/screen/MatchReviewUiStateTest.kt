@@ -216,6 +216,133 @@ class MatchReviewUiStateTest {
         )
     }
 
+    @Test
+    fun reviewInteractionsAreUnlockedWhenNothingIsPreparing() {
+        assertFalse(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = defaultMatchLobbyScreenshotSlots(),
+                resultSlots = defaultMatchResultScreenshotSlots(),
+            ),
+        )
+    }
+
+    @Test
+    fun unconfirmedLobbyPreparationKeepsReviewLocked() {
+        assertTrue(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = listOf(lobbySlot(index = 1, preparing = true)),
+                resultSlots = defaultMatchResultScreenshotSlots(),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedLobbyPreparationDoesNotKeepReviewLocked() {
+        assertFalse(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = listOf(lobbySlot(index = 1, preparing = true, confirmed = true)),
+                resultSlots = defaultMatchResultScreenshotSlots(),
+            ),
+        )
+    }
+
+    @Test
+    fun unconfirmedResultPreparationKeepsReviewLocked() {
+        assertTrue(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = defaultMatchLobbyScreenshotSlots(),
+                resultSlots = listOf(resultSlot(preparing = true)),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedResultPreparationDoesNotKeepReviewLocked() {
+        assertFalse(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = defaultMatchLobbyScreenshotSlots(),
+                resultSlots = listOf(resultSlot(preparing = true, confirmed = true)),
+            ),
+        )
+    }
+
+    @Test
+    fun oneUnconfirmedLobbyCropKeepsMultiLobbyReviewLocked() {
+        assertTrue(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = (1..3).map { index ->
+                    lobbySlot(index = index, preparing = true, confirmed = index < 3)
+                },
+                resultSlots = defaultMatchResultScreenshotSlots(),
+            ),
+        )
+    }
+
+    @Test
+    fun allConfirmedLobbyCropsUnlockEvenWhenPreviewsAreStillPreparing() {
+        assertFalse(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = (1..3).map { index ->
+                    lobbySlot(index = index, preparing = true, confirmed = true)
+                },
+                resultSlots = defaultMatchResultScreenshotSlots(),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedLobbyCropsDoNotUnlockWhileResultCropIsUnconfirmed() {
+        assertTrue(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = (1..3).map { index ->
+                    lobbySlot(index = index, confirmed = true)
+                },
+                resultSlots = listOf(resultSlot(preparing = true)),
+            ),
+        )
+    }
+
+    @Test
+    fun allConfirmedLobbyAndResultCropsAreUnlocked() {
+        assertFalse(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = (1..3).map { index ->
+                    lobbySlot(index = index, preparing = true, confirmed = true)
+                },
+                resultSlots = MatchResultScreenshotRole.entries.map {
+                    resultSlot(role = it, preparing = true, confirmed = true)
+                },
+            ),
+        )
+    }
+
+    @Test
+    fun finishingOneConfirmedPreviewKeepsReviewUnlocked() {
+        val preparing = listOf(
+            resultSlot(preparing = true, confirmed = true),
+            resultSlot(
+                role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                preparing = true,
+                confirmed = true,
+            ),
+        )
+
+        assertFalse(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = defaultMatchLobbyScreenshotSlots(),
+                resultSlots = preparing,
+            ),
+        )
+        assertFalse(
+            shouldLockMatchReviewInteractions(
+                lobbySlots = defaultMatchLobbyScreenshotSlots(),
+                resultSlots = preparing.map { slot ->
+                    slot.copy(isPreviewPreparationInProgress = false)
+                },
+            ),
+        )
+    }
+
     private fun state(
         upper: MatchResultScreenshotSlotUiState = MatchResultScreenshotSlotUiState(
             MatchResultScreenshotRole.MATCH_RESULT_UPPER,
@@ -237,5 +364,27 @@ class MatchReviewUiStateTest {
         hasLinkedAsset = true,
         confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
         cropProfileId = OcrCropValidationProfiles.MatchResult.id,
+    )
+
+    private fun lobbySlot(
+        index: Int,
+        preparing: Boolean = false,
+        confirmed: Boolean = false,
+    ) = MatchLobbyScreenshotSlotUiState(
+        index = index,
+        isPreviewPreparationInProgress = preparing,
+        confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9).takeIf { confirmed },
+        cropProfileId = OcrCropValidationProfiles.Lobby.id.takeIf { confirmed },
+    )
+
+    private fun resultSlot(
+        role: MatchResultScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        preparing: Boolean = false,
+        confirmed: Boolean = false,
+    ) = MatchResultScreenshotSlotUiState(
+        role = role,
+        isPreviewPreparationInProgress = preparing,
+        confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9).takeIf { confirmed },
+        cropProfileId = OcrCropValidationProfiles.MatchResult.id.takeIf { confirmed },
     )
 }
