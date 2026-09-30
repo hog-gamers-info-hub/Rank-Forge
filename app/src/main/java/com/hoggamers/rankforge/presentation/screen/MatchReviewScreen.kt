@@ -820,7 +820,10 @@ fun MatchReviewRoute(
             resolvedOcrReviewViewModel.onAssignedTeamSlotChanged(rowIndex, value)
             saveAcceptedResultCorrections()
         },
-        onExcludeOcrRow = resolvedOcrReviewViewModel::onExcludeRow,
+        onExcludeOcrRow = { rowIndex ->
+            resolvedOcrReviewViewModel.onExcludeRow(rowIndex)
+            saveAcceptedResultCorrections()
+        },
         onOcrResetRowCorrection = { rowIndex ->
             resolvedOcrReviewViewModel.onResetRowCorrection(rowIndex)
             saveAcceptedResultCorrections()
@@ -832,7 +835,10 @@ fun MatchReviewRoute(
         onOcrFinalize = resolvedOcrReviewViewModel::onFinalizeOcrCorrection,
         onOcrConfirmFinalizeWarnings = resolvedOcrReviewViewModel::onConfirmFinalizeWarnings,
         onOcrDismissFinalizeWarnings = resolvedOcrReviewViewModel::onDismissFinalizeWarnings,
-        onCompactAddTeam = resolvedOcrReviewViewModel::onCompactAddTeam,
+        onCompactAddTeam = {
+            resolvedOcrReviewViewModel.onCompactAddTeam()
+            saveAcceptedResultCorrections()
+        },
         onSaveTeamPointAdjustment = viewModel::saveTeamPointAdjustment,
     )
 }

@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.data.local.ResultCalculatedEvidence
 import com.hoggamers.rankforge.data.local.ResultPositionCalculatedEvidence
+import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -100,6 +101,76 @@ class MatchCalculatedEvidenceRestoredUiStateTest {
     }
 
     @Test
+    fun explicitlyMarkedGeometrylessPositionRestoresAsManualPlaceholder() {
+        val state = restore(
+            ResultPositionCalculatedEvidence(
+                position = 12,
+                slotNumber = 5,
+                totalKills = 7,
+                placement = 12,
+            ),
+            manuallyAddedPositions = listOf(12),
+        )
+
+        assertEquals(setOf(12), state.manuallyRevealedPositions)
+        assertEquals("12", state.correctionDraft!!.rows.single().placementDraftValue)
+        assertEquals("7", state.correctionDraft.rows.single().killsDraftValue)
+        assertEquals("5", state.correctionDraft.rows.single().assignedTeamSlotDraftValue)
+        assertTrue(state.rows.single().originalParsedPlacementValue == null)
+        assertTrue(state.rows.single().detectedPlacementDisplayValue == "Unavailable")
+        assertTrue(state.correctionDraft.rows.single().playerKillDrafts.isEmpty())
+    }
+
+    @Test
+    fun legacyEvidenceRestoresWithoutManualIdentity() {
+        val state = restore(
+            ResultPositionCalculatedEvidence(position = 12),
+        )
+
+        assertTrue(state.manuallyRevealedPositions.isEmpty())
+    }
+
+    @Test
+    fun excludedManualMetadataDoesNotRestoreAsManual() {
+        val state = restore(
+            ResultPositionCalculatedEvidence(position = 12),
+            manuallyAddedPositions = listOf(12),
+            excludedSourcePositions = listOf(12),
+        )
+
+        assertTrue(state.manuallyRevealedPositions.isEmpty())
+        assertTrue(state.correctionDraft!!.rows.single().isExcluded)
+    }
+
+    @Test
+    fun screenshotIdentityWinsOverManualMetadata() {
+        val state = restore(
+            ResultPositionCalculatedEvidence(
+                position = 12,
+                sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                cropLeft = 1,
+                cropTop = 2,
+                cropRight = 3,
+                cropBottom = 4,
+            ),
+            manuallyAddedPositions = listOf(12),
+        )
+
+        assertTrue(state.manuallyRevealedPositions.isEmpty())
+        assertEquals(12, state.rows.single().originalParsedPlacementValue)
+    }
+
+    @Test
+    fun invalidManualMetadataIsIgnored() {
+        val state = restore(
+            ResultPositionCalculatedEvidence(position = 12),
+            manuallyAddedPositions = listOf(-1, 0, 13, 99),
+        )
+
+        assertTrue(state.manuallyRevealedPositions.isEmpty())
+    }
+
+    @Test
     fun legacyPlayerLevelEvidenceWithoutApplicabilityFlagsStillRestores() {
         val state = restore(
             ResultPositionCalculatedEvidence(
@@ -121,10 +192,14 @@ class MatchCalculatedEvidenceRestoredUiStateTest {
     private fun restore(
         position: ResultPositionCalculatedEvidence,
         origin: MatchCalculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.AUTOMATIC,
+        manuallyAddedPositions: List<Int> = emptyList(),
+        excludedSourcePositions: List<Int> = emptyList(),
     ): MatchOcrReviewUiState.Ready =
         MatchCalculatedEvidence(
             result = ResultCalculatedEvidence(
                 positions = listOf(position),
+                excludedSourcePositions = excludedSourcePositions,
+                manuallyAddedPositions = manuallyAddedPositions,
                 calculationOrigin = origin,
             ),
         ).toRestoredOcrReviewUiState(

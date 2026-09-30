@@ -45,6 +45,8 @@ data class ResultCalculatedEvidence(
     val positions: List<ResultPositionCalculatedEvidence> = emptyList(),
     /** Source positions explicitly excluded from finalization; absent in legacy payloads. */
     val excludedSourcePositions: List<Int> = emptyList(),
+    /** Logical positions created through Add Team; absent in legacy payloads. */
+    val manuallyAddedPositions: List<Int> = emptyList(),
     /** Calculation path that produced this result evidence; absent legacy payloads are automatic. */
     val calculationOrigin: MatchCalculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.AUTOMATIC,
 ) {

@@ -62,6 +62,16 @@ class MatchCalculatedEvidenceCodecTest {
     }
 
     @Test
+    fun roundTripPreservesManuallyAddedPositions() {
+        val result = ResultCalculatedEvidence(manuallyAddedPositions = listOf(11, 12))
+
+        assertEquals(
+            listOf(11, 12),
+            codec.decodeResult(codec.encodeResult(result))?.manuallyAddedPositions,
+        )
+    }
+
+    @Test
     fun legacyResultPayloadDefaultsToNoExcludedSourcePositions() {
         val payload = """
             {
@@ -70,6 +80,7 @@ class MatchCalculatedEvidenceCodecTest {
         """.trimIndent()
 
         assertEquals(emptyList<Int>(), codec.decodeResult(payload)?.excludedSourcePositions)
+        assertEquals(emptyList<Int>(), codec.decodeResult(payload)?.manuallyAddedPositions)
         assertEquals(
             MatchCalculatedEvidenceOrigin.AUTOMATIC,
             codec.decodeResult(payload)?.calculationOrigin,
