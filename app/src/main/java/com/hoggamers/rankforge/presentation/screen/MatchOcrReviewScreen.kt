@@ -928,9 +928,10 @@ private fun CompactPlayerCell(
     onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
 ) {
     val player = previewRow.slots.firstOrNull { it.slot == slot }
-    val playerName = player?.playerText?.trim().orEmpty().ifBlank {
-        stringResource(R.string.match_ocr_review_compact_not_detected)
-    }
+    val rawPlayerName = player?.playerText?.trim().orEmpty()
+    val isMissingPlayer =
+        rawPlayerName.isBlank() || rawPlayerName == MATCH_RESULT_NOT_DETECTED_PLAYER
+    val playerName = if (isMissingPlayer) "" else rawPlayerName
     val kill = player?.killText?.trim().orEmpty().ifBlank {
         stringResource(R.string.match_ocr_review_compact_unknown_kill)
     }
@@ -938,8 +939,13 @@ private fun CompactPlayerCell(
         ?.playerKillDrafts
         ?.firstOrNull { draft -> draft.playerSlot == slot }
     if (playerKillDraft == null) {
+        val text = if (isMissingPlayer) {
+            stringResource(R.string.match_ocr_review_compact_missing_result_player, slot, kill)
+        } else {
+            stringResource(R.string.match_ocr_review_compact_player, slot, playerName, kill)
+        }
         Text(
-            text = stringResource(R.string.match_ocr_review_compact_player, slot, playerName, kill),
+            text = text,
             color = PointIqOcrReviewHeader,
             fontSize = 14.sp,
             lineHeight = 20.sp,
@@ -966,14 +972,28 @@ private fun CompactPlayerCell(
         val killInputHeight = with(LocalDensity.current) {
             killTextStyle.lineHeight.toDp()
         }
-        val killBracketColor = if (isKillEmpty) MaterialTheme.colorScheme.error else Color.Unspecified
+        val killBracketColor = when {
+            !isKillEmpty -> Color.Unspecified
+            isMissingPlayer -> MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
+            else -> MaterialTheme.colorScheme.error
+        }
+        val emptyKillBackground = when {
+            !isKillEmpty -> Color.Transparent
+            isMissingPlayer -> MaterialTheme.colorScheme.error.copy(alpha = 0.04f)
+            else -> MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
+        }
+        val playerPrefix = if (isMissingPlayer) {
+            "$slot. "
+        } else {
+            "$slot. $playerName - "
+        }
         Row(
             modifier = modifier
                 .testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "$slot. $playerName - ",
+                text = playerPrefix,
                 style = killTextStyle,
                 maxLines = 1,
                 softWrap = false,
@@ -1003,11 +1023,7 @@ private fun CompactPlayerCell(
                     .width(killInputWidth)
                     .height(killInputHeight)
                     .background(
-                        color = if (isKillEmpty) {
-                            MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
-                        } else {
-                            Color.Transparent
-                        },
+                        color = emptyKillBackground,
                     )
                     .testTag(MatchOcrReviewTestTags.compactPlayerKillInput(previewRow.position, slot)),
             )
