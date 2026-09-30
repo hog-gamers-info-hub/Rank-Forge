@@ -104,6 +104,207 @@ class LobbyOcrAnchorResolverTest {
     }
 
     @Test
+    fun horizontalTwoAnchorPairsRequireMinimumSeparationAndRowAlignment() {
+        val cases = listOf(
+            Triple("1", "2", listOf(1, 2)),
+            Triple("3", "4", listOf(3, 4)),
+        )
+
+        cases.forEach { (leftSlot, rightSlot, expected) ->
+            val accepted = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(leftSlot, 300, 200),
+                    observation(rightSlot, 620, 210),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertEquals(expected, accepted.map { it.anchor.slotNumber })
+
+            val belowMinimum = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(leftSlot, 300, 200),
+                    observation(rightSlot, 619, 200),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertTrue(belowMinimum.isEmpty())
+
+            val aboveAlignmentTolerance = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(leftSlot, 300, 200),
+                    observation(rightSlot, 620, 211),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertTrue(aboveAlignmentTolerance.isEmpty())
+
+            val reversed = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(leftSlot, 620, 200),
+                    observation(rightSlot, 300, 200),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertEquals(1, reversed.size)
+        }
+    }
+
+    @Test
+    fun verticalTwoAnchorPairsRequireMinimumSeparationAndColumnAlignment() {
+        val cases = listOf(
+            Triple("1", "3", listOf(1, 3)),
+            Triple("2", "4", listOf(2, 4)),
+        )
+
+        cases.forEach { (topSlot, bottomSlot, expected) ->
+            val accepted = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(topSlot, 500, 200),
+                    observation(bottomSlot, 510, 344),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertEquals(expected, accepted.map { it.anchor.slotNumber })
+
+            val belowMinimum = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(topSlot, 500, 200),
+                    observation(bottomSlot, 500, 343),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertTrue(belowMinimum.isEmpty())
+
+            val aboveAlignmentTolerance = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(topSlot, 500, 200),
+                    observation(bottomSlot, 511, 344),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertTrue(aboveAlignmentTolerance.isEmpty())
+
+            val reversed = resolver.resolve(
+                screenshotIndex = 1,
+                observations = listOf(
+                    observation(topSlot, 500, 344),
+                    observation(bottomSlot, 500, 200),
+                ),
+                imageDimensions = dimensions,
+            )
+            assertEquals(1, reversed.size)
+        }
+    }
+
+    @Test
+    fun diagonalTwoAnchorPairsRequireOrientationMinimumsAndRatioBounds() {
+        val acceptedPlusBoundary = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", 300, 100),
+                observation("4", 852, 300),
+            ),
+            imageDimensions = dimensions,
+        )
+        assertEquals(listOf(1, 4), acceptedPlusBoundary.map { it.anchor.slotNumber })
+
+        val acceptedMinusBoundary = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", 300, 100),
+                observation("4", 709, 300),
+            ),
+            imageDimensions = dimensions,
+        )
+        assertEquals(listOf(1, 4), acceptedMinusBoundary.map { it.anchor.slotNumber })
+
+        val justOutsidePlusBoundary = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", 300, 100),
+                observation("4", 853, 300),
+            ),
+            imageDimensions = dimensions,
+        )
+        assertTrue(justOutsidePlusBoundary.isEmpty())
+
+        val justOutsideMinusBoundary = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", 300, 100),
+                observation("4", 708, 300),
+            ),
+            imageDimensions = dimensions,
+        )
+        assertTrue(justOutsideMinusBoundary.isEmpty())
+
+        val reversed = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", 852, 300),
+                observation("4", 300, 100),
+            ),
+            imageDimensions = dimensions,
+        )
+        assertEquals(listOf(1), reversed.map { it.anchor.slotNumber })
+
+        val belowHorizontalMinimum = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", 300, 100),
+                observation("4", 690, 262),
+            ),
+            imageDimensions = OcrImageDimensions(2_000, 720),
+        )
+        assertTrue(belowHorizontalMinimum.isEmpty())
+
+        val belowVerticalMinimum = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", 300, 100),
+                observation("4", 778, 299),
+            ),
+            imageDimensions = OcrImageDimensions(1_600, 1_000),
+        )
+        assertTrue(belowVerticalMinimum.isEmpty())
+    }
+
+    @Test
+    fun diagonalRatioValidationAppliesToTheOtherDiagonalRelationship() {
+        val accepted = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("2", 852, 100),
+                observation("3", 300, 300),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(2, 3), accepted.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun nearbyTwoAnchorPairIn1080By485ImageIsRejected() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("1", RawOcrBoundingBox(335, 9, 355, 28)),
+                observation("4", RawOcrBoundingBox(409, 59, 430, 78)),
+            ),
+            imageDimensions = OcrImageDimensions(1080, 485),
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
     fun sameTwoAnchorRulesApplyToAllThreeScreenshotGroups() {
         val observations = listOf(
             observation("5", 585, 236),
@@ -160,7 +361,7 @@ class LobbyOcrAnchorResolverTest {
             observations = listOf(
                 observation("2", 1076, 236),
                 observation("4", 1076, 441),
-                observation("4", 1000, 441),
+                observation("4", 1076, 500),
             ),
             imageDimensions = dimensions,
         )
@@ -190,7 +391,7 @@ class LobbyOcrAnchorResolverTest {
             screenshotIndex = 1,
             observations = listOf(
                 observation("1", 585, 236),
-                observation("1", 700, 300),
+                observation("1", 700, 285),
                 observation("4", 1076, 441),
             ),
             imageDimensions = dimensions,
@@ -276,6 +477,259 @@ class LobbyOcrAnchorResolverTest {
     }
 
     @Test
+    fun cleanFourAnchorGeometryPasses() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(1, 2, 3, 4), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun moderateFourAnchorGeometryVariationPasses() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(
+                topRight = 600 to 108,
+                bottomLeft = 305 to 200,
+                bottomRight = 595 to 203,
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(1, 2, 3, 4), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun excessiveTopRowMisalignmentRejectsAllStrongAssignments() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(
+                topRight = 600 to 130,
+                bottomRight = 600 to 211,
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun excessiveBottomRowMisalignmentRejectsAllStrongAssignments() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(
+                topRight = 600 to 112,
+                bottomRight = 600 to 230,
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun excessiveLeftColumnMisalignmentRejectsAllStrongAssignments() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(
+                bottomLeft = 340 to 200,
+                bottomRight = 650 to 200,
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun excessiveRightColumnMisalignmentRejectsAllStrongAssignments() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(
+                bottomLeft = 350 to 200,
+                bottomRight = 640 to 200,
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun exactlyTenPercentStrongEvidenceAlignmentPasses() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(
+                topRight = 600 to 110,
+                bottomRight = 600 to 210,
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(1, 2, 3, 4), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun justOverTenPercentStrongEvidenceAlignmentFails() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = fourAnchorObservations(
+                topRight = 600 to 111,
+                bottomRight = 600 to 211,
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun eachThreeAnchorMissingCornerCasePasses() {
+        val cases = listOf(
+            listOf(observation("2", 600, 100), observation("3", 300, 200), observation("4", 600, 200)),
+            listOf(observation("1", 300, 100), observation("3", 300, 200), observation("4", 600, 200)),
+            listOf(observation("1", 300, 100), observation("2", 600, 100), observation("4", 600, 200)),
+            listOf(observation("1", 300, 100), observation("2", 600, 100), observation("3", 300, 200)),
+        )
+        val expectedSlots = listOf(
+            listOf(2, 3, 4),
+            listOf(1, 3, 4),
+            listOf(1, 2, 4),
+            listOf(1, 2, 3),
+        )
+
+        cases.zip(expectedSlots).forEach { (observations, expected) ->
+            val anchors = resolver.resolve(1, observations, dimensions)
+            assertEquals(expected, anchors.map { it.anchor.slotNumber })
+        }
+    }
+
+    @Test
+    fun moderateThreeAnchorGeometryVariationPasses() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("2", 600, 106),
+                observation("3", 305, 200),
+                observation("4", 600, 203),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(2, 3, 4), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun excessiveThreeAnchorRowErrorFails() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("2", 600, 100),
+                observation("3", 300, 250),
+                observation("4", 600, 200),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun excessiveThreeAnchorColumnErrorFails() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("2", 600, 100),
+                observation("3", 300, 200),
+                observation("4", 800, 200),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun inferredThreeAnchorPointOutsideSourceImageFails() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("2", 600, -5),
+                observation("3", 300, 200),
+                observation("4", 600, 200),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertTrue(anchors.isEmpty())
+    }
+
+    @Test
+    fun invalidFourAnchorAssignmentRecoversThroughValidThreeAnchorSubset() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 2,
+            observations = listOf(
+                observation("5", 400, 100),
+                observation("6", 1076, 245),
+                observation("7", 585, 451),
+                observation("8", 1076, 451),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(6, 7, 8), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun validFourAnchorAssignmentStillHasPriorityOverThreeAnchorSubset() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 2,
+            observations = listOf(
+                observation("5", 585, 245),
+                observation("6", 1076, 245),
+                observation("7", 585, 451),
+                observation("8", 1076, 451),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(5, 6, 7, 8), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun knownGoodScreenshotOneToFourThreeAnchorGeometryPasses() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 1,
+            observations = listOf(
+                observation("2", RawOcrBoundingBox(716, 149, 736, 169)),
+                observation("3", RawOcrBoundingBox(400, 288, 420, 307)),
+                observation("4", RawOcrBoundingBox(715, 288, 736, 307)),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(2, 3, 4), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
+    fun knownGoodScreenshotNineToTwelveThreeAnchorGeometryPasses() {
+        val anchors = resolver.resolve(
+            screenshotIndex = 3,
+            observations = listOf(
+                observation("10", RawOcrBoundingBox(715, 158, 735, 179)),
+                observation("11", RawOcrBoundingBox(399, 297, 419, 316)),
+                observation("12", RawOcrBoundingBox(715, 297, 735, 316)),
+            ),
+            imageDimensions = dimensions,
+        )
+
+        assertEquals(listOf(10, 11, 12), anchors.map { it.anchor.slotNumber })
+    }
+
+    @Test
     fun inputOrderingDoesNotChangeStrongEvidenceResolution() {
         val observations = listOf(
             observation("5", 585, 245),
@@ -309,5 +763,26 @@ class LobbyOcrAnchorResolverTest {
             centerY + 10,
         ),
         level = LobbyOcrAnchorLevel.ELEMENT,
+    )
+
+    private fun observation(
+        text: String,
+        boundingBox: RawOcrBoundingBox,
+    ) = LobbyOcrAnchorObservation(
+        text = text,
+        boundingBox = boundingBox,
+        level = LobbyOcrAnchorLevel.ELEMENT,
+    )
+
+    private fun fourAnchorObservations(
+        topLeft: Pair<Int, Int> = 300 to 100,
+        topRight: Pair<Int, Int> = 600 to 100,
+        bottomLeft: Pair<Int, Int> = 300 to 200,
+        bottomRight: Pair<Int, Int> = 600 to 200,
+    ) = listOf(
+        observation("1", topLeft.first, topLeft.second),
+        observation("2", topRight.first, topRight.second),
+        observation("3", bottomLeft.first, bottomLeft.second),
+        observation("4", bottomRight.first, bottomRight.second),
     )
 }
