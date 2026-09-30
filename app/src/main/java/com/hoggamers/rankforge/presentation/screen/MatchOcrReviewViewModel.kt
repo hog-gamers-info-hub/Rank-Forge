@@ -643,18 +643,32 @@ class MatchOcrReviewViewModel @Inject constructor(
         _uiState.update { state ->
             if (state !is MatchOcrReviewUiState.Ready || state.finalization.isFinalized) {
                 state
-            } else {
-                state.nextManualResultPositionOrNull()?.let { position ->
+            } else when (state.calculatedEvidenceOrigin) {
+                MatchCalculatedEvidenceOrigin.MANUAL -> {
+                    val position = state.nextAddTeamPositionOrNull() ?: return@update state
                     val currentDraft = state.correctionDraft
-                        ?: MatchOcrReviewCorrectionDraftReducer.createInitialDraft(state.rows)
+                        ?: return@update state
                     state.copy(
-                        manuallyRevealedPositions = state.manuallyRevealedPositions + position,
                         correctionDraft = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(
                             draft = currentDraft,
                             rowIndex = position - 1,
                         ),
                     )
-                } ?: state
+                }
+
+                MatchCalculatedEvidenceOrigin.AUTOMATIC -> {
+                    state.nextManualResultPositionOrNull()?.let { position ->
+                        val currentDraft = state.correctionDraft
+                            ?: MatchOcrReviewCorrectionDraftReducer.createInitialDraft(state.rows)
+                        state.copy(
+                            manuallyRevealedPositions = state.manuallyRevealedPositions + position,
+                            correctionDraft = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(
+                                draft = currentDraft,
+                                rowIndex = position - 1,
+                            ),
+                        )
+                    } ?: state
+                }
             }
         }
     }
@@ -667,19 +681,29 @@ class MatchOcrReviewViewModel @Inject constructor(
                 val wasManuallyRevealed = position in state.manuallyRevealedPositions
                 val currentDraft = state.correctionDraft
                     ?: MatchOcrReviewCorrectionDraftReducer.createInitialDraft(state.rows)
-                state.copy(
-                    manuallyRevealedPositions = state.manuallyRevealedPositions - position,
-                    correctionDraft = if (wasManuallyRevealed) {
-                        MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(
-                            draft = currentDraft,
-                            rowIndex = rowIndex,
-                        )
-                    } else {
+                val updatedDraft = when {
+                    state.calculatedEvidenceOrigin == MatchCalculatedEvidenceOrigin.MANUAL -> {
                         MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
                             draft = currentDraft,
                             rowIndex = rowIndex,
                         )
-                    },
+                    }
+                    wasManuallyRevealed -> {
+                        MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(
+                            draft = currentDraft,
+                            rowIndex = rowIndex,
+                        )
+                    }
+                    else -> {
+                        MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
+                            draft = currentDraft,
+                            rowIndex = rowIndex,
+                        )
+                    }
+                }
+                state.copy(
+                    manuallyRevealedPositions = state.manuallyRevealedPositions - position,
+                    correctionDraft = updatedDraft,
                     finalization = state.finalization.copy(
                         showWarningConfirmation = false,
                         error = null,
