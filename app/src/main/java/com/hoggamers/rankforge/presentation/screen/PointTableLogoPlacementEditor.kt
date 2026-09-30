@@ -164,8 +164,8 @@ fun pointTableLogoResizeHandle(
 ): PointTableLogoResizeHandle {
     val radiusPx = handleDiameterPx / 2f
     return PointTableLogoResizeHandle(
-        centerXPx = logoBounds.rightPx + outwardOffsetPx,
-        centerYPx = logoBounds.bottomPx + outwardOffsetPx,
+        centerXPx = logoBounds.rightPx + radiusPx + outwardOffsetPx,
+        centerYPx = logoBounds.bottomPx + radiusPx + outwardOffsetPx,
         radiusPx = radiusPx,
     )
 }
