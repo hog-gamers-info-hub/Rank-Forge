@@ -190,6 +190,12 @@ internal val LocalMatchReviewScreenshotActionExpansion =
 
 internal val LocalMatchReviewInteractionsEnabled = staticCompositionLocalOf { true }
 
+internal fun hasPendingSelectedResultCrop(
+    selectedPages: List<Pair<MatchResultScreenshotRole, MatchResultScreenshotSlotUiState>>,
+): Boolean = selectedPages.any { (_, slot) ->
+    slot.isPreviewPreparationInProgress && !slot.hasConfirmedCrop
+}
+
 internal fun shouldLockMatchReviewInteractions(
     lobbySlots: List<MatchLobbyScreenshotSlotUiState>,
     resultSlots: List<MatchResultScreenshotSlotUiState>,
@@ -4509,35 +4515,54 @@ private fun ResultScreenshotSelector(
                         .maxOrNull()
                         ?: 1f
                 )
-                HorizontalPager(
-                    state = pagerState,
-                    userScrollEnabled = interactionsEnabled,
-                    pageSize = androidx.compose.foundation.pager.PageSize.Fill,
-                    pageSpacing = RankForgeSpacing.ExtraSmall,
-                    verticalAlignment = Alignment.Top,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
-                ) { page ->
-                    selectedPages.getOrNull(page)?.let { (role, slot) ->
-                        ResultScreenshotPage(
-                            screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2,
-                            slot = slot,
-                            positionCropPreviews = positionCropsByRole[role].orEmpty(),
-                            imageAreaHeight = maxResultScreenshotHeight,
-                            isEditable = isEditable,
-                            showSourceScreenshot = showSourceScreenshot,
-                            showOcrDetails = !showOcrDetailsOutsideScreenshotPager &&
-                                pagerState.currentPage == page,
-                            showPositionCropPreviews = !hasCombinedPositionCropPreviews,
-                            ocrDetailsContent = ocrDetailsContent,
-                            ocrPositionContent = ocrPositionContent,
-                            onSelectScreenshot = onSelectScreenshot,
-                            onOpenCrop = onOpenCrop,
-                            onRemoveScreenshot = onRemoveScreenshot,
-                            onPreviewPreparationFinished = onPreviewPreparationFinished,
-                            screenshotActionExpansion = screenshotActionExpansion,
+                if (hasPendingSelectedResultCrop(selectedPages)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(maxResultScreenshotHeight)
+                            .clip(MaterialTheme.shapes.medium)
+                            .border(
+                                width = 1.dp,
+                                color = PointIqMatchReviewSectionBorder,
+                                shape = MaterialTheme.shapes.medium,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ResultScreenshotPreviewSkeleton(
+                            modifier = Modifier.fillMaxSize(),
                         )
+                    }
+                } else {
+                    HorizontalPager(
+                        state = pagerState,
+                        userScrollEnabled = interactionsEnabled,
+                        pageSize = androidx.compose.foundation.pager.PageSize.Fill,
+                        pageSpacing = RankForgeSpacing.ExtraSmall,
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_PAGER_TEST_TAG),
+                    ) { page ->
+                        selectedPages.getOrNull(page)?.let { (role, slot) ->
+                            ResultScreenshotPage(
+                                screenshotNumber = if (role == MatchResultScreenshotRole.MATCH_RESULT_UPPER) 1 else 2,
+                                slot = slot,
+                                positionCropPreviews = positionCropsByRole[role].orEmpty(),
+                                imageAreaHeight = maxResultScreenshotHeight,
+                                isEditable = isEditable,
+                                showSourceScreenshot = showSourceScreenshot,
+                                showOcrDetails = !showOcrDetailsOutsideScreenshotPager &&
+                                    pagerState.currentPage == page,
+                                showPositionCropPreviews = !hasCombinedPositionCropPreviews,
+                                ocrDetailsContent = ocrDetailsContent,
+                                ocrPositionContent = ocrPositionContent,
+                                onSelectScreenshot = onSelectScreenshot,
+                                onOpenCrop = onOpenCrop,
+                                onRemoveScreenshot = onRemoveScreenshot,
+                                onPreviewPreparationFinished = onPreviewPreparationFinished,
+                                screenshotActionExpansion = screenshotActionExpansion,
+                            )
+                        }
                     }
                 }
             }

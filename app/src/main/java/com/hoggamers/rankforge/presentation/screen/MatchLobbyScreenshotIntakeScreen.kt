@@ -132,6 +132,12 @@ internal fun calculateMaxTeamCropHeightRatio(
     dimensionsForCrop.height.toFloat() / dimensionsForCrop.width.toFloat()
 }
 
+internal fun hasPendingSelectedLobbyCrop(
+    selectedSlots: List<MatchLobbyScreenshotSlotUiState>,
+): Boolean = selectedSlots.any { slot ->
+    slot.isPreviewPreparationInProgress && !slot.hasConfirmedCrop
+}
+
 val LocalMatchLobbyTeamCropPreviews = staticCompositionLocalOf<Map<Int, MatchLobbyTeamCropPreviewResult>> {
     emptyMap()
 }
@@ -406,30 +412,38 @@ fun MatchLobbyScreenshotIntakeScreen(
                             .maxOrNull()
                             ?: 1f
                     )
-                    HorizontalPager(
-                        state = pagerState,
-                        userScrollEnabled = reviewInteractionsEnabled,
-                        pageSize = PageSize.Fill,
-                        pageSpacing = RankForgeSpacing.ExtraSmall,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
-                    ) { page ->
-                        selectedSlots.getOrNull(page)?.let { slot ->
-                            LobbyScreenshotDetail(
-                                slot = slot,
-                                imageAreaHeight = maxLobbyScreenshotHeight,
-                                compactActions = compactActions,
-                                isFinalized = uiState.isFinalized,
-                                isAvailable = uiState.isAvailable,
-                                onSelect = onSelect,
-                                onSelectBatch = onSelectBatch,
-                                onCrop = onCrop,
-                                onRemove = onRemove,
-                                onPreviewPreparationFinished = onPreviewPreparationFinished,
-                                screenshotActionExpansion = screenshotActionExpansion,
-                                interactionsEnabled = reviewInteractionsEnabled,
-                            )
+                    if (hasPendingSelectedLobbyCrop(selectedSlots)) {
+                        LobbyScreenshotPreviewSkeleton(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(maxLobbyScreenshotHeight),
+                        )
+                    } else {
+                        HorizontalPager(
+                            state = pagerState,
+                            userScrollEnabled = reviewInteractionsEnabled,
+                            pageSize = PageSize.Fill,
+                            pageSpacing = RankForgeSpacing.ExtraSmall,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PAGER_TEST_TAG),
+                        ) { page ->
+                            selectedSlots.getOrNull(page)?.let { slot ->
+                                LobbyScreenshotDetail(
+                                    slot = slot,
+                                    imageAreaHeight = maxLobbyScreenshotHeight,
+                                    compactActions = compactActions,
+                                    isFinalized = uiState.isFinalized,
+                                    isAvailable = uiState.isAvailable,
+                                    onSelect = onSelect,
+                                    onSelectBatch = onSelectBatch,
+                                    onCrop = onCrop,
+                                    onRemove = onRemove,
+                                    onPreviewPreparationFinished = onPreviewPreparationFinished,
+                                    screenshotActionExpansion = screenshotActionExpansion,
+                                    interactionsEnabled = reviewInteractionsEnabled,
+                                )
+                            }
                         }
                     }
                 }
