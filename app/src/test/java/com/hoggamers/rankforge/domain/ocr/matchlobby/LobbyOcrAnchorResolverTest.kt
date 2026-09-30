@@ -79,6 +79,55 @@ class LobbyOcrAnchorResolverTest {
     }
 
     @Test
+    fun reportsDistinctPotentialSlotPositionsBeforeGeometryValidation() {
+        val group = resolver.resolveAll(
+            observations = listOf(
+                observation("1", 300, 100),
+                observation("4", 900, 300),
+            ),
+            imageDimensions = dimensions,
+        ).first()
+
+        assertEquals(2, group.potentialAnchorCount)
+        assertTrue(group.anchors.isEmpty())
+    }
+
+    @Test
+    fun duplicateHierarchyRepresentationsDoNotIncreasePotentialSlotCount() {
+        val box = RawOcrBoundingBox(575, 226, 595, 246)
+        val group = resolver.resolveAll(
+            observations = listOf(
+                LobbyOcrAnchorObservation(
+                    text = "1",
+                    boundingBox = box,
+                    level = LobbyOcrAnchorLevel.BLOCK,
+                    blockIndex = 0,
+                ),
+                LobbyOcrAnchorObservation(
+                    text = "1",
+                    boundingBox = box,
+                    level = LobbyOcrAnchorLevel.LINE,
+                    blockIndex = 0,
+                    lineIndex = 0,
+                    parentBoundingBox = box,
+                ),
+                LobbyOcrAnchorObservation(
+                    text = "1",
+                    boundingBox = box,
+                    level = LobbyOcrAnchorLevel.ELEMENT,
+                    blockIndex = 0,
+                    lineIndex = 0,
+                    elementIndex = 0,
+                    parentBoundingBox = box,
+                ),
+            ),
+            imageDimensions = dimensions,
+        ).first()
+
+        assertEquals(1, group.potentialAnchorCount)
+    }
+
+    @Test
     fun allSixUniqueTwoAnchorRelationshipsAreAccepted() {
         val cases = listOf(
             listOf(observation("1", 585, 236), observation("2", 1076, 236)),

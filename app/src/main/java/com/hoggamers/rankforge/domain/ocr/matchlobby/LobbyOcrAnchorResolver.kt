@@ -30,6 +30,7 @@ data class LobbyResolvedOcrAnchorGroup(
     val anchors: List<LobbyResolvedOcrAnchor>,
     val directlyObservedAnchorCount: Int,
     val alignmentError: Double,
+    val potentialAnchorCount: Int = 0,
 )
 
 class LobbyOcrAnchorResolver {
@@ -60,6 +61,7 @@ class LobbyOcrAnchorResolver {
             .mapNotNull { it.toCandidateOrNull(expectedSlots, imageDimensions) }
             .groupBy { it.slot }
             .mapValues { (_, candidates) -> deduplicate(candidates) }
+        val potentialAnchorCount = candidatesBySlot.count { (_, candidates) -> candidates.isNotEmpty() }
 
         val best = resolveBestAssignment(
             screenshotIndex = screenshotIndex,
@@ -78,6 +80,7 @@ class LobbyOcrAnchorResolver {
             },
             directlyObservedAnchorCount = best.selectedCount,
             alignmentError = best.alignmentError,
+            potentialAnchorCount = potentialAnchorCount,
         )
     }
 
