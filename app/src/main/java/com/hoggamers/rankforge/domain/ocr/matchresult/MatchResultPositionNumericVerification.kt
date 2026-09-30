@@ -65,6 +65,21 @@ object MatchResultNumericConsensus {
     }
 }
 
+/** Final kill-only consensus: at least two readings, with no conflicting value. */
+object MatchResultFocusedKillNumericConsensus {
+    fun resolve(candidates: List<MatchResultNumericCandidate>): MatchResultNumericVerification {
+        val usable = candidates.filter { it.value != null }
+        if (usable.size < 2) return MatchResultNumericVerification.Unresolved(candidates)
+
+        val values = usable.mapNotNull { it.value }.distinct()
+        return if (values.size == 1) {
+            MatchResultNumericVerification.Verified(values.single(), candidates)
+        } else {
+            MatchResultNumericVerification.Conflict(candidates)
+        }
+    }
+}
+
 data class MatchResultPositionSequenceValidation(
     val expectedPositions: List<Int>,
     val actualPositions: List<Int>,

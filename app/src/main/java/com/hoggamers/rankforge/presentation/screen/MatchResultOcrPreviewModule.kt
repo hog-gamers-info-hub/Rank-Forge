@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchResultLobbyOcrSlotRanker
 import com.hoggamers.rankforge.data.ocr.matchresult.CachingMatchResultOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionCropGenerator
+import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionPaddleNumericVerifier
 import com.hoggamers.rankforge.data.ocr.matchresult.AndroidMatchResultPositionOcrPreviewRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPpOnlyPairReconciliationRunner
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrPreviewLocalFileResolver
@@ -35,6 +36,7 @@ object MatchResultOcrPreviewModule {
         screenshotOwnerProvider: ScreenshotOwnerProvider,
         positionCropGenerator: AndroidMatchResultPositionCropGenerator,
         paddleEngineProvider: com.hoggamers.rankforge.data.ocr.matchresult.MatchResultPositionPaddleOcrEngineProvider,
+        numericVerifier: AndroidMatchResultPositionPaddleNumericVerifier,
     ): MatchResultOcrPreviewRunner {
         val ppPositionRunner = AndroidMatchResultPositionOcrPreviewRunner(
             assetRepository = assetRepository,
@@ -44,6 +46,7 @@ object MatchResultOcrPreviewModule {
             screenshotOwnerProvider = screenshotOwnerProvider,
             positionCropGenerator = positionCropGenerator,
             paddleEngineProvider = paddleEngineProvider,
+            numericVerifier = numericVerifier,
         )
         val ppPairRunner = MatchResultPpOnlyPairReconciliationRunner(
             ppRoute = ppPositionRunner,

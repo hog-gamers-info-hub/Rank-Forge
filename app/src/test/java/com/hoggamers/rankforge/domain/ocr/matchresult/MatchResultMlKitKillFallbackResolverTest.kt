@@ -137,6 +137,26 @@ class MatchResultMlKitKillFallbackResolverTest {
     }
 
     @Test
+    fun detailedResolutionRetainsMarkerOnlySlotEvidenceForLaterFallbackGating() {
+        val result = resolver.resolveWithEvidence(
+            positionCrop = positionCrop,
+            rowCrops = twoRows,
+            currentPpSemantic = semantic(
+                position = 7,
+                currentPpKills = emptyMap(),
+                ppAnchorBounds = emptyMap(),
+                playerNamesResolved = true,
+            ),
+            evidence = evidence(
+                observation("Eliminations", left = 540, top = 60, right = 590, bottom = 80),
+            ),
+        )
+
+        assertTrue(3 in result.recognizedEliminationMarkerSlots)
+        assertFalse(result.verifications.containsKey(3))
+    }
+
+    @Test
     fun multipleAttachedMlKillsRemainUnresolved() {
         val result = resolve(
             ppAnchorBounds = mapOf(3 to anchorBounds()),
