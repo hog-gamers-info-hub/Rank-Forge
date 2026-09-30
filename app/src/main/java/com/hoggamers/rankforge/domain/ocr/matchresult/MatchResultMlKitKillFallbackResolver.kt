@@ -3,24 +3,43 @@ package com.hoggamers.rankforge.domain.ocr.matchresult
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 
 /** Recovers only unresolved kill fields from already-retained ML Kit observations. */
+data class MatchResultMlKitKillFallbackResolution(
+    val verifications: Map<Int, MatchResultNumericVerification>,
+    val recognizedEliminationMarkerSlots: Set<Int>,
+)
+
 class MatchResultMlKitKillFallbackResolver {
     fun resolve(
         positionCrop: MatchResultPositionCrop,
         rowCrops: List<MatchResultPositionRowCrop>,
         currentPpSemantic: MatchResultPositionSemanticResult,
         evidence: MatchResultAutoCropEvidence,
-    ): Map<Int, MatchResultNumericVerification> {
+    ): Map<Int, MatchResultNumericVerification> = resolveWithEvidence(
+        positionCrop = positionCrop,
+        rowCrops = rowCrops,
+        currentPpSemantic = currentPpSemantic,
+        evidence = evidence,
+    ).verifications
+
+    fun resolveWithEvidence(
+        positionCrop: MatchResultPositionCrop,
+        rowCrops: List<MatchResultPositionRowCrop>,
+        currentPpSemantic: MatchResultPositionSemanticResult,
+        evidence: MatchResultAutoCropEvidence,
+    ): MatchResultMlKitKillFallbackResolution {
         val killFields = currentPpSemantic.fields
             .asSequence()
             .filter { it.type == MatchResultOcrFieldType.KILL && it.slot != null }
             .associateBy { it.slot!! }
-        return (1..4).mapNotNull { slot ->
-            val kill = killFields[slot] ?: return@mapNotNull null
-            if (kill.resolvedText.isNotBlank()) return@mapNotNull null
+        val verifications = mutableMapOf<Int, MatchResultNumericVerification>()
+        val recognizedMarkerSlots = mutableSetOf<Int>()
+        (1..4).forEach { slot ->
+            val kill = killFields[slot] ?: return@forEach
+            if (kill.resolvedText.isNotBlank()) return@forEach
 
             val rowBounds = rowCrops.firstOrNull {
                 it.rowIndex == MatchResultKillFieldLayout.rowIndexForSlot(slot)
-            }?.bounds ?: return@mapNotNull null
+            }?.bounds ?: return@forEach
             val killBounds = MatchResultKillFieldLayout.bounds(
                 position = positionCrop.position,
                 cropWidth = positionCrop.bounds.width,
@@ -44,12 +63,20 @@ class MatchResultMlKitKillFallbackResolver {
                 }
                 .sortedWith(compareBy<LocalObservation> { it.bounds.centerX() }.thenBy { it.bounds.centerY() })
 
+            if (observations.any { MatchResultEliminationAnchorText.find(it.text) != null }) {
+                recognizedMarkerSlots += slot
+            }
+
             val verification = resolveCell(
                 observations = observations,
                 ppAnchorBounds = currentPpSemantic.eliminationAnchorBounds[slot],
             )
-            verification?.let { slot to it }
-        }.toMap()
+            verification?.let { verifications[slot] = it }
+        }
+        return MatchResultMlKitKillFallbackResolution(
+            verifications = verifications,
+            recognizedEliminationMarkerSlots = recognizedMarkerSlots,
+        )
     }
 
     private fun resolveCell(

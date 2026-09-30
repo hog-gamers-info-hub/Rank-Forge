@@ -28,6 +28,16 @@ class MatchResultPositionNumericVerificationTest {
     }
 
     @Test
+    fun focusedKillConsensusRequiresTwoMatchingUsableReadings() {
+        assertFocusedVerified(listOf(3, 3, null), 3)
+        assertFocusedVerified(listOf("O", "0", null), 0)
+        assertFocusedVerified(listOf("D", "0", null), 0)
+        assertTrue(focusedResolve(listOf(3, null, null)) is MatchResultNumericVerification.Unresolved)
+        assertTrue(focusedResolve(listOf(3, 3, 8)) is MatchResultNumericVerification.Conflict)
+        assertTrue(focusedResolve(listOf(2, 3, null)) is MatchResultNumericVerification.Conflict)
+    }
+
+    @Test
     fun oneOrNoUsableCandidateIsUnresolved() {
         assertTrue(resolve(7, null, null) is MatchResultNumericVerification.Unresolved)
         assertTrue(resolve(null, null, null) is MatchResultNumericVerification.Unresolved)
@@ -95,6 +105,35 @@ class MatchResultPositionNumericVerificationTest {
         ))
     }
 
+    @Test
+    fun focusedKillLayoutKeepsMeasuredSlotBandsAcrossPositionGroups() {
+        val row = MatchResultPositionRowCrop(1, com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect(0, 10, 1000, 90))
+        listOf(1, 5).forEach { position ->
+            val bounds = MatchResultPositionFocusedNumericCropLayout.boundsOrNull(
+                role = com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = position,
+                field = MatchResultFocusedNumericField.KILL_SLOT_1,
+                imageWidth = 1000,
+                imageHeight = 100,
+                row = row,
+            )!!
+            assertEquals(if (position <= 5) 340 else 400, bounds.left)
+            assertEquals(if (position <= 5) 430 else 520, bounds.right)
+        }
+        listOf(6, 11).forEach { position ->
+            val bounds = MatchResultPositionFocusedNumericCropLayout.boundsOrNull(
+                role = com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                position = position,
+                field = MatchResultFocusedNumericField.KILL_SLOT_3,
+                imageWidth = 1000,
+                imageHeight = 100,
+                row = row,
+            )!!
+            assertEquals(810, bounds.left)
+            assertEquals(920, bounds.right)
+        }
+    }
+
     private fun assertVerifiedValues(values: List<Int?>, expected: Int) = assertVerified(
         values.mapIndexed { index, value ->
             MatchResultNumericCandidate(
@@ -111,6 +150,25 @@ class MatchResultPositionNumericVerificationTest {
         val result = MatchResultNumericConsensus.resolve(candidates)
         assertVerified(result, expected)
     }
+
+    private fun assertFocusedVerified(values: List<Any?>, expected: Int) {
+        val result = focusedResolve(values)
+        assertVerified(result, expected)
+    }
+
+    private fun focusedResolve(values: List<Any?>): MatchResultNumericVerification =
+        MatchResultFocusedKillNumericConsensus.resolve(values.mapIndexed { index, value ->
+            val raw = value?.toString().orEmpty()
+            MatchResultNumericCandidate(
+                variant = MatchResultNumericCropVariant.entries[index],
+                rawText = raw,
+                value = when {
+                    raw.equals("O", ignoreCase = true) || raw == "D" -> 0
+                    else -> raw.toIntOrNull()
+                },
+                confidence = 0.9f,
+            )
+        })
 
     private fun assertVerified(result: MatchResultNumericVerification, expected: Int) {
         assertTrue(result is MatchResultNumericVerification.Verified)

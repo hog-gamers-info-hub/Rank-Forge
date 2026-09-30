@@ -18,6 +18,7 @@ enum class MatchResultOcrFieldStatus {
     O_NORMALIZED_TO_0,
     ZERO_INFERRED_FROM_PLAYER_PRESENT,
     MLKIT_FALLBACK,
+    FOCUSED_NUMERIC_FALLBACK,
 }
 
 enum class MatchResultOcrRowSource {

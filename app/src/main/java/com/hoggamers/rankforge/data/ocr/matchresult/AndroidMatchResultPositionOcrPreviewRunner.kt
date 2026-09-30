@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
 import com.hoggamers.rankforge.data.ocr.preprocessing.LOBBY_OCR_ENHANCEMENT_PROFILE
 import com.hoggamers.rankforge.data.ocr.preprocessing.OcrImageEnhancer
+import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBlock
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidator
@@ -18,12 +19,17 @@ import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultAutoCropEvidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrExtractionResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultMlKitKillFallbackResolver
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultFocusedNumericKillFallbackKey
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultFocusedNumericKillFallbackMerger
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultEliminationAnchorText
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultKillFieldLayout
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrFieldMapper
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionOcrInput
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassifier
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionLogicalRowClassification
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCrop
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionCropCalculationResult
+import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionRowCrop
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionSemanticResult
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultNumericVerification
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionKillFallbackMerger
@@ -46,6 +52,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private val screenshotOwnerProvider: ScreenshotOwnerProvider,
     private val positionCropGenerator: AndroidMatchResultPositionCropGenerator,
     private val paddleEngineProvider: MatchResultPositionPaddleOcrEngineProvider,
+    private val numericVerifier: AndroidMatchResultPositionPaddleNumericVerifier,
     private val fieldMapper: MatchResultPositionOcrFieldMapper = MatchResultPositionOcrFieldMapper(),
 ) : MatchResultPairOcrPreviewRunner {
     private val imageEnhancer: OcrImageEnhancer = AndroidOcrImageEnhancer()
@@ -53,6 +60,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private val pairSemanticRoleResolver = MatchResultPairSemanticRoleResolver()
     private val mlKitKillFallbackResolver = MatchResultMlKitKillFallbackResolver()
     private val positionKillFallbackMerger = MatchResultPositionKillFallbackMerger()
+    private val focusedNumericKillFallbackMerger = MatchResultFocusedNumericKillFallbackMerger()
 
     override suspend fun process(
         identity: MatchResultScreenshotIdentity,
@@ -226,7 +234,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                     )
                 }
                 try {
-                    val panelSemantics = runPanelPpProduction(
+                    val panelResult = runPanelPpProduction(
                         inputBitmap = inputBitmap,
                         screenshotRole = prepared.identity.role,
                         role = assignedRole,
@@ -235,11 +243,23 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                         mlKitEvidence = prepared.evidence,
                         sourceCrops = processingGeometry.crops,
                     )
-                    val semantics = recoverMissingKillsWithPositionPp(
-                        baseSemantics = panelSemantics,
+                    val positionPpResult = recoverMissingKillsWithPositionPp(
+                        baseSemantics = panelResult.semantics,
                         generatedCrops = generated.crops,
                         role = assignedRole,
                         allowUpperPositionElevenFallback = allowUpperFallback,
+                    )
+                    val semantics = recoverMissingKillsWithFocusedNumericFallback(
+                        baseSemantics = positionPpResult.semantics,
+                        generatedCrops = generated.crops,
+                        role = assignedRole,
+                        rowCropsByPosition = panelResult.rowCropsByPosition +
+                            positionPpResult.rowCropsByPosition,
+                        ppMarkerSeenSlotsByPosition = unionSlotEvidence(
+                            panelResult.ppMarkerSeenSlotsByPosition,
+                            positionPpResult.ppMarkerSeenSlotsByPosition,
+                        ),
+                        mlKitMarkerSeenSlotsByPosition = panelResult.mlKitMarkerSeenSlotsByPosition,
                     )
                     val extraction = semantics.toAcceptedExtraction(assignedRole, allowUpperFallback)
                         ?: run {
@@ -295,10 +315,12 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         generatedCrops: List<MatchResultPositionBitmapCrop>,
         role: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean,
-    ): List<MatchResultPositionSemanticResult> {
+    ): PositionPpKillRecoveryResult {
         var engine: MatchResultPositionPaddleOcrEngine? = null
         var engineInitializationAttempted = false
-        return positionKillFallbackMerger.recover(
+        val rowCropsByPosition = mutableMapOf<Int, List<MatchResultPositionRowCrop>>()
+        val ppMarkerSeenSlotsByPosition = mutableMapOf<Int, Set<Int>>()
+        val semantics = positionKillFallbackMerger.recover(
             baseSemantics = baseSemantics,
             availablePositions = generatedCrops.mapTo(mutableSetOf()) { it.geometry.position },
             recoverPosition = recover@{ target ->
@@ -345,8 +367,23 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                         target.missingSlots.all { slot ->
                             semantic.row?.playerSlots?.any { it.slot == slot } == true
                         }
+                }?.also { semantic ->
+                    rowCropsByPosition[target.position] = classification.rowCrops
+                    ppMarkerSeenSlotsByPosition[target.position] = recognizedPpMarkerSlots(
+                        position = crop.geometry.position,
+                        cropWidth = crop.bitmap.width,
+                        blocks = classification.blocks,
+                        rowCrops = classification.rowCrops,
+                    ) + semantic.basicKillEvidence
+                        .filterValues { it?.markerMatched == true }
+                        .keys
                 }
             },
+        )
+        return PositionPpKillRecoveryResult(
+            semantics = semantics,
+            rowCropsByPosition = rowCropsByPosition,
+            ppMarkerSeenSlotsByPosition = ppMarkerSeenSlotsByPosition,
         )
     }
 
@@ -358,7 +395,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         allowUpperPositionElevenFallback: Boolean,
         mlKitEvidence: MatchResultAutoCropEvidence,
         sourceCrops: List<MatchResultPositionCrop>,
-    ): List<MatchResultPositionSemanticResult> {
+    ): PanelPpProductionResult {
         val engine = paddleEngineProvider.getOrCreate()
         val runResult = engine.recognize(inputBitmap)
         if (BuildConfig.DEBUG) {
@@ -396,7 +433,19 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         if (usableSemantics.isEmpty()) {
             throw IllegalStateException("No usable position OCR for role=$role")
         }
-        return usableSemantics.sortedBy { it.position }
+        val usableResults = semanticResults.filter { it.productionReady && it.semantic != null }
+        return PanelPpProductionResult(
+            semantics = usableSemantics.sortedBy { it.position },
+            rowCropsByPosition = usableResults.associate { result ->
+                result.semantic!!.position to result.rowCrops
+            },
+            ppMarkerSeenSlotsByPosition = usableResults.associate { result ->
+                result.semantic!!.position to result.ppMarkerSeenSlots
+            },
+            mlKitMarkerSeenSlotsByPosition = usableResults.associate { result ->
+                result.semantic!!.position to result.mlKitMarkerSeenSlots
+            },
+        )
     }
 
     private fun mapPanelPosition(
@@ -417,6 +466,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
             upperPhysicalRowSafe = crop.upperPhysicalRowSafe,
             lowerPhysicalRowSafe = crop.lowerPhysicalRowSafe,
         )
+        var mlKitMarkerSeenSlots = emptySet<Int>()
         val semantic = if (classification is MatchResultPositionLogicalRowClassification.Available) {
             try {
                 val input = MatchResultPositionOcrInput(
@@ -430,16 +480,18 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                     killVerifications = emptyMap(),
                 )
                 val ppSemantic = fieldMapper.map(input)
-                val fallbackVerifications = if (mlKitEvidence != null && sourceCrop != null) {
-                    mlKitKillFallbackResolver.resolve(
+                val mlKitResolution = if (mlKitEvidence != null && sourceCrop != null) {
+                    mlKitKillFallbackResolver.resolveWithEvidence(
                         positionCrop = sourceCrop,
                         rowCrops = classification.rowCrops,
                         currentPpSemantic = ppSemantic,
                         evidence = mlKitEvidence,
                     )
                 } else {
-                    emptyMap()
+                    null
                 }
+                mlKitMarkerSeenSlots = mlKitResolution?.recognizedEliminationMarkerSlots.orEmpty()
+                val fallbackVerifications = mlKitResolution?.verifications.orEmpty()
                 if (fallbackVerifications.isEmpty()) {
                     ppSemantic
                 } else {
@@ -453,6 +505,15 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         } else {
             null
         }
+        val ppMarkerSeenSlots = recognizedPpMarkerSlots(
+            position = crop.position,
+            cropWidth = crop.bounds.width,
+            blocks = evidence.blocks,
+            rowCrops = (classification as? MatchResultPositionLogicalRowClassification.Available)
+                ?.rowCrops.orEmpty(),
+        ) + semantic?.basicKillEvidence.orEmpty()
+            .filterValues { it?.markerMatched == true }
+            .keys
         val localLines = evidence.blocks.sumOf { it.lines.size }
         val productionReady = isPpPositionProductionStructurallyReady(
             localLines = localLines,
@@ -462,12 +523,108 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         return PanelPositionSemantic(
             semantic = semantic,
             productionReady = productionReady,
+            rowCrops = (classification as? MatchResultPositionLogicalRowClassification.Available)
+                ?.rowCrops.orEmpty(),
+            ppMarkerSeenSlots = ppMarkerSeenSlots,
+            mlKitMarkerSeenSlots = mlKitMarkerSeenSlots,
         )
+    }
+
+    private suspend fun recoverMissingKillsWithFocusedNumericFallback(
+        baseSemantics: List<MatchResultPositionSemanticResult>,
+        generatedCrops: List<MatchResultPositionBitmapCrop>,
+        role: MatchResultScreenshotRole,
+        rowCropsByPosition: Map<Int, List<MatchResultPositionRowCrop>>,
+        ppMarkerSeenSlotsByPosition: Map<Int, Set<Int>>,
+        mlKitMarkerSeenSlotsByPosition: Map<Int, Set<Int>>,
+    ): List<MatchResultPositionSemanticResult> {
+        val targets = focusedNumericKillFallbackMerger.eligibleTargets(
+            baseSemantics = baseSemantics,
+            rowCropsByPosition = rowCropsByPosition,
+            ppMarkerSeenSlotsByPosition = ppMarkerSeenSlotsByPosition,
+            mlKitMarkerSeenSlotsByPosition = mlKitMarkerSeenSlotsByPosition,
+        )
+        if (targets.isEmpty()) return baseSemantics
+
+        val cropsByPosition = generatedCrops.associateBy { it.geometry.position }
+        val verifiedKills = mutableMapOf<MatchResultFocusedNumericKillFallbackKey, MatchResultNumericVerification>()
+        targets.forEach { target ->
+            val crop = cropsByPosition[target.position] ?: return@forEach
+            val verification = try {
+                numericVerifier.verifyKillFallback(
+                    source = crop.bitmap,
+                    role = role,
+                    position = target.position,
+                    slot = target.slot,
+                    row = target.row,
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                null
+            }
+            if (verification is MatchResultNumericVerification.Verified) {
+                verifiedKills[MatchResultFocusedNumericKillFallbackKey(target.role, target.position, target.slot)] =
+                    verification
+            }
+        }
+        return focusedNumericKillFallbackMerger.merge(baseSemantics, verifiedKills)
+    }
+
+    private fun unionSlotEvidence(
+        first: Map<Int, Set<Int>>,
+        second: Map<Int, Set<Int>>,
+    ): Map<Int, Set<Int>> = (first.keys + second.keys).associateWith { position ->
+        first[position].orEmpty() + second[position].orEmpty()
+    }
+
+    private fun recognizedPpMarkerSlots(
+        position: Int,
+        cropWidth: Int,
+        blocks: List<RawOcrBlock>,
+        rowCrops: List<MatchResultPositionRowCrop>,
+    ): Set<Int> {
+        val lines = blocks.flatMap { it.lines }
+        return (1..4).mapNotNull { slot ->
+            val rowBounds = rowCrops.firstOrNull {
+                it.rowIndex == MatchResultKillFieldLayout.rowIndexForSlot(slot)
+            }?.bounds ?: return@mapNotNull null
+            val killBounds = MatchResultKillFieldLayout.bounds(
+                position = position,
+                cropWidth = cropWidth,
+                rowBounds = rowBounds,
+                firstPlayerColumn = slot == 1 || slot == 2,
+            )
+            if (lines.any { line ->
+                val bounds = line.geometry?.boundingBox ?: return@any false
+                val centerX = (bounds.left + bounds.right) / 2.0
+                val centerY = (bounds.top + bounds.bottom) / 2.0
+                MatchResultEliminationAnchorText.find(line.text) != null &&
+                    centerX >= killBounds.left && centerX < killBounds.right &&
+                    centerY >= killBounds.top && centerY < killBounds.bottom
+            }) slot else null
+        }.toSet()
     }
 
     private data class PanelPositionSemantic(
         val semantic: MatchResultPositionSemanticResult?,
         val productionReady: Boolean,
+        val rowCrops: List<MatchResultPositionRowCrop> = emptyList(),
+        val ppMarkerSeenSlots: Set<Int> = emptySet(),
+        val mlKitMarkerSeenSlots: Set<Int> = emptySet(),
+    )
+
+    private data class PanelPpProductionResult(
+        val semantics: List<MatchResultPositionSemanticResult>,
+        val rowCropsByPosition: Map<Int, List<MatchResultPositionRowCrop>>,
+        val ppMarkerSeenSlotsByPosition: Map<Int, Set<Int>>,
+        val mlKitMarkerSeenSlotsByPosition: Map<Int, Set<Int>>,
+    )
+
+    private data class PositionPpKillRecoveryResult(
+        val semantics: List<MatchResultPositionSemanticResult>,
+        val rowCropsByPosition: Map<Int, List<MatchResultPositionRowCrop>>,
+        val ppMarkerSeenSlotsByPosition: Map<Int, Set<Int>>,
     )
 
     private suspend fun hasConfirmedLowerAsset(

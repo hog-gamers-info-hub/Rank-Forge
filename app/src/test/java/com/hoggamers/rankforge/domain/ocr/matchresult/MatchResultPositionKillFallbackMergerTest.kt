@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.domain.ocr.matchresult
 
+import com.hoggamers.rankforge.domain.ocr.layout.OcrPixelCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -11,6 +12,7 @@ import org.junit.Test
 
 class MatchResultPositionKillFallbackMergerTest {
     private val merger = MatchResultPositionKillFallbackMerger()
+    private val focusedMerger = MatchResultFocusedNumericKillFallbackMerger()
 
     @Test
     fun noMissingPresentPlayerKillsDoesNotRequestPositionPp() = runTest {
@@ -299,6 +301,195 @@ class MatchResultPositionKillFallbackMergerTest {
         assertEquals("2", result.row.playerSlots.single { it.slot == 1 }.kill.resolvedText)
     }
 
+    @Test
+    fun focusedFallbackTargetsOnlyUnresolvedKillsWithAvailableRows() {
+        val base = semantic(
+            position = 7,
+            players = listOf("A", "B", "", ""),
+            kills = listOf("", "2", "", ""),
+        )
+
+        val targets = focusedMerger.eligibleTargets(
+            baseSemantics = listOf(base),
+            rowCropsByPosition = mapOf(7 to listOf(row(1, 0, 50), row(2, 50, 100))),
+            ppMarkerSeenSlotsByPosition = emptyMap(),
+            mlKitMarkerSeenSlotsByPosition = emptyMap(),
+        )
+
+        assertEquals(listOf(1), targets.map { it.slot })
+    }
+
+    @Test
+    fun focusedFallbackRejectsAnyExistingMarkerEvidence() {
+        val base = semantic(
+            position = 7,
+            players = listOf("A", "B", "", ""),
+            kills = listOf("", "", "", ""),
+        )
+        val rows = mapOf(7 to listOf(row(1, 0, 50)))
+
+        assertTrue(focusedMerger.eligibleTargets(
+            listOf(base), rows, mapOf(7 to setOf(1)), emptyMap(),
+        ).isEmpty())
+        assertTrue(focusedMerger.eligibleTargets(
+            listOf(base), rows, emptyMap(), mapOf(7 to setOf(1)),
+        ).isEmpty())
+    }
+
+    @Test
+    fun focusedFallbackMergesOnlyExactVerifiedKillAndPreservesRawEvidence() {
+        val base = semantic(
+            position = 7,
+            players = listOf("BASE_ONE", "BASE_TWO", "", ""),
+            kills = listOf("", "", "", ""),
+        )
+        val verification = MatchResultNumericVerification.Verified(
+            value = 0,
+            candidates = listOf(
+                MatchResultNumericCandidate(
+                    variant = MatchResultNumericCropVariant.ORIGINAL,
+                    rawText = "D",
+                    value = 0,
+                    confidence = null,
+                ),
+                MatchResultNumericCandidate(
+                    variant = MatchResultNumericCropVariant.UPSCALE_2X,
+                    rawText = "O",
+                    value = 0,
+                    confidence = null,
+                ),
+            ),
+        )
+
+        val result = focusedMerger.merge(
+            baseSemantics = listOf(base),
+            verifiedKills = mapOf(
+                MatchResultFocusedNumericKillFallbackKey(MatchResultScreenshotRole.MATCH_RESULT_UPPER, 7, 1) to verification,
+                MatchResultFocusedNumericKillFallbackKey(MatchResultScreenshotRole.MATCH_RESULT_UPPER, 8, 1) to verification,
+            ),
+        ).single()
+
+        val killOne = result.fields.single { it.id == "KILL_7_1" }
+        assertEquals("D", killOne.ocrText)
+        assertEquals("0", killOne.resolvedText)
+        assertEquals(MatchResultOcrFieldStatus.FOCUSED_NUMERIC_FALLBACK, killOne.status)
+        assertEquals("", result.fields.single { it.id == "KILL_7_2" }.resolvedText)
+        assertEquals("BASE_TWO", result.fields.single { it.id == "PLAYER_7_2" }.resolvedText)
+        assertEquals("0", result.row!!.playerSlots.single { it.slot == 1 }.kill.resolvedText)
+    }
+
+    @Test
+    fun focusedFallbackMergeIgnoresVerifiedKillWhenPlayerIsMissing() {
+        val base = semantic(
+            position = 7,
+            players = listOf("", "", "", ""),
+            kills = listOf("", "", "", ""),
+        )
+
+        val result = focusedMerger.merge(
+            listOf(base),
+            mapOf(upperKey(7, 1) to focusedVerification(3)),
+        ).single()
+
+        assertEquals("", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+    }
+
+    @Test
+    fun focusedFallbackMergePreservesExistingKill() {
+        val base = semantic(
+            position = 7,
+            players = listOf("A", "", "", ""),
+            kills = listOf("4", "", "", ""),
+        )
+
+        val result = focusedMerger.merge(
+            listOf(base),
+            mapOf(upperKey(7, 1) to focusedVerification(3)),
+        ).single()
+
+        assertEquals("4", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+    }
+
+    @Test
+    fun focusedFallbackMergeRejectsExistingConflict() {
+        val base = semantic(
+            position = 7,
+            players = listOf("A", "", "", ""),
+            kills = listOf("", "", "", ""),
+            killVerifications = mapOf(1 to MatchResultNumericVerification.Conflict(emptyList())),
+        )
+
+        val result = focusedMerger.merge(
+            listOf(base),
+            mapOf(upperKey(7, 1) to focusedVerification(3)),
+        ).single()
+
+        assertEquals("", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+    }
+
+    @Test
+    fun focusedFallbackMergeAcceptsValidUnresolvedKillAsThree() {
+        val base = semantic(
+            position = 7,
+            players = listOf("A", "", "", ""),
+            kills = listOf("", "", "", ""),
+        )
+
+        val result = focusedMerger.merge(
+            listOf(base),
+            mapOf(upperKey(7, 1) to focusedVerification(3)),
+        ).single()
+
+        val kill = result.fields.single { it.id == "KILL_7_1" }
+        assertEquals("3", kill.resolvedText)
+        assertEquals(MatchResultOcrFieldStatus.FOCUSED_NUMERIC_FALLBACK, kill.status)
+    }
+
+    @Test
+    fun focusedFallbackMergeRejectsWrongRoleKey() {
+        val base = semantic(
+            position = 7,
+            players = listOf("A", "", "", ""),
+            kills = listOf("", "", "", ""),
+        )
+
+        val result = focusedMerger.merge(
+            listOf(base),
+            mapOf(
+                MatchResultFocusedNumericKillFallbackKey(
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    7,
+                    1,
+                ) to focusedVerification(3),
+            ),
+        ).single()
+
+        assertEquals("", result.fields.single { it.id == "KILL_7_1" }.resolvedText)
+    }
+
+    @Test
+    fun focusedFallbackRequiresPlayerAndAuthoritativeRowCrop() {
+        val blankPlayer = semantic(
+            position = 7,
+            players = listOf("", "", "", ""),
+            kills = listOf("", "", "", ""),
+        )
+        val playerWithoutRow = semantic(
+            position = 8,
+            players = listOf("A", "", "", ""),
+            kills = listOf("", "", "", ""),
+        )
+
+        val targets = focusedMerger.eligibleTargets(
+            baseSemantics = listOf(blankPlayer, playerWithoutRow),
+            rowCropsByPosition = emptyMap(),
+            ppMarkerSeenSlotsByPosition = emptyMap(),
+            mlKitMarkerSeenSlotsByPosition = emptyMap(),
+        )
+
+        assertTrue(targets.isEmpty())
+    }
+
     private fun parsedKill(
         kill: Int,
         prefixType: MatchResultEliminationPrefixType = MatchResultEliminationPrefixType.EXPLICIT_NUMERIC,
@@ -320,6 +511,7 @@ class MatchResultPositionKillFallbackMergerTest {
         players: List<String>,
         kills: List<String>,
         evidence: Map<Int, ParsedEliminationText?> = emptyMap(),
+        killVerifications: Map<Int, MatchResultNumericVerification> = emptyMap(),
     ): MatchResultPositionSemanticResult {
         val visualRow = if (role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
             if (position == 11) MatchResultOcrVisualRow.A else MatchResultOcrVisualRow.B
@@ -382,7 +574,7 @@ class MatchResultPositionKillFallbackMergerTest {
             fields = fields,
             row = MatchResultOcrRowAssembler.assemble(position, source, fields, visualRow),
             placementVerification = MatchResultNumericVerification.Unresolved(emptyList()),
-            killVerifications = emptyMap(),
+            killVerifications = killVerifications,
             structuralIdentityValid = true,
             isAutoAcceptable = players.withIndex().filter { it.value.isNotBlank() }
                 .all { kills[it.index].isNotBlank() },
@@ -410,5 +602,28 @@ class MatchResultPositionKillFallbackMergerTest {
         ocrText = resolvedText,
         resolvedText = resolvedText,
         status = status,
+    )
+
+    private fun row(index: Int, top: Int, bottom: Int) = MatchResultPositionRowCrop(
+        rowIndex = index,
+        bounds = OcrPixelCropRect(0, top, 1000, bottom),
+    )
+
+    private fun upperKey(position: Int, slot: Int) = MatchResultFocusedNumericKillFallbackKey(
+        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        position = position,
+        slot = slot,
+    )
+
+    private fun focusedVerification(value: Int) = MatchResultNumericVerification.Verified(
+        value = value,
+        candidates = listOf(
+            MatchResultNumericCandidate(
+                variant = MatchResultNumericCropVariant.ORIGINAL,
+                rawText = value.toString(),
+                value = value,
+                confidence = null,
+            ),
+        ),
     )
 }
