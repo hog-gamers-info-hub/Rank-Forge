@@ -414,6 +414,7 @@
     <string name="match_ocr_review_manual_team_name">Team name - %1$s</string>
     <string name="match_ocr_review_compact_player">%1$d. %2$s - [%3$s]</string>
     <string name="match_ocr_review_compact_not_detected">Not detected</string>
+    <string name="match_ocr_review_compact_missing_result_player">%1$d. [%2$s]</string>
     <string name="match_ocr_review_compact_unknown_kill">?</string>
     <string name="match_ocr_review_compact_not_matched">Not matched</string>
     <string name="match_ocr_review_compact_not_named">Not named</string>
