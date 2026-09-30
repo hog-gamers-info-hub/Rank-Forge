@@ -171,11 +171,7 @@ class MatchResultPositionLogicalRowClassifier {
             ?.let { clusters -> TwoRowClusterResolution(clusters = clusters, ignoredCandidate = null) }
             ?: deriveIsolatedOutlierResolution(lines.map { it.candidate }, slotCenterYLocal, tolerance)
         if (clusterResolution == null) {
-            val centeredSingleRow = if (!allowSingleRowFallback) {
-                deriveCenteredSingleRow(lines.map { it.candidate }, slotCenterYLocal, tolerance)
-            } else {
-                null
-            }
+            val centeredSingleRow = deriveCenteredSingleRow(lines.map { it.candidate }, slotCenterYLocal, tolerance)
             if (centeredSingleRow != null) {
                 val rowCrop = rowCrop(1, lines, cropWidth, cropHeight)
                 if (rowCrop != null) {

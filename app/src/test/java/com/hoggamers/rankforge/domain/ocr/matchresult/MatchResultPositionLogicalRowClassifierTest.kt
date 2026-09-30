@@ -745,18 +745,23 @@ class MatchResultPositionLogicalRowClassifierTest {
     }
 
     @Test
-    fun enabledSingleRowFallbackStillRejectsCenterOnlyEvidence() {
+    fun enabledSingleRowFallbackAcceptsCenteredSingleRow() {
         val result = classifyCustom(
             position = 11,
             cropWidth = 200,
             cropHeight = 90,
             center = 47.0,
-            lines = listOf(box("center", 45.0, 10)),
+            lines = listOf(
+                box("player-a", 45.0, 10),
+                box("eliminations", 46.0, 10),
+            ),
             allowSingleRowFallback = true,
-        )
+        ) as MatchResultPositionLogicalRowClassification.Available
 
-        assertTrue(result is MatchResultPositionLogicalRowClassification.Unavailable)
-        assertEquals(MatchResultPositionLogicalRowFallbackReason.CONFLICTING_CLUSTERS, result.diagnostics.reason)
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.CENTERED_SINGLE_ROW, result.diagnostics.classification)
+        assertEquals(listOf(1), result.rowCrops.map { it.rowIndex })
+        assertEquals(2, result.diagnostics.centerCount)
+        assertEquals(listOf("player-a", "eliminations"), result.blocks.flatMap { it.lines }.map { it.text })
     }
 
     @Test
