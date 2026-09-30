@@ -343,6 +343,184 @@ class MatchReviewUiStateTest {
         )
     }
 
+    @Test
+    fun noSelectedLobbySlotsHaveNoPendingGroupCrop() {
+        assertFalse(hasPendingSelectedLobbyCrop(emptyList()))
+    }
+
+    @Test
+    fun unconfirmedPreparingLobbySlotKeepsGroupSkeletonActive() {
+        assertTrue(
+            hasPendingSelectedLobbyCrop(
+                listOf(lobbySlot(index = 1, preparing = true)),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedPreparingLobbySlotDoesNotKeepGroupSkeletonActive() {
+        assertFalse(
+            hasPendingSelectedLobbyCrop(
+                listOf(lobbySlot(index = 1, preparing = true, confirmed = true)),
+            ),
+        )
+    }
+
+    @Test
+    fun anyUnconfirmedPreparingLobbySlotKeepsThreeSlotGroupSkeletonActive() {
+        assertTrue(
+            hasPendingSelectedLobbyCrop(
+                listOf(
+                    lobbySlot(index = 1, confirmed = true),
+                    lobbySlot(index = 2, preparing = true),
+                    lobbySlot(index = 3, preparing = true),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun lastUnconfirmedPreparingLobbySlotKeepsThreeSlotGroupSkeletonActive() {
+        assertTrue(
+            hasPendingSelectedLobbyCrop(
+                listOf(
+                    lobbySlot(index = 1, confirmed = true),
+                    lobbySlot(index = 2, confirmed = true),
+                    lobbySlot(index = 3, preparing = true),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun allConfirmedLobbySlotsDoNotShowGroupSkeletonWhilePreviewsPrepare() {
+        assertFalse(
+            hasPendingSelectedLobbyCrop(
+                (1..3).map { index ->
+                    lobbySlot(index = index, preparing = true, confirmed = true)
+                },
+            ),
+        )
+    }
+
+    @Test
+    fun allConfirmedLobbySlotsDoNotShowGroupSkeletonAfterPreviewPreparation() {
+        assertFalse(
+            hasPendingSelectedLobbyCrop(
+                (1..3).map { index -> lobbySlot(index = index, confirmed = true) },
+            ),
+        )
+    }
+
+    @Test
+    fun noSelectedResultPagesHaveNoPendingGroupCrop() {
+        assertFalse(hasPendingSelectedResultCrop(emptyList()))
+    }
+
+    @Test
+    fun unconfirmedPreparingResultPageKeepsGroupSkeletonActive() {
+        assertTrue(
+            hasPendingSelectedResultCrop(
+                listOf(resultPage(preparing = true)),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedPreparingResultPageDoesNotKeepGroupSkeletonActive() {
+        assertFalse(
+            hasPendingSelectedResultCrop(
+                listOf(resultPage(preparing = true, confirmed = true)),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedUpperAndPendingLowerResultPagesKeepGroupSkeletonActive() {
+        assertTrue(
+            hasPendingSelectedResultCrop(
+                listOf(
+                    resultPage(confirmed = true),
+                    resultPage(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        preparing = true,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun pendingUpperAndConfirmedLowerResultPagesKeepGroupSkeletonActive() {
+        assertTrue(
+            hasPendingSelectedResultCrop(
+                listOf(
+                    resultPage(preparing = true),
+                    resultPage(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        confirmed = true,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedResultPagesDoNotShowGroupSkeletonWhilePreviewsPrepare() {
+        assertFalse(
+            hasPendingSelectedResultCrop(
+                listOf(
+                    resultPage(preparing = true, confirmed = true),
+                    resultPage(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        preparing = true,
+                        confirmed = true,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun confirmedResultPagesDoNotShowGroupSkeletonAfterPreviewPreparation() {
+        assertFalse(
+            hasPendingSelectedResultCrop(
+                listOf(
+                    resultPage(confirmed = true),
+                    resultPage(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        confirmed = true,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun oneSelectedLowerResultPageUsesItsOwnCropState() {
+        assertTrue(
+            hasPendingSelectedResultCrop(
+                listOf(
+                    resultPage(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        preparing = true,
+                    ),
+                ),
+            ),
+        )
+        assertFalse(
+            hasPendingSelectedResultCrop(
+                listOf(
+                    resultPage(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        preparing = true,
+                        confirmed = true,
+                    ),
+                ),
+            ),
+        )
+    }
+
     private fun state(
         upper: MatchResultScreenshotSlotUiState = MatchResultScreenshotSlotUiState(
             MatchResultScreenshotRole.MATCH_RESULT_UPPER,
@@ -386,5 +564,15 @@ class MatchReviewUiStateTest {
         isPreviewPreparationInProgress = preparing,
         confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9).takeIf { confirmed },
         cropProfileId = OcrCropValidationProfiles.MatchResult.id.takeIf { confirmed },
+    )
+
+    private fun resultPage(
+        role: MatchResultScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+        preparing: Boolean = false,
+        confirmed: Boolean = false,
+    ) = role to resultSlot(
+        role = role,
+        preparing = preparing,
+        confirmed = confirmed,
     )
 }
