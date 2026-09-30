@@ -67,15 +67,6 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
         try {
             val dimensions = OcrImageDimensions.from(original.width, original.height)
                 ?: return@withContext MatchLobbyAutoCropResult.NoProposal
-            val originalAttempt = attemptAutoCrop(original, dimensions)
-            val originalResult = when (originalAttempt) {
-                is AutoCropAttempt.Completed -> originalAttempt.result
-                AutoCropAttempt.Failed -> return@withContext MatchLobbyAutoCropResult.NoProposal
-            }
-            if (originalResult is MatchLobbyAutoCropResult.Proposed) {
-                return@withContext originalResult
-            }
-
             val enhancedBitmap = imageEnhancer.enhance(original, LOBBY_OCR_ENHANCEMENT_PROFILE)
                 ?: return@withContext MatchLobbyAutoCropResult.NoProposal
             try {
