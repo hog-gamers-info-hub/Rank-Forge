@@ -5,11 +5,13 @@ import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -137,20 +139,78 @@ class TournamentCloudRestorationViewModelTest {
         assertEquals(TournamentCloudRestorationUiState.Idle, viewModel.uiState.value)
     }
 
+    @Test
+    fun loadingAndRestoringBlockDuplicatesAndKeepListForAnotherRestore() = runTest {
+        val loadGate = CompletableDeferred<Unit>()
+        val restoreGate = CompletableDeferred<Unit>()
+        val summaries = SUMMARIES + TournamentCloudRestorationSummary(
+            id = SECOND_TOURNAMENT_ID,
+            name = "Winter Cup",
+            stageName = "Organizer",
+            status = "draft",
+        )
+        val action = RecordingAction(
+            loadResult = TournamentCloudRestorationResult.Available(summaries),
+            restoreResult = TournamentCloudRestorationResult.Success("Summer Cup"),
+            loadGate = loadGate,
+            restoreGate = restoreGate,
+        )
+        val viewModel = TournamentCloudRestorationViewModel(action)
+
+        viewModel.loadAvailable()
+        runCurrent()
+        assertEquals(TournamentCloudRestorationUiState.Loading, viewModel.uiState.value)
+        viewModel.loadAvailable()
+        assertEquals(1, action.loadCalls)
+
+        loadGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(summaries, viewModel.availableTournaments.value)
+
+        viewModel.restore(TOURNAMENT_ID)
+        runCurrent()
+        assertEquals(
+            TournamentCloudRestorationUiState.Restoring(TOURNAMENT_ID, "Summer Cup"),
+            viewModel.uiState.value,
+        )
+        assertEquals(summaries, viewModel.availableTournaments.value)
+        viewModel.restore(SECOND_TOURNAMENT_ID)
+        assertEquals(1, action.restoreCalls)
+
+        restoreGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(TournamentCloudRestorationUiState.Success("Summer Cup"), viewModel.uiState.value)
+
+        viewModel.restore(SECOND_TOURNAMENT_ID)
+        advanceUntilIdle()
+        assertEquals(2, action.restoreCalls)
+        assertEquals(1, action.loadCalls)
+    }
+
     private class RecordingAction(
         private val loadResult: TournamentCloudRestorationResult,
         private val restoreResult: TournamentCloudRestorationResult,
         private val queueRecordingResult: QueueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
         private val throwOnRestore: Boolean = false,
+        private val loadGate: CompletableDeferred<Unit>? = null,
+        private val restoreGate: CompletableDeferred<Unit>? = null,
     ) : TournamentCloudRestorationAction {
+        var loadCalls: Int = 0
+        var restoreCalls: Int = 0
         var restoredTournamentId: String? = null
 
-        override suspend fun loadAvailable(): TournamentCloudRestorationResult = loadResult
+        override suspend fun loadAvailable(): TournamentCloudRestorationResult {
+            loadCalls += 1
+            loadGate?.await()
+            return loadResult
+        }
 
         override suspend fun restore(
             tournamentId: String,
         ): QueueAwareActionResult<TournamentCloudRestorationResult> {
+            restoreCalls += 1
             restoredTournamentId = tournamentId
+            restoreGate?.await()
             if (throwOnRestore) throw IllegalStateException()
             return QueueAwareActionResult(
                 primaryResult = restoreResult,
@@ -161,6 +221,7 @@ class TournamentCloudRestorationViewModelTest {
 
     private companion object {
         const val TOURNAMENT_ID = "11111111-1111-1111-1111-111111111111"
+        const val SECOND_TOURNAMENT_ID = "22222222-2222-2222-2222-222222222222"
         val SUMMARIES = listOf(
             TournamentCloudRestorationSummary(
                 id = TOURNAMENT_ID,

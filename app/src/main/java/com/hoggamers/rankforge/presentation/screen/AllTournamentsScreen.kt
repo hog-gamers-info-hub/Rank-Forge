@@ -35,6 +35,7 @@ import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 
 private val PointIqAllTournamentsBackground = Color(0xFF031225)
@@ -63,10 +64,17 @@ fun AllTournamentsRoute(
         val state by restorationViewModel.uiState.collectAsStateWithLifecycle()
         state
     }
+    val restorationTournaments = if (restorationViewModel == null) {
+        emptyList()
+    } else {
+        val tournaments by restorationViewModel.availableTournaments.collectAsStateWithLifecycle()
+        tournaments
+    }
 
     AllTournamentsScreen(
         uiState = uiState,
         restorationUiState = restorationUiState,
+        restorationTournaments = restorationTournaments,
         onHome = onHome,
         onBack = onBack,
         onOpenTournamentDetails = onOpenTournamentDetails,
@@ -88,6 +96,7 @@ fun AllTournamentsScreen(
     onOpenTournamentDetails: (String) -> Unit,
     onLoadCloudTournaments: () -> Unit = {},
     onRestoreCloudTournament: (String) -> Unit = {},
+    restorationTournaments: List<TournamentCloudRestorationSummary> = emptyList(),
 ) {
     BackHandler(onBack = onBack)
 
@@ -159,6 +168,7 @@ fun AllTournamentsScreen(
                 item {
                     TournamentCloudRestorationSection(
                         uiState = restorationUiState,
+                        availableTournaments = restorationTournaments,
                         onLoadCloudTournaments = onLoadCloudTournaments,
                         onRestoreCloudTournament = onRestoreCloudTournament,
                     )

@@ -188,6 +188,8 @@
     <string name="sync_finalized_matches_queue_persistence_failed">Finalized-match sync failed and could not be saved locally.</string>
     <string name="restore_tournament_action">Restore cloud tournaments</string>
     <string name="restore_tournament_loading">Loading cloud tournaments</string>
+    <string name="restore_tournament_fetching">Fetching your cloud tournaments...</string>
+    <string name="restore_tournament_restoring">Restoring %1$s...</string>
     <string name="restore_tournament_available">Select a cloud tournament to restore.</string>
     <string name="restore_tournament_success">Tournament restored to local storage: %1$s</string>
     <string name="restore_tournament_authentication_required">Sign in to restore cloud tournaments.</string>
