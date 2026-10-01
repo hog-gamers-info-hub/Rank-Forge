@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -44,7 +45,10 @@ const val TOURNAMENT_LIST_EMPTY_TEST_TAG = "tournament_list_empty"
 const val TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX = "tournament_list_item_"
 const val TOURNAMENT_CLOUD_RESTORATION_ACTION_TEST_TAG = "tournament_cloud_restoration_action"
 const val TOURNAMENT_CLOUD_RESTORATION_STATUS_TEST_TAG = "tournament_cloud_restoration_status"
+const val TOURNAMENT_CLOUD_RESTORATION_LOADING_TEST_TAG = "tournament_cloud_restoration_loading"
 const val TOURNAMENT_CLOUD_RESTORATION_ITEM_TEST_TAG_PREFIX = "tournament_cloud_restoration_item_"
+const val TOURNAMENT_CLOUD_RESTORATION_ITEM_PROGRESS_TEST_TAG_PREFIX =
+    "tournament_cloud_restoration_item_progress_"
 
 @Composable
 fun TournamentListRoute(
@@ -131,7 +135,15 @@ internal fun TournamentCloudRestorationSection(
     uiState: TournamentCloudRestorationUiState,
     onLoadCloudTournaments: () -> Unit,
     onRestoreCloudTournament: (String) -> Unit,
+    availableTournaments: List<TournamentCloudRestorationSummary> = emptyList(),
 ) {
+    val tournaments = when (uiState) {
+        is TournamentCloudRestorationUiState.Available -> uiState.tournaments
+        else -> availableTournaments
+    }
+    val hasLoadedTournaments = uiState is TournamentCloudRestorationUiState.Available ||
+        tournaments.isNotEmpty()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -139,13 +151,9 @@ internal fun TournamentCloudRestorationSection(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
     ) {
         when (uiState) {
-            TournamentCloudRestorationUiState.Idle,
-            TournamentCloudRestorationUiState.Loading,
-            is TournamentCloudRestorationUiState.Restoring,
-            -> {
+            TournamentCloudRestorationUiState.Idle -> {
                 OutlinedButton(
                     onClick = onLoadCloudTournaments,
-                    enabled = uiState is TournamentCloudRestorationUiState.Idle,
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = PointIqListCard,
                         contentColor = PointIqListHeader,
@@ -183,6 +191,23 @@ internal fun TournamentCloudRestorationSection(
                 }
             }
 
+            TournamentCloudRestorationUiState.Loading -> {
+                RestorationProgressRow(
+                    text = stringResource(R.string.restore_tournament_fetching),
+                    modifier = Modifier.testTag(TOURNAMENT_CLOUD_RESTORATION_LOADING_TEST_TAG),
+                )
+            }
+
+            is TournamentCloudRestorationUiState.Restoring -> {
+                RestorationProgressRow(
+                    text = stringResource(
+                        R.string.restore_tournament_restoring,
+                        uiState.tournamentName,
+                    ),
+                    modifier = Modifier.testTag(TOURNAMENT_CLOUD_RESTORATION_LOADING_TEST_TAG),
+                )
+            }
+
             else -> {
                 Text(
                     text = uiState.restoreStatusText(),
@@ -196,8 +221,8 @@ internal fun TournamentCloudRestorationSection(
             }
         }
 
-        if (uiState is TournamentCloudRestorationUiState.Available) {
-            if (uiState.tournaments.isEmpty()) {
+        if (hasLoadedTournaments) {
+            if (tournaments.isEmpty()) {
                 Text(
                     text = stringResource(R.string.restore_tournament_empty),
                     color = PointIqListSecondary,
@@ -205,9 +230,12 @@ internal fun TournamentCloudRestorationSection(
                     lineHeight = 20.sp,
                 )
             } else {
-                uiState.tournaments.forEach { tournament ->
+                tournaments.forEach { tournament ->
                     CloudTournamentRestoreItem(
                         tournament = tournament,
+                        enabled = uiState !is TournamentCloudRestorationUiState.Restoring,
+                        isRestoring = uiState is TournamentCloudRestorationUiState.Restoring &&
+                            uiState.tournamentId == tournament.id,
                         onRestore = { onRestoreCloudTournament(tournament.id) },
                     )
                 }
@@ -217,12 +245,39 @@ internal fun TournamentCloudRestorationSection(
 }
 
 @Composable
+private fun RestorationProgressRow(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(20.dp),
+            color = PointIqListCyan,
+            strokeWidth = 2.dp,
+        )
+        Text(
+            text = text,
+            color = PointIqListSecondary,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+        )
+    }
+}
+
+@Composable
 private fun CloudTournamentRestoreItem(
     tournament: TournamentCloudRestorationSummary,
+    enabled: Boolean,
+    isRestoring: Boolean,
     onRestore: () -> Unit,
 ) {
     OutlinedButton(
         onClick = onRestore,
+        enabled = enabled,
         colors = ButtonDefaults.outlinedButtonColors(
             containerColor = PointIqListCard,
             contentColor = PointIqListHeader,
@@ -254,13 +309,26 @@ private fun CloudTournamentRestoreItem(
                 modifier = Modifier.weight(1f),
             )
             Spacer(modifier = Modifier.size(12.dp))
-            Text(
-                text = stringResource(R.string.pointiq_restore_action),
-                color = PointIqListCyan,
-                fontSize = 15.sp,
-                lineHeight = 20.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            if (isRestoring) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .testTag(
+                            TOURNAMENT_CLOUD_RESTORATION_ITEM_PROGRESS_TEST_TAG_PREFIX +
+                                tournament.id,
+                        ),
+                    color = PointIqListCyan,
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.pointiq_restore_action),
+                    color = PointIqListCyan,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }
@@ -268,9 +336,12 @@ private fun CloudTournamentRestoreItem(
 @Composable
 private fun TournamentCloudRestorationUiState.restoreStatusText(): String = when (this) {
     TournamentCloudRestorationUiState.Idle -> stringResource(R.string.restore_tournament_action)
-    TournamentCloudRestorationUiState.Loading,
-    is TournamentCloudRestorationUiState.Restoring,
-    -> stringResource(R.string.restore_tournament_loading)
+    TournamentCloudRestorationUiState.Loading ->
+        stringResource(R.string.restore_tournament_fetching)
+    is TournamentCloudRestorationUiState.Restoring -> stringResource(
+        R.string.restore_tournament_restoring,
+        tournamentName,
+    )
     is TournamentCloudRestorationUiState.Available -> stringResource(R.string.restore_tournament_available)
     is TournamentCloudRestorationUiState.Success -> stringResource(
         R.string.restore_tournament_success,

@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -18,9 +19,12 @@ sealed interface TournamentCloudRestorationUiState {
     data object Idle : TournamentCloudRestorationUiState
     data object Loading : TournamentCloudRestorationUiState
     data class Available(
-        val tournaments: List<com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary>,
+        val tournaments: List<TournamentCloudRestorationSummary>,
     ) : TournamentCloudRestorationUiState
-    data class Restoring(val tournamentId: String) : TournamentCloudRestorationUiState
+    data class Restoring(
+        val tournamentId: String,
+        val tournamentName: String = tournamentId,
+    ) : TournamentCloudRestorationUiState
     data class Success(val tournamentName: String) : TournamentCloudRestorationUiState
     data object AuthenticationRequired : TournamentCloudRestorationUiState
     data object AuthorizationFailure : TournamentCloudRestorationUiState
@@ -37,6 +41,9 @@ class TournamentCloudRestorationViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<TournamentCloudRestorationUiState>(TournamentCloudRestorationUiState.Idle)
     val uiState: StateFlow<TournamentCloudRestorationUiState> = _uiState.asStateFlow()
+    private val _availableTournaments = MutableStateFlow<List<TournamentCloudRestorationSummary>>(emptyList())
+    val availableTournaments: StateFlow<List<TournamentCloudRestorationSummary>> =
+        _availableTournaments.asStateFlow()
 
     fun loadAvailable() {
         if (_uiState.value is TournamentCloudRestorationUiState.Loading ||
@@ -44,7 +51,11 @@ class TournamentCloudRestorationViewModel @Inject constructor(
         ) return
         viewModelScope.launch {
             _uiState.value = TournamentCloudRestorationUiState.Loading
-            _uiState.value = runAction { restoreTournament.loadAvailable() }
+            val nextState = runAction { restoreTournament.loadAvailable() }
+            if (nextState is TournamentCloudRestorationUiState.Available) {
+                _availableTournaments.value = nextState.tournaments
+            }
+            _uiState.value = nextState
         }
     }
 
@@ -53,12 +64,20 @@ class TournamentCloudRestorationViewModel @Inject constructor(
             _uiState.value is TournamentCloudRestorationUiState.Restoring
         ) return
         viewModelScope.launch {
-            _uiState.value = TournamentCloudRestorationUiState.Restoring(tournamentId)
+            val tournamentName = _availableTournaments.value
+                .firstOrNull { it.id == tournamentId }
+                ?.name
+                ?: tournamentId
+            _uiState.value = TournamentCloudRestorationUiState.Restoring(
+                tournamentId = tournamentId,
+                tournamentName = tournamentName,
+            )
             _uiState.value = runRestoreAction { restoreTournament.restore(tournamentId) }
         }
     }
 
     fun reset() {
+        _availableTournaments.value = emptyList()
         _uiState.value = TournamentCloudRestorationUiState.Idle
     }
 
