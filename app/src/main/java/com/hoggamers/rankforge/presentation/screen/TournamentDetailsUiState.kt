@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
+import com.hoggamers.rankforge.domain.tournament.nextAvailableMatchNumber
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -73,8 +74,8 @@ data class TournamentDetailsItemUiState(
     val hasInvalidTeamSlotState: Boolean = false,
 )
 
-val TournamentDetailsItemUiState.nextMatchNumber: Int
-    get() = matches.maxOfOrNull { it.matchNumber }?.plus(1) ?: 1
+val TournamentDetailsItemUiState.nextMatchNumber: Int?
+    get() = nextAvailableMatchNumber(matches.map { it.matchNumber })
 
 val TournamentDetailsItemUiState.canPrepareStandingsCsvExport: Boolean
     get() = matches.any { match ->
@@ -170,6 +171,6 @@ private fun List<MatchKill>.toKillUiState(): List<MatchKillDisplayUiState> = map
 }
 
 fun TournamentDetailsItemUiState.canCreateMatch(): Boolean =
-    matches.size < MAX_MATCHES_PER_TOURNAMENT
+    matches.size < MAX_MATCHES_PER_TOURNAMENT && nextMatchNumber != null
 
 fun TournamentDetailsItemUiState.activeTeamSlotCount(): Int = slots.count { it.teamName.trim().isNotBlank() }

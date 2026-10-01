@@ -598,7 +598,7 @@ private fun PointIqTournamentHero(
 
 @Composable
 private fun PointIqMatchProcessingHeader(
-    nextMatchNumber: Int,
+    nextMatchNumber: Int?,
     canCreateMatch: Boolean,
     isCreatingMatch: Boolean,
     onCreateMatch: () -> Unit,
@@ -628,7 +628,7 @@ private fun PointIqMatchProcessingHeader(
             )
         }
         Spacer(modifier = Modifier.width(8.dp))
-        if (canCreateMatch) {
+        if (canCreateMatch && nextMatchNumber != null) {
             OutlinedButton(
                 onClick = onCreateMatch,
                 enabled = !isCreatingMatch,
@@ -1290,9 +1290,10 @@ private fun MatchList(
             text = stringResource(R.string.matches_section_title),
             style = MaterialTheme.typography.titleMedium,
         )
+        val nextMatchNumber = tournament.nextMatchNumber
         if (tournament.status != TournamentStatus.CONFIRMED) {
             Text(text = stringResource(R.string.matches_require_confirmed_roster_message))
-        } else if (tournament.matches.size >= com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT) {
+        } else if (!tournament.canCreateMatch() || nextMatchNumber == null) {
             Text(text = stringResource(R.string.match_limit_reached_message))
         } else {
             Button(
@@ -1302,7 +1303,7 @@ private fun MatchList(
                 Text(
                     text = stringResource(
                         R.string.create_match_number_action,
-                        tournament.nextMatchNumber,
+                        nextMatchNumber,
                     ),
                 )
             }
@@ -1604,7 +1605,8 @@ private fun SimplifiedMatchList(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-            if (tournament.matches.size < com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT) {
+            val nextMatchNumber = tournament.nextMatchNumber
+            if (tournament.canCreateMatch() && nextMatchNumber != null) {
                 Button(
                     onClick = { onCalculatePointsRequested(tournament.id) },
                     enabled = !isCreatingMatch,
@@ -1621,7 +1623,7 @@ private fun SimplifiedMatchList(
                     Text(
                         text = stringResource(
                             R.string.create_match_number_action,
-                            tournament.nextMatchNumber,
+                            nextMatchNumber,
                         ),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,

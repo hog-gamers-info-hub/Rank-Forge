@@ -23,6 +23,7 @@ import org.junit.runner.RunWith
 import com.hoggamers.rankforge.domain.tournament.MatchField
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchValidationError
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 
@@ -103,13 +104,13 @@ class MatchCreationScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Enter a positive whole number.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter a whole number from 1 to 18.").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_CREATE_ACTION_TEST_TAG).performClick()
         composeTestRule.runOnIdle { assertEquals(1, submitCount) }
     }
 
     @Test
-    fun detailsShowsCreatedDraftAndBlocksAtTenMatches() {
+    fun detailsShowsCreatedDraftAndBlocksAtEighteenMatches() {
         composeTestRule.setContent {
             RankForgeTheme {
                 TournamentDetailsScreen(
@@ -122,7 +123,7 @@ class MatchCreationScreenTest {
                             organizerContactNumber = "123",
                             status = TournamentStatus.CONFIRMED,
                             slots = emptyList(),
-                            matches = (1..10).map { number ->
+                            matches = (1..MAX_MATCHES_PER_TOURNAMENT).map { number ->
                                 MatchUiState(
                                     id = "match-$number",
                                     matchNumber = number,
@@ -140,7 +141,7 @@ class MatchCreationScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Maximum of 10 matches reached.").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Maximum of 18 matches reached.").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Match 1 - In Progress").performScrollTo().assertIsDisplayed()
         composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(CREATE_MATCH_ACTION_TEST_TAG).assertCountEquals(0)

@@ -354,6 +354,9 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         if (currentMatches.size >= MAX_MATCHES_PER_TOURNAMENT) {
             return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED)
         }
+        if (match.matchNumber !in 1..MAX_MATCHES_PER_TOURNAMENT) {
+            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.INVALID_MATCH_NUMBER)
+        }
 
         matchesByTournamentId.update { current ->
             current + (match.tournamentId to (current[match.tournamentId].orEmpty() + match))

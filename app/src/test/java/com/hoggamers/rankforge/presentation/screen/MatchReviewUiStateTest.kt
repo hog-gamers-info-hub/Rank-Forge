@@ -56,14 +56,14 @@ class MatchReviewUiStateTest {
         assertFalse(
             state().copy(
                 status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
-                nextMatchNumber = 11,
+                nextMatchNumber = 19,
                 existingMatchCount = com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT,
             ).canCreateNextMatch,
         )
         assertFalse(
             state().copy(
                 status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
-                nextMatchNumber = 11,
+                nextMatchNumber = 19,
                 existingMatchCount = com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT,
             ).shouldShowCreateNextMatch,
         )

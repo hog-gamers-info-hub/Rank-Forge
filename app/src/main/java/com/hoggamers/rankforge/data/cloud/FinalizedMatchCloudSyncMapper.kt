@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.data.cloud
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncSnapshot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import java.util.UUID
@@ -60,7 +61,7 @@ object FinalizedMatchCloudSyncMapper {
         val finalizedMatches = snapshot.matches.filter { it.status == MatchStatus.FINALIZED }
         if (finalizedMatches.map { it.id }.distinct().size != finalizedMatches.size ||
             finalizedMatches.map { it.matchNumber }.distinct().size != finalizedMatches.size ||
-            finalizedMatches.any { it.matchNumber !in 1..10 }
+            finalizedMatches.any { it.matchNumber !in 1..MAX_MATCHES_PER_TOURNAMENT }
         ) {
             return FinalizedMatchCloudSyncMappingResult.Invalid
         }

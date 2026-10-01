@@ -58,7 +58,8 @@ class CreateNextMatchUseCase(
             return CreateNextMatchResult.Rejected(CreateNextMatchFailure.LIMIT_REACHED)
         }
 
-        val nextMatchNumber = existingMatches.maxOfOrNull { it.matchNumber }?.plus(1) ?: 1
+        val nextMatchNumber = nextAvailableMatchNumber(existingMatches.map { it.matchNumber })
+            ?: return CreateNextMatchResult.Rejected(CreateNextMatchFailure.LIMIT_REACHED)
         val match = Match(
             id = UUID.randomUUID().toString(),
             tournamentId = tournamentId,
@@ -82,6 +83,7 @@ private fun CreateMatchRepositoryResult.Rejected.toNextMatchFailure(): CreateNex
     MatchCreationFailure.LIMIT_REACHED -> CreateNextMatchFailure.LIMIT_REACHED
     MatchCreationFailure.TOURNAMENT_NOT_CONFIRMED,
     MatchCreationFailure.DUPLICATE_MATCH_NUMBER,
+    MatchCreationFailure.INVALID_MATCH_NUMBER,
     MatchCreationFailure.DUPLICATE_ID,
     -> CreateNextMatchFailure.REPOSITORY_REJECTED
 }

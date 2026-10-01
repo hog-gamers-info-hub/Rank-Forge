@@ -1691,6 +1691,11 @@ class RoomTournamentRepository @Inject constructor(
                 if (matches.size >= MAX_MATCHES_PER_TOURNAMENT) {
                     return@withTransaction CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED)
                 }
+                if (match.matchNumber !in 1..MAX_MATCHES_PER_TOURNAMENT) {
+                    return@withTransaction CreateMatchRepositoryResult.Rejected(
+                        MatchCreationFailure.INVALID_MATCH_NUMBER,
+                    )
+                }
                 val next = current.copy(
                     matches = current.matches + (match.tournamentId to (matches + match)),
                 )
