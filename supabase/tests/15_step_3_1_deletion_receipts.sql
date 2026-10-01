@@ -86,8 +86,8 @@ select is(
 );
 select is(
     (select outcome from public.delete_match_idempotent('a4000000-0000-0000-0000-000000000099')),
-    'NOT_FOUND_OR_NOT_OWNER',
-    'absent match without receipt fails closed'
+    'NOT_FOUND',
+    'absent match without receipt reports not found'
 );
 select is(
     (select outcome from public.delete_match_idempotent('a4000000-0000-0000-0000-000000000002')),
@@ -103,8 +103,8 @@ select is(
 set local request.jwt.claim.sub = 'a1000000-0000-0000-0000-000000000001';
 select is(
     (select outcome from public.delete_match_idempotent('a4000000-0000-0000-0000-000000000002')),
-    'NOT_FOUND_OR_NOT_OWNER',
-    'another owners receipt cannot authorize this caller'
+    'NOT_FOUND',
+    'another owners receipt cannot authorize this caller after deletion'
 );
 set local request.jwt.claim.sub = 'a1000000-0000-0000-0000-000000000002';
 select is(

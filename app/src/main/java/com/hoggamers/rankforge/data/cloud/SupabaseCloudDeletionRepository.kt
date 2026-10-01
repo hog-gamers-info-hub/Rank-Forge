@@ -122,6 +122,7 @@ private fun DeletionRpcResponse.toStageResult(): CloudDeletionStageResult =
 internal fun deletionRpcOutcomeToStageResult(outcome: String): CloudDeletionStageResult = when (outcome) {
     "DELETED",
     "ALREADY_DELETED" -> CloudDeletionStageResult.Success
+    "NOT_FOUND" -> CloudDeletionStageResult.NotFound
     "NOT_FOUND_OR_NOT_OWNER" ->
         CloudDeletionStageResult.Failed(CloudDeletionFailureCategory.AUTHORIZATION)
     else -> CloudDeletionStageResult.Failed(CloudDeletionFailureCategory.REMOTE)

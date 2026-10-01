@@ -22,7 +22,7 @@ import org.junit.Test
 
 class DeleteUseCasesTest {
     @Test
-    fun matchDeletionPurgesQueueThenDeletesStorageRemoteAndLocalInOrder() = runTest {
+    fun matchDeletionDeletesStorageRemoteAndLocalWithoutDiscardingPendingQueue() = runTest {
         val events = mutableListOf<String>()
         val repository = testRepository(withMatch = true)
         val cloud = RecordingCloud(events)
@@ -38,10 +38,66 @@ class DeleteUseCasesTest {
         )("match-1")
 
         assertEquals(DeleteMatchResult.Success, result)
-        assertEquals(listOf("queue:tournament-1", "match-storage", "match-remote", "local-match:match-1"), events)
+        assertEquals(listOf("match-storage", "match-remote", "local-match:match-1"), events)
         assertEquals("match-1", cloud.matchId)
-        assertEquals(listOf("tournament-1" to "owner-1"), queue.purgeCalls)
+        assertTrue(queue.purgeCalls.isEmpty())
         assertEquals(listOf("match-1" to "owner-1"), local.matchOwnerCalls)
+    }
+
+    @Test
+    fun localOnlyMatchDeletionCompletesWhenRemoteMatchIsAbsent() = runTest {
+        val events = mutableListOf<String>()
+        val queue = RecordingQueue(events)
+        val cloud = RecordingCloud(events).apply {
+            matchRemoteResult = CloudDeletionStageResult.NotFound
+        }
+
+        val result = DeleteMatchUseCase(
+            testRepository(withMatch = true),
+            signedInAuth(),
+            queue,
+            cloud,
+            RecordingLocal(events),
+        )("match-1")
+
+        assertEquals(DeleteMatchResult.Success, result)
+        assertEquals(listOf("match-storage", "match-remote", "local-match:match-1"), events)
+        assertTrue(queue.purgeCalls.isEmpty())
+    }
+
+    @Test
+    fun retryAfterEarlierFailedDeletionHandlesAStaleStartedIntent() = runTest {
+        val events = mutableListOf<String>()
+        val intents = RecordingDeletionIntentRepository()
+        val cloud = RecordingCloud(events).apply {
+            matchRemoteResults += CloudDeletionStageResult.Failed(CloudDeletionFailureCategory.NETWORK)
+            matchRemoteResults += CloudDeletionStageResult.NotFound
+        }
+        val queue = RecordingQueue(events)
+        val useCase = DeleteMatchUseCase(
+            testRepository(withMatch = true),
+            signedInAuth(),
+            queue,
+            cloud,
+            RecordingLocal(events),
+            intents,
+        )
+
+        assertEquals(
+            DeleteMatchResult.RemoteDeletionFailed(CloudDeletionFailureCategory.NETWORK),
+            useCase("match-1"),
+        )
+        assertEquals(
+            DeletionIntentPhase.DELETE_STARTED,
+            intents.read(DeletionTargetType.MATCH, "match-1")?.phase,
+        )
+        assertEquals(DeleteMatchResult.Success, useCase("match-1"))
+        assertNull(intents.read(DeletionTargetType.MATCH, "match-1"))
+        assertTrue(queue.purgeCalls.isEmpty())
+        assertEquals(
+            listOf("match-storage", "match-remote", "match-storage", "match-remote", "local-match:match-1"),
+            events,
+        )
     }
 
     @Test
@@ -60,7 +116,7 @@ class DeleteUseCasesTest {
         )("match-1")
 
         assertEquals(DeleteMatchResult.StorageDeletionFailed(CloudDeletionFailureCategory.NETWORK), result)
-        assertEquals(listOf("queue:tournament-1", "match-storage"), events)
+        assertEquals(listOf("match-storage"), events)
     }
 
     @Test
@@ -70,18 +126,32 @@ class DeleteUseCasesTest {
             matchRemoteResult = CloudDeletionStageResult.Failed(CloudDeletionFailureCategory.AUTHORIZATION)
         }
         val local = RecordingLocal(events)
+        val queue = RecordingQueue(events).apply {
+            pendingEntries += SyncQueueEntry(
+                id = "pending-match-upload",
+                operationType = SyncQueueOperationType.DRAFT_MATCH_SYNC,
+                tournamentId = "tournament-1",
+                createdAtEpochMillis = 1L,
+                status = SyncQueueStatus.PENDING,
+                failureCategory = null,
+                attemptCount = 0,
+                ownerUserId = "owner-1",
+            )
+        }
 
         val result = DeleteMatchUseCase(
             testRepository(withMatch = true),
             signedInAuth(),
-            RecordingQueue(events),
+            queue,
             cloud,
             local,
         )("match-1")
 
         assertEquals(DeleteMatchResult.RemoteDeletionFailed(CloudDeletionFailureCategory.AUTHORIZATION), result)
         assertTrue(local.matchCalls.isEmpty())
-        assertEquals(listOf("queue:tournament-1", "match-storage", "match-remote"), events)
+        assertEquals(listOf("match-storage", "match-remote"), events)
+        assertTrue(events.none { it.startsWith("queue:") })
+        assertEquals(listOf("pending-match-upload"), queue.pendingEntries.map { it.id })
     }
 
     @Test
@@ -110,7 +180,6 @@ class DeleteUseCasesTest {
         assertNull(intents.read(DeletionTargetType.MATCH, "match-1"))
         assertEquals(
             listOf(
-                "queue:tournament-1",
                 "match-storage",
                 "match-remote",
                 "local-match:match-1",
@@ -251,7 +320,7 @@ class DeleteUseCasesTest {
 
         assertNull(matchIntents.read(DeletionTargetType.MATCH, "match-1"))
         assertNull(tournamentIntents.read(DeletionTargetType.TOURNAMENT, "tournament-1"))
-        assertEquals(listOf("queue:tournament-1", "match-storage", "match-remote", "local-match:match-1"), matchEvents)
+        assertEquals(listOf("match-storage", "match-remote", "local-match:match-1"), matchEvents)
         assertEquals(
             listOf("queue:tournament-1", "tournament-storage", "tournament-remote", "local-tournament:tournament-1"),
             tournamentEvents,
@@ -557,7 +626,8 @@ private class RecordingQueue(
     private val fail: Boolean = false,
 ) : PersistentSyncQueueRepository {
     val purgeCalls = mutableListOf<Pair<String, String>>()
-    override fun observeAll(): Flow<List<SyncQueueEntry>> = flowOf(emptyList())
+    val pendingEntries = mutableListOf<SyncQueueEntry>()
+    override fun observeAll(): Flow<List<SyncQueueEntry>> = flowOf(pendingEntries.toList())
     override suspend fun enqueue(operationType: SyncQueueOperationType, tournamentId: String?, status: SyncQueueStatus, failureCategory: String?) =
         SyncQueueEntry("queue-id", operationType, tournamentId, 0L, status, failureCategory, 0)
     override suspend fun completeOldestUnresolved(operationType: SyncQueueOperationType, tournamentId: String?) = Unit
@@ -569,12 +639,14 @@ private class RecordingQueue(
         purgeCalls += tournamentId to ownerUserId
         events += "queue:$tournamentId"
         if (fail) error("queue unavailable")
+        pendingEntries.removeAll { it.tournamentId == tournamentId && it.ownerUserId == ownerUserId }
     }
 }
 
 private class RecordingCloud(private val events: MutableList<String>) : CloudDeletionRepository {
     var matchStorageResult: CloudDeletionStageResult = CloudDeletionStageResult.Success
     var matchRemoteResult: CloudDeletionStageResult = CloudDeletionStageResult.Success
+    val matchRemoteResults = mutableListOf<CloudDeletionStageResult>()
     var tournamentStorageResult: CloudDeletionStageResult = CloudDeletionStageResult.Success
     var tournamentRemoteResult: CloudDeletionStageResult = CloudDeletionStageResult.Success
     var matchId: String? = null
@@ -587,7 +659,7 @@ private class RecordingCloud(private val events: MutableList<String>) : CloudDel
     override suspend fun deleteMatchRemote(tournamentId: String, matchId: String): CloudDeletionStageResult {
         events += "match-remote"
         this.matchId = matchId
-        return matchRemoteResult
+        return matchRemoteResults.removeFirstOrNull() ?: matchRemoteResult
     }
     override suspend fun deleteTournamentStorage(tournamentId: String, matchIds: Set<String>): CloudDeletionStageResult {
         events += "tournament-storage"

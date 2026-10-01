@@ -275,7 +275,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
     }
 
     @Test
-    fun deletingOneMatchPreservesOtherMatchesAndPurgesItsTournamentQueue() = runBlocking {
+    fun deletingOneMatchPreservesOtherMatchesAndPendingTournamentQueue() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "local-match-delete-${UUID.randomUUID()}.db"
         val root = File(context.cacheDir, "local-match-delete-${UUID.randomUUID()}")
@@ -314,7 +314,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             assertTrue(selectedFiles.none { it.exists() })
             assertTrue(survivorFile.exists())
             assertEquals("Team One", database.teamSlotDao().observeByTournamentId(tournament.id).first().first { it.slotNumber == 1 }.teamName)
-            assertTrue(database.syncQueueDao().observeAll().first().none { it.tournamentId == tournament.id })
+            assertTrue(database.syncQueueDao().observeAll().first().any { it.id == "queue-match" })
             assertTrue(database.syncQueueDao().observeAll().first().any { it.id == "queue-other" })
             assertFalse(database.stateDao().readPayload().orEmpty().contains("match-2"))
 
