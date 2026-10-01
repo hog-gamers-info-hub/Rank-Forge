@@ -52,7 +52,7 @@ class MatchRepositoryTest {
     }
 
     @Test
-    fun repositoryEnforcesTenMatchLimit() = runTest {
+    fun repositoryEnforcesEighteenMatchLimit() = runTest {
         val repository = InMemoryTournamentRepository()
         repository.create(tournament("first"))
         repository.saveTeamNames("first", mapOf(1 to "Team 1"))
@@ -63,7 +63,7 @@ class MatchRepositoryTest {
             )
         }
 
-        val result = repository.createDraftMatch(match("first", id = "match-11", number = 11))
+        val result = repository.createDraftMatch(match("first", id = "match-19", number = 19))
 
         assertEquals(
             CreateMatchRepositoryResult.Rejected(MatchCreationFailure.LIMIT_REACHED),

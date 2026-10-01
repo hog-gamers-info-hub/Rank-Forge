@@ -1,6 +1,6 @@
 begin;
 
-select plan(29);
+select plan(30);
 
 insert into auth.users (id, email)
 values ('10000000-0000-0000-0000-000000000001', 'schema-owner@example.test');
@@ -55,9 +55,17 @@ $$, '23514', null, 'invalid tournament status is rejected');
 select throws_ok($$
     update public.tournament_team_slots set slot_number = 13 where id = '30000000-0000-0000-0000-000000000001'
 $$, '23514', null, 'invalid slot number is rejected');
+update public.matches
+set match_number = 18
+where id = '50000000-0000-0000-0000-000000000001';
+select is(
+    (select match_number from public.matches where id = '50000000-0000-0000-0000-000000000001'),
+    18,
+    'match number 18 is accepted'
+);
 select throws_ok($$
-    update public.matches set match_number = 11 where id = '50000000-0000-0000-0000-000000000001'
-$$, '23514', null, 'invalid match number is rejected');
+    update public.matches set match_number = 19 where id = '50000000-0000-0000-0000-000000000001'
+$$, '23514', null, 'match number 19 is rejected');
 select throws_ok($$
     update public.match_results set placement = 13 where id = '60000000-0000-0000-0000-000000000001'
 $$, '23514', null, 'invalid placement is rejected');

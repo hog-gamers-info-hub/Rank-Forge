@@ -7,6 +7,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -63,6 +64,29 @@ class CreateNextMatchUseCaseTest {
         createExistingMatch("tournament", 3)
 
         assertEquals(4, useCase("tournament").createdMatch().matchNumber)
+    }
+
+    @Test
+    fun highestExistingMatch18ReusesLowestAvailableNumberWhenCapacityRemains() = runTest {
+        createReadyTournament("tournament")
+        (1..MAX_MATCHES_PER_TOURNAMENT)
+            .filter { it != 5 }
+            .forEach { createExistingMatch("tournament", it) }
+
+        val existingMatches = repository.observeMatchesByTournamentId("tournament").first()
+        val created = useCase("tournament").createdMatch()
+        val matchesAfterCreation = repository.observeMatchesByTournamentId("tournament").first()
+
+        assertEquals(5, created.matchNumber)
+        assertEquals(
+            existingMatches.map { it.id to it.matchNumber },
+            matchesAfterCreation.filter { it.id != created.id }.map { it.id to it.matchNumber },
+        )
+    }
+
+    @Test
+    fun noAvailableMatchNumberWhenAllEighteenNumbersAreOccupied() {
+        assertNull(nextAvailableMatchNumber((1..MAX_MATCHES_PER_TOURNAMENT).toList()))
     }
 
     @Test

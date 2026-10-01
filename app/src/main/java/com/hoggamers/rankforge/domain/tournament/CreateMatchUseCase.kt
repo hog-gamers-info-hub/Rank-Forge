@@ -73,7 +73,9 @@ class CreateMatchUseCase(
             val parsedMatchNumber = trimmedMatchNumber.toIntOrNull()
             when {
                 input.matchNumber.isBlank() -> put(MatchField.MATCH_NUMBER, MatchValidationError.REQUIRED)
-                trimmedMatchNumber.any { it !in '0'..'9' } || parsedMatchNumber == null || parsedMatchNumber <= 0 -> {
+                trimmedMatchNumber.any { it !in '0'..'9' } ||
+                    parsedMatchNumber == null ||
+                    parsedMatchNumber !in 1..MAX_MATCHES_PER_TOURNAMENT -> {
                     put(MatchField.MATCH_NUMBER, MatchValidationError.INVALID)
                 }
             }
@@ -111,6 +113,7 @@ enum class MatchCreationFailure(val field: MatchField, val error: MatchValidatio
     NO_PARTICIPATING_TEAMS(MatchField.TOURNAMENT, MatchValidationError.NO_PARTICIPATING_TEAMS),
     INVALID_TEAM_SLOTS(MatchField.TOURNAMENT, MatchValidationError.INVALID_TEAM_SLOTS),
     DUPLICATE_MATCH_NUMBER(MatchField.MATCH_NUMBER, MatchValidationError.DUPLICATE),
+    INVALID_MATCH_NUMBER(MatchField.MATCH_NUMBER, MatchValidationError.INVALID),
     LIMIT_REACHED(MatchField.TOURNAMENT, MatchValidationError.LIMIT_REACHED),
     DUPLICATE_ID(MatchField.TOURNAMENT, MatchValidationError.INVALID),
 }

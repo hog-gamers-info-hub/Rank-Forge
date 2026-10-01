@@ -24,6 +24,7 @@ import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -32,6 +33,9 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.presentation.screen.ImageSourceMimeTypeReader
 import com.hoggamers.rankforge.presentation.screen.ImageSourceStreamOpener
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
+import com.hoggamers.rankforge.presentation.screen.canCreateMatch
+import com.hoggamers.rankforge.presentation.screen.nextMatchNumber
+import com.hoggamers.rankforge.presentation.screen.toDetailsItemUiState
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -324,6 +328,106 @@ class RoomTournamentRepositoryLocalDeletionTest {
                 restartedDatabase.close()
             }
         } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun deletingMatchFreesCapacityForAnotherMatch() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "local-match-capacity-\${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "local-match-capacity-\${UUID.randomUUID()}")
+        val database = database(context, databaseName)
+        try {
+            val repository = repository(database, preserver(root))
+            val tournament = tournament("tournament-match-capacity")
+            repository.create(tournament)
+            repository.saveTeamNames(tournament.id, mapOf(1 to "Team One"))
+            (1..MAX_MATCHES_PER_TOURNAMENT).forEach { number ->
+                assertEquals(
+                    CreateMatchRepositoryResult.Created,
+                    repository.createDraftMatch(
+                        Match(
+                            id = "match-$number",
+                            tournamentId = tournament.id,
+                            matchNumber = number,
+                            date = LocalDate.of(2026, 8, 1),
+                            mapName = "Bermuda",
+                            status = MatchStatus.DRAFT,
+                        ),
+                    ),
+                )
+            }
+            claim(database, DeletionTargetType.MATCH, "match-5", tournament.id)
+
+            assertEquals(
+                LocalDeletionResult.Deleted,
+                repository.deleteMatchLocallyByOwner("match-5", "owner-a"),
+            )
+            assertEquals(
+                CreateMatchRepositoryResult.Created,
+                repository.createDraftMatch(
+                    Match(
+                        id = "replacement-match",
+                        tournamentId = tournament.id,
+                        matchNumber = 5,
+                        date = LocalDate.of(2026, 8, 1),
+                        mapName = "Bermuda",
+                        status = MatchStatus.DRAFT,
+                    ),
+                ),
+            )
+        } finally {
+            if (database.isOpen) database.close()
+            context.deleteDatabase(databaseName)
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun reopeningPersistedTournamentWithEighteenMatchesKeepsDetailsAccessible() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "local-match-reopen-${UUID.randomUUID()}.db"
+        val root = File(context.cacheDir, "local-match-reopen-${UUID.randomUUID()}")
+        val database = database(context, databaseName)
+        var reopenedDatabase: RankForgeDatabase? = null
+        try {
+            val tournament = tournament("tournament-match-reopen").copy(status = TournamentStatus.CONFIRMED)
+            val repository = repository(database, preserver(root))
+            repository.create(tournament)
+            repository.saveTeamNames(tournament.id, mapOf(1 to "Team One"))
+            (1..MAX_MATCHES_PER_TOURNAMENT).forEach { number ->
+                assertEquals(
+                    CreateMatchRepositoryResult.Created,
+                    repository.createDraftMatch(
+                        Match(
+                            id = "match-$number",
+                            tournamentId = tournament.id,
+                            matchNumber = number,
+                            date = LocalDate.of(2026, 8, 1),
+                            mapName = "Bermuda",
+                            status = MatchStatus.DRAFT,
+                        ),
+                    ),
+                )
+            }
+            database.close()
+
+            reopenedDatabase = database(context, databaseName)
+            val reopenedRepository = repository(reopenedDatabase!!, preserver(root))
+            val reopenedTournament = reopenedRepository.observeById(tournament.id).first()!!
+            val details = reopenedTournament.toDetailsItemUiState(
+                slots = reopenedRepository.observeSlotsByTournamentId(tournament.id).first(),
+                matches = reopenedRepository.observeMatchesByTournamentId(tournament.id).first(),
+            )
+
+            assertEquals(MAX_MATCHES_PER_TOURNAMENT, details.matches.size)
+            assertNull(details.nextMatchNumber)
+            assertFalse(details.canCreateMatch())
+        } finally {
+            if (reopenedDatabase?.isOpen == true) reopenedDatabase?.close()
             if (database.isOpen) database.close()
             context.deleteDatabase(databaseName)
             root.deleteRecursively()

@@ -21,6 +21,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.MatchField
 import com.hoggamers.rankforge.domain.tournament.MatchValidationError
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
@@ -124,10 +125,10 @@ class MatchCreationViewModelTest {
     }
 
     @Test
-    fun limitReachedStateBlocksCreation() = runTest {
+    fun outOfRangeMatchNumberIsRejectedWhenAtLimit() = runTest {
         createReadyTournament(TournamentStatus.CONFIRMED)
         val createMatch = CreateMatchUseCase(repository, SignedInTournamentTestAuthRepository())
-        (1..10).forEach { number ->
+        (1..MAX_MATCHES_PER_TOURNAMENT).forEach { number ->
             createMatch(
                 com.hoggamers.rankforge.domain.tournament.CreateMatchInput(
                     tournamentId = "stable-id",
@@ -138,14 +139,14 @@ class MatchCreationViewModelTest {
             )
         }
         viewModel.load("stable-id")
-        viewModel.onMatchNumberChanged("11")
+        viewModel.onMatchNumberChanged((MAX_MATCHES_PER_TOURNAMENT + 1).toString())
         viewModel.onMatchDateChanged(LocalDate.of(2026, 7, 24))
         viewModel.onMapNameChanged("Bermuda")
 
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(MatchValidationError.LIMIT_REACHED, viewModel.uiState.value.validationErrors[MatchField.TOURNAMENT])
+        assertEquals(MatchValidationError.INVALID, viewModel.uiState.value.validationErrors[MatchField.MATCH_NUMBER])
         assertEquals(null, viewModel.uiState.value.navigation)
     }
 

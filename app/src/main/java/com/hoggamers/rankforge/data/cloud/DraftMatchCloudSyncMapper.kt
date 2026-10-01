@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.data.cloud
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncSnapshot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -51,7 +52,7 @@ object DraftMatchCloudSyncMapper {
         val draftMatches = snapshot.matches.filter { it.status == MatchStatus.DRAFT }
         if (draftMatches.map { it.id }.distinct().size != draftMatches.size ||
             draftMatches.map { it.matchNumber }.distinct().size != draftMatches.size ||
-            draftMatches.any { it.matchNumber !in 1..10 }
+            draftMatches.any { it.matchNumber !in 1..MAX_MATCHES_PER_TOURNAMENT }
         ) {
             return DraftMatchCloudSyncMappingResult.Invalid
         }

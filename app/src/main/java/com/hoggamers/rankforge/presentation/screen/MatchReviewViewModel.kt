@@ -53,6 +53,7 @@ import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.nextAvailableMatchNumber
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -376,7 +377,7 @@ class MatchReviewViewModel @Inject constructor(
                         activeTeamCount = slots.analyzeTeamSlotParticipation().activeCount,
                         finalizedParticipantSlotNumbers = finalizedParticipantSlotNumbers,
                         matchNumber = match.matchNumber,
-                        nextMatchNumber = matches.maxOfOrNull { it.matchNumber }?.plus(1) ?: 1,
+                        nextMatchNumber = nextAvailableMatchNumber(matches.map { it.matchNumber }),
                         existingMatchCount = matches.size,
                         status = match.status,
                         correctionHistory = match.correctionHistory,

@@ -55,6 +55,37 @@ class CreateMatchUseCaseTest {
     }
 
     @Test
+    fun eleventhMatchCanBeCreated() = runTest {
+        createReadyTournament("first")
+
+        val result = useCase(validInput("first").copy(matchNumber = "11"))
+
+        assertEquals(11, (result as CreateMatchResult.Created).match.matchNumber)
+    }
+
+    @Test
+    fun eighteenthMatchCanBeCreated() = runTest {
+        createReadyTournament("first")
+
+        val result = useCase(validInput("first").copy(matchNumber = "18"))
+
+        assertEquals(18, (result as CreateMatchResult.Created).match.matchNumber)
+    }
+
+    @Test
+    fun nineteenthMatchNumberIsRejected() = runTest {
+        createReadyTournament("first")
+
+        val result = useCase(validInput("first").copy(matchNumber = "19"))
+
+        assertEquals(
+            MatchValidationError.INVALID,
+            (result as CreateMatchResult.Invalid).errors[MatchField.MATCH_NUMBER],
+        )
+        assertTrue(repository.observeMatchesByTournamentId("first").first().isEmpty())
+    }
+
+    @Test
     fun duplicateMatchNumberIsRejectedWithinTournament() = runTest {
         createReadyTournament("first")
         assertTrue(useCase(validInput("first")) is CreateMatchResult.Created)
@@ -126,15 +157,15 @@ class CreateMatchUseCaseTest {
     }
 
     @Test
-    fun eleventhMatchIsRejected() = runTest {
+    fun outOfRangeMatchNumberDoesNotMutateAtTournamentLimit() = runTest {
         createReadyTournament("first")
         (1..MAX_MATCHES_PER_TOURNAMENT).forEach { number ->
             assertTrue(useCase(validInput("first").copy(matchNumber = number.toString())) is CreateMatchResult.Created)
         }
 
-        val result = useCase(validInput("first").copy(matchNumber = "11"))
+        val result = useCase(validInput("first").copy(matchNumber = "19"))
 
-        assertEquals(MatchValidationError.LIMIT_REACHED, (result as CreateMatchResult.Invalid).errors[MatchField.TOURNAMENT])
+        assertEquals(MatchValidationError.INVALID, (result as CreateMatchResult.Invalid).errors[MatchField.MATCH_NUMBER])
         assertEquals(MAX_MATCHES_PER_TOURNAMENT, repository.observeMatchesByTournamentId("first").first().size)
     }
 

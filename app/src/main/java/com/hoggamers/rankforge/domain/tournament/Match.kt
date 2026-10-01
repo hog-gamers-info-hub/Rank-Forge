@@ -2,7 +2,17 @@ package com.hoggamers.rankforge.domain.tournament
 
 import java.time.LocalDate
 
-const val MAX_MATCHES_PER_TOURNAMENT = 10
+const val MAX_MATCHES_PER_TOURNAMENT = 18
+
+fun nextAvailableMatchNumber(existingMatchNumbers: Collection<Int>): Int? {
+    val occupiedNumbers = existingMatchNumbers.toSet()
+    val nextSequentialNumber = existingMatchNumbers.maxOrNull()?.plus(1) ?: 1
+    return if (nextSequentialNumber <= MAX_MATCHES_PER_TOURNAMENT) {
+        nextSequentialNumber
+    } else {
+        (1..MAX_MATCHES_PER_TOURNAMENT).firstOrNull { it !in occupiedNumbers }
+    }
+}
 
 data class Match(
     val id: String,

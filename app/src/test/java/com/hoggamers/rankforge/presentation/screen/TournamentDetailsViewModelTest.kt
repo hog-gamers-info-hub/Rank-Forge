@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -247,12 +248,44 @@ class TournamentDetailsViewModelTest {
         viewModel.load("stable-id")
         advanceUntilIdle()
 
+        assertNull(viewModel.uiState.value.tournament?.nextMatchNumber)
+        assertFalse(viewModel.uiState.value.tournament?.canCreateMatch() == true)
         viewModel.onCalculatePointsRequested()
         advanceUntilIdle()
 
         assertNull(viewModel.uiState.value.calculatePointsMessage)
         assertNull(viewModel.uiState.value.matchReviewRequest)
         assertTrue(syncAction.tournamentIds.isEmpty())
+    }
+
+    @Test
+    fun detailsDisplaysReusableMatchNumberAndCreatesThatNumber() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.saveTeamNames("stable-id", (1..12).associateWith { "Team $it" })
+        repository.setMatches(
+            "stable-id",
+            (1..MAX_MATCHES_PER_TOURNAMENT)
+                .filter { it != 5 }
+                .map { matchNumber ->
+                    Match(
+                        id = "match-$matchNumber",
+                        tournamentId = "stable-id",
+                        matchNumber = matchNumber,
+                        date = LocalDate.of(2026, 7, 24),
+                        mapName = "Bermuda",
+                        status = MatchStatus.DRAFT,
+                    )
+                },
+        )
+        val viewModel = detailsViewModel()
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        assertEquals(5, viewModel.uiState.value.tournament?.nextMatchNumber)
+        viewModel.onCalculatePointsRequested()
+        advanceUntilIdle()
+
+        assertEquals(5, repository.observeMatchesByTournamentId("stable-id").first().last().matchNumber)
     }
 
     @Test
