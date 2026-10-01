@@ -19,7 +19,11 @@ class SupabaseCloudDeletionRepositoryTest {
     }
 
     @Test
-    fun absentOrUnknownRemoteOutcomesRemainFailure() {
+    fun missingRemoteMatchIsLocalCleanupSafeButAuthorizationFailureIsNot() {
+        assertEquals(
+            CloudDeletionStageResult.NotFound,
+            deletionRpcOutcomeToStageResult("NOT_FOUND"),
+        )
         assertEquals(
             CloudDeletionStageResult.Failed(CloudDeletionFailureCategory.AUTHORIZATION),
             deletionRpcOutcomeToStageResult("NOT_FOUND_OR_NOT_OWNER"),

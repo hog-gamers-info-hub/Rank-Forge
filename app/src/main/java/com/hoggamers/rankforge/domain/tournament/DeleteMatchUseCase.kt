@@ -82,14 +82,14 @@ class DeleteMatchUseCase @Inject constructor(
                 }
             }
         }
-        if (!purgeQueue(match.tournamentId, ownerUserId)) return DeleteMatchResult.PendingSyncPreparationFailed
-
         when (val result = cloudDeletionRepository.deleteMatchStorage(match.tournamentId, match.id)) {
             CloudDeletionStageResult.Success -> Unit
+            CloudDeletionStageResult.NotFound -> Unit
             is CloudDeletionStageResult.Failed -> return DeleteMatchResult.StorageDeletionFailed(result.category)
         }
         when (val result = cloudDeletionRepository.deleteMatchRemote(match.tournamentId, match.id)) {
             CloudDeletionStageResult.Success -> Unit
+            CloudDeletionStageResult.NotFound -> Unit
             is CloudDeletionStageResult.Failed -> return DeleteMatchResult.RemoteDeletionFailed(result.category)
         }
         try {
@@ -153,15 +153,6 @@ class DeleteMatchUseCase @Inject constructor(
         throw cancellation
     } catch (_: Throwable) {
         null
-    }
-
-    private suspend fun purgeQueue(tournamentId: String, ownerUserId: String): Boolean = try {
-        queueRepository.purgeByTournamentIdAndOwner(tournamentId, ownerUserId)
-        true
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (_: Throwable) {
-        false
     }
 
     private fun localResult(result: LocalDeletionResult, missingIsSuccess: Boolean = false): DeleteMatchResult = when (result) {

@@ -106,10 +106,12 @@ class DeleteTournamentUseCase @Inject constructor(
 
         when (val result = cloudDeletionRepository.deleteTournamentStorage(tournament.id, matchIds)) {
             CloudDeletionStageResult.Success -> Unit
+            CloudDeletionStageResult.NotFound -> return DeleteTournamentResult.TargetNotFound
             is CloudDeletionStageResult.Failed -> return DeleteTournamentResult.StorageDeletionFailed(result.category)
         }
         when (val result = cloudDeletionRepository.deleteTournamentRemote(tournament.id)) {
             CloudDeletionStageResult.Success -> Unit
+            CloudDeletionStageResult.NotFound -> return DeleteTournamentResult.TargetNotFound
             is CloudDeletionStageResult.Failed -> return DeleteTournamentResult.RemoteDeletionFailed(result.category)
         }
         try {

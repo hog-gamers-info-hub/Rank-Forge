@@ -558,8 +558,6 @@ class RoomTournamentRepository @Inject constructor(
                     return@withTransaction LocalDeletionResult.CleanupClaimLost
                 }
                 database.matchDao().deleteById(matchId)
-                // The queue stores tournamentId only, so purge the full tournament scope.
-                database.syncQueueDao().deleteByTournamentIdAndOwner(match.tournamentId, ownerUserId)
                 touchTournament(match.tournamentId)
                 saveLegacyState(next)
                 LocalDeletionResult.Deleted

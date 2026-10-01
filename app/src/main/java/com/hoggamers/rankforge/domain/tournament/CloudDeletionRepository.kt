@@ -12,6 +12,9 @@ enum class CloudDeletionFailureCategory {
 sealed interface CloudDeletionStageResult {
     data object Success : CloudDeletionStageResult
 
+    /** The remote target is already absent; local cleanup may continue. */
+    data object NotFound : CloudDeletionStageResult
+
     data class Failed(
         val category: CloudDeletionFailureCategory,
     ) : CloudDeletionStageResult
