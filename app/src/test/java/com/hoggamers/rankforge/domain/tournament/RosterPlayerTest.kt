@@ -26,12 +26,12 @@ class RosterPlayerTest {
     }
 
     @Test
-    fun slotZeroAndSlotThirteenAreRejected() {
+    fun slotZeroAndSlotTwentyFiveAreRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             RosterPlayer.create("tournament-id", 0, "Player Zero")
         }
         assertThrows(IllegalArgumentException::class.java) {
-            RosterPlayer.create("tournament-id", 13, "Player Thirteen")
+            RosterPlayer.create("tournament-id", 25, "Player Twenty-Five")
         }
     }
 }

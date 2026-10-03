@@ -53,4 +53,7 @@ private fun TournamentCloudRestorePayload.toUploadPayload() = TournamentUploadPa
     organizerContact = organizerContact,
     status = status,
     revision = revision,
+    format = format,
+    groupCount = groupCount,
+    selectedGroupPairings = selectedGroupPairings,
 )

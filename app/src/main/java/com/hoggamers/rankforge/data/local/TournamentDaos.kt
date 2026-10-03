@@ -150,7 +150,9 @@ interface TournamentDao {
                 WHERE matches.tournament_id = tournaments.id
             ) AS total_matches,
             tournaments.last_updated_epoch_millis,
-            tournaments.owner_user_id
+            tournaments.owner_user_id,
+            tournaments.format,
+            tournaments.group_count
         FROM tournaments
         ORDER BY tournaments.creation_order, tournaments.id
         """,
@@ -175,7 +177,9 @@ interface TournamentDao {
                 WHERE matches.tournament_id = tournaments.id
             ) AS total_matches,
             tournaments.last_updated_epoch_millis,
-            tournaments.owner_user_id
+            tournaments.owner_user_id,
+            tournaments.format,
+            tournaments.group_count
         FROM tournaments
         WHERE tournaments.owner_user_id = :ownerUserId
         ORDER BY tournaments.creation_order, tournaments.id
@@ -222,6 +226,24 @@ interface TeamSlotDao {
     suspend fun upsertAll(teamSlots: List<TeamSlotEntity>)
 
     @Query("DELETE FROM team_slots WHERE tournament_id = :tournamentId")
+    suspend fun deleteByTournamentId(tournamentId: String)
+}
+
+@Dao
+interface TournamentGroupPairingDao {
+    @Query("SELECT * FROM tournament_group_pairings ORDER BY tournament_id, pairing_key")
+    fun observeAll(): Flow<List<TournamentGroupPairingEntity>>
+
+    @Query(
+        "SELECT * FROM tournament_group_pairings " +
+            "WHERE tournament_id = :tournamentId ORDER BY pairing_key",
+    )
+    fun observeByTournamentId(tournamentId: String): Flow<List<TournamentGroupPairingEntity>>
+
+    @Upsert
+    suspend fun upsertAll(pairings: List<TournamentGroupPairingEntity>)
+
+    @Query("DELETE FROM tournament_group_pairings WHERE tournament_id = :tournamentId")
     suspend fun deleteByTournamentId(tournamentId: String)
 }
 

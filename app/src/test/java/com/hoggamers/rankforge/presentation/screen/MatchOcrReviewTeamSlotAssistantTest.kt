@@ -101,6 +101,39 @@ class MatchOcrReviewTeamSlotAssistantTest {
     }
 
     @Test
+    fun permanentGroupSlotsAboveTwelveRemainClaimableAndSelectable() {
+        val eligible = (1..6).toSet() + (13..18).toSet()
+        val draft = MatchOcrReviewCorrectionDraftReducer.validate(
+            MatchOcrReviewCorrectionDraft(
+                rows = (0 until 12).map { index ->
+                    MatchOcrReviewRowCorrectionDraft(
+                        rowIndex = index,
+                        originalPlacementValue = (index + 1).toString(),
+                        originalKillsValue = "0",
+                        originalAssignedTeamSlotValue = if (index == 0) "13" else "",
+                        placementDraftValue = (index + 1).toString(),
+                        killsDraftValue = "0",
+                        assignedTeamSlotDraftValue = if (index == 0) "13" else "",
+                        originallyRequiredManualReview = false,
+                        weakConfidenceOrSafetyEvidence = false,
+                        validation = MatchOcrReviewRowCorrectionValidation(),
+                    )
+                },
+                eligibleTeamSlots = eligible,
+            ),
+        )
+
+        val state = MatchOcrReviewTeamSlotAssistant.derive(
+            correctionDraft = draft,
+            manualRowIndexes = setOf(1),
+        )
+
+        assertEquals(setOf(13), state.claimedTeamSlots)
+        assertFalse(13 in state.remainingTeamSlots)
+        assertTrue(14 in state.availableOptionsByRow.getValue(1).map { it.teamSlot })
+    }
+
+    @Test
     fun duplicatesRemainVisibleAsUnresolvedWithoutUnsafeDeduction() {
         val state = derive(listOf("4", "4", "") + List(9) { "" })
 

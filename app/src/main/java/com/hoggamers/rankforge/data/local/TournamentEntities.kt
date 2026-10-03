@@ -30,6 +30,8 @@ data class TournamentEntity(
     @ColumnInfo(name = "creation_order", defaultValue = "0") val creationOrder: Long = 0L,
     @ColumnInfo(name = "last_updated_epoch_millis") val lastUpdatedEpochMillis: Long? = null,
     @ColumnInfo(name = "owner_user_id") val ownerUserId: String? = null,
+    @ColumnInfo(defaultValue = "'STANDARD'") val format: String = "STANDARD",
+    @ColumnInfo(name = "group_count") val groupCount: Int? = null,
 )
 
 data class TournamentSummaryProjection(
@@ -42,6 +44,8 @@ data class TournamentSummaryProjection(
     @ColumnInfo(name = "total_matches") val totalMatches: Int,
     @ColumnInfo(name = "last_updated_epoch_millis") val lastUpdatedEpochMillis: Long?,
     @ColumnInfo(name = "owner_user_id") val ownerUserId: String?,
+    val format: String = "STANDARD",
+    @ColumnInfo(name = "group_count") val groupCount: Int? = null,
 )
 
 @Entity(
@@ -61,6 +65,27 @@ data class TeamSlotEntity(
     @ColumnInfo(name = "tournament_id") val tournamentId: String,
     @ColumnInfo(name = "slot_number") val slotNumber: Int,
     @ColumnInfo(name = "team_name") val teamName: String,
+    @ColumnInfo(name = "group_name") val group: String? = null,
+)
+
+@Entity(
+    tableName = "tournament_group_pairings",
+    primaryKeys = ["tournament_id", "pairing_key"],
+    foreignKeys = [
+        ForeignKey(
+            entity = TournamentEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["tournament_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["tournament_id"])],
+)
+data class TournamentGroupPairingEntity(
+    @ColumnInfo(name = "tournament_id") val tournamentId: String,
+    @ColumnInfo(name = "pairing_key") val pairingKey: String,
+    @ColumnInfo(name = "first_group") val firstGroup: String,
+    @ColumnInfo(name = "second_group") val secondGroup: String,
 )
 
 @Entity(
@@ -102,6 +127,7 @@ data class MatchEntity(
     val date: String,
     @ColumnInfo(name = "map_name") val mapName: String,
     val status: String,
+    @ColumnInfo(name = "group_pairing_key") val groupPairingKey: String? = null,
 )
 
 enum class ScreenshotLocalStatus {

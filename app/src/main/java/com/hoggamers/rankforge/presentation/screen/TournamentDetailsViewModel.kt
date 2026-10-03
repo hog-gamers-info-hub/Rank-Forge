@@ -19,6 +19,7 @@ import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.CloudDeletionFailureCategory
 import com.hoggamers.rankforge.domain.tournament.DeleteTournamentResult
 import com.hoggamers.rankforge.domain.tournament.DeleteTournamentUseCase
@@ -109,6 +110,7 @@ class TournamentDetailsViewModel @Inject constructor(
                     state.copy(
                         csvExportResult = current.csvExportResult,
                         pendingTeamCountConfirmation = current.pendingTeamCountConfirmation,
+                        pendingGroupPairing = current.pendingGroupPairing,
                         calculatePointsMessage = current.calculatePointsMessage,
                         matchReviewRequest = current.matchReviewRequest,
                         isCreatingMatch = current.isCreatingMatch,
@@ -121,7 +123,7 @@ class TournamentDetailsViewModel @Inject constructor(
         }
     }
 
-    fun onCalculatePointsRequested() {
+    fun onCalculatePointsRequested(groupPairing: GroupPairing? = null) {
         val tournament = _uiState.value.tournament ?: return
         if (
             tournament.matches.size >= MAX_MATCHES_PER_TOURNAMENT ||
@@ -129,37 +131,45 @@ class TournamentDetailsViewModel @Inject constructor(
             _uiState.value.matchReviewRequest != null
         ) return
         viewModelScope.launch {
-            val confirmation = matchCreationWorkflow.teamCountConfirmationOrNull(tournament.id)
+            val confirmation = matchCreationWorkflow.teamCountConfirmationOrNull(tournament.id, groupPairing)
             if (confirmation != null) {
                 _uiState.update {
                     it.copy(
                         pendingTeamCountConfirmation = confirmation,
+                        pendingGroupPairing = groupPairing,
                         calculatePointsMessage = null,
                     )
                 }
             } else {
-                requestMatchCreation(tournament.id)
+                requestMatchCreation(tournament.id, groupPairing)
             }
         }
     }
 
     fun cancelTeamCountConfirmation() {
-        _uiState.update { it.copy(pendingTeamCountConfirmation = null) }
+        _uiState.update {
+            it.copy(
+                pendingTeamCountConfirmation = null,
+                pendingGroupPairing = null,
+            )
+        }
     }
 
     fun useEnteredTeams() {
         val tournamentId = _uiState.value.tournament?.id ?: return
         if (_uiState.value.pendingTeamCountConfirmation == null) return
-        _uiState.update { it.copy(pendingTeamCountConfirmation = null) }
-        requestMatchCreation(tournamentId)
+        val groupPairing = _uiState.value.pendingGroupPairing
+        _uiState.update { it.copy(pendingTeamCountConfirmation = null, pendingGroupPairing = null) }
+        requestMatchCreation(tournamentId, groupPairing)
     }
 
     fun useDefaults() {
         val tournamentId = _uiState.value.tournament?.id ?: return
         if (_uiState.value.pendingTeamCountConfirmation == null) return
-        _uiState.update { it.copy(pendingTeamCountConfirmation = null) }
+        val groupPairing = _uiState.value.pendingGroupPairing
+        _uiState.update { it.copy(pendingTeamCountConfirmation = null, pendingGroupPairing = null) }
         viewModelScope.launch {
-            if (!matchCreationWorkflow.applyDefaults(tournamentId)) {
+            if (!matchCreationWorkflow.applyDefaults(tournamentId, groupPairing)) {
                 _uiState.update {
                     it.copy(
                         calculatePointsMessage = CalculatePointsMessage.VALIDATION_FAILED,
@@ -171,7 +181,7 @@ class TournamentDetailsViewModel @Inject constructor(
                         calculatePointsMessage = null,
                     )
                 }
-                requestMatchCreation(tournamentId)
+                requestMatchCreation(tournamentId, groupPairing)
             }
         }
     }
@@ -235,7 +245,7 @@ class TournamentDetailsViewModel @Inject constructor(
         _uiState.update { it.copy(navigation = null) }
     }
 
-    private fun requestMatchCreation(tournamentId: String) {
+    private fun requestMatchCreation(tournamentId: String, groupPairing: GroupPairing? = null) {
         if (_uiState.value.isCreatingMatch || _uiState.value.matchReviewRequest != null) return
         _uiState.update {
             it.copy(
@@ -244,7 +254,7 @@ class TournamentDetailsViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            when (val result = matchCreationWorkflow.create(tournamentId)) {
+            when (val result = matchCreationWorkflow.create(tournamentId, groupPairing)) {
                 is CreateNextMatchResult.Created -> {
                     _uiState.update {
                         it.copy(

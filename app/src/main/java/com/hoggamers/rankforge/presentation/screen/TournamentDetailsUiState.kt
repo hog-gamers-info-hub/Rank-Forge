@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.nextAvailableMatchNumber
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 
 data class TeamCountConfirmationUiState(
     val enteredCount: Int,
@@ -58,6 +60,7 @@ data class TournamentDetailsUiState(
     val navigation: TournamentDetailsNavigation? = null,
     val isDeleting: Boolean = false,
     val deletionError: TournamentDeletionUiError? = null,
+    val pendingGroupPairing: GroupPairing? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && tournament == null
@@ -72,7 +75,23 @@ data class TournamentDetailsItemUiState(
     val slots: List<TeamSlotUiState>,
     val matches: List<MatchUiState> = emptyList(),
     val hasInvalidTeamSlotState: Boolean = false,
+    val format: TournamentFormat = TournamentFormat.STANDARD,
+    val selectedGroupPairings: List<GroupPairing> = emptyList(),
 )
+
+data class TournamentMatchSectionUiState(
+    val pairing: GroupPairing,
+    val matches: List<MatchUiState>,
+)
+
+val TournamentDetailsItemUiState.groupMatchSections: List<TournamentMatchSectionUiState>
+    get() = selectedGroupPairings.map { pairing ->
+        TournamentMatchSectionUiState(
+            pairing = pairing,
+            matches = matches.filter { it.groupPairing == pairing }
+                .sortedWith(compareBy<MatchUiState> { it.matchNumber }.thenBy { it.id }),
+        )
+    }
 
 val TournamentDetailsItemUiState.nextMatchNumber: Int?
     get() = nextAvailableMatchNumber(matches.map { it.matchNumber })
@@ -97,6 +116,7 @@ data class MatchUiState(
     val placements: List<MatchPlacementDisplayUiState> = emptyList(),
     val kills: List<MatchKillDisplayUiState> = emptyList(),
     val validationIssues: List<MatchResultValidationIssueUiState> = emptyList(),
+    val groupPairing: GroupPairing? = null,
 )
 
 data class MatchPlacementDisplayUiState(
@@ -119,30 +139,43 @@ fun Tournament.toDetailsItemUiState(
     matches: List<Match> = emptyList(),
 ): TournamentDetailsItemUiState {
     val participation = slots.analyzeTeamSlotParticipation()
+    val visibleSlots = if (format == TournamentFormat.GROUP_ROTATION) {
+        slots.filter { it.teamName.trim().isNotBlank() }
+    } else {
+        slots.filter { it.slotNumber in participation.activeSlotNumbers }
+    }
     return TournamentDetailsItemUiState(
         id = id,
         name = name,
         stageName = stageName,
         organizerContactNumber = organizerContactNumber,
         status = status,
-        slots = slots
-            .filter { it.slotNumber in participation.activeSlotNumbers }
+        format = format,
+        selectedGroupPairings = selectedGroupPairings,
+        slots = visibleSlots
             .map {
         TeamSlotUiState(
             slotNumber = it.slotNumber,
             teamName = it.teamName,
         )
             },
-        matches = matches.sortedBy { it.matchNumber }.map { match ->
+        matches = matches.sortedWith(compareBy<Match> { it.matchNumber }.thenBy { it.id }).map { match ->
         MatchUiState(
             id = match.id,
             matchNumber = match.matchNumber,
             date = match.date,
             mapName = match.mapName,
             status = match.status,
+            groupPairing = match.groupPairing,
             placements = match.placements.toUiState(),
             kills = match.kills.toKillUiState(),
-            validationIssues = ValidateMatchResultUseCase()(match)
+            validationIssues = ValidateMatchResultUseCase()(match, runCatching {
+                com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver().resolve(
+                    this@toDetailsItemUiState,
+                    slots,
+                    match,
+                )
+            }.getOrElse { TeamSlot.SLOT_NUMBERS.toSet() })
                 .errorsByTeamSlot
                 .toSortedMap()
                 .flatMap { (teamSlotNumber, errors) ->

@@ -7,8 +7,13 @@ import com.hoggamers.rankforge.data.local.MatchPlacementEntity
 import com.hoggamers.rankforge.data.local.MatchResultAggregate
 import com.hoggamers.rankforge.data.local.TournamentEntity
 import com.hoggamers.rankforge.data.local.TournamentSummaryProjection
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
 import kotlinx.coroutines.test.runTest
@@ -20,6 +25,26 @@ import org.junit.Test
 
 class TournamentMappersTest {
     @Test
+    fun matchPairingRoundTripsThroughRoomEntityMapping() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val match = Match(
+            id = "match-1",
+            tournamentId = "tournament-1",
+            matchNumber = 1,
+            date = LocalDate.of(2026, 10, 3),
+            mapName = "Bermuda",
+            status = MatchStatus.DRAFT,
+            groupPairing = pairing,
+        )
+
+        val entity = match.toEntity()
+        val restored = entity.toDomain()
+
+        assertEquals(pairing.canonicalKey, entity.groupPairingKey)
+        assertEquals(pairing, restored.groupPairing)
+    }
+
+    @Test
     fun knownAndUnknownOwnersSurviveTournamentRoomRoundTrips() {
         val tournament = tournament(ownerUserId = "user-a")
         val entity = tournament.toEntity(creationOrder = 1L)
@@ -27,6 +52,31 @@ class TournamentMappersTest {
         assertEquals("user-a", entity.ownerUserId)
         assertEquals("user-a", entity.toDomain().ownerUserId)
         assertNull(entity.copy(ownerUserId = null).toDomain().ownerUserId)
+    }
+
+    @Test
+    fun groupRotationConfigurationAndCanonicalPairingsSurviveRoomMapping() {
+        val tournament = Tournament(
+            id = "tournament-1",
+            name = "Summer Cup",
+            stageName = "Organizer",
+            organizerContactNumber = "123",
+            status = TournamentStatus.DRAFT,
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 3,
+            selectedGroupPairings = listOf(
+                GroupPairing.of(TournamentGroup.C, TournamentGroup.A),
+            ),
+        )
+        val pairing = tournament.selectedGroupPairings.single()
+
+        assertEquals(TournamentFormat.GROUP_ROTATION.name, tournament.toEntity(1L).format)
+        assertEquals(3, tournament.toEntity(1L).groupCount)
+        assertEquals(
+            tournament,
+            tournament.toEntity(1L).toDomain(listOf(pairing.toEntity(tournament.id).toDomain())),
+        )
+        assertEquals("A:C", pairing.toEntity(tournament.id).pairingKey)
     }
 
     @Test

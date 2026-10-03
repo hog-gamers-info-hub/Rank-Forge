@@ -13,8 +13,8 @@ data class MatchParticipantResult(
     val pointAdjustment: Int = 0,
 ) {
     init {
-        require(teamSlotNumber in TeamSlot.SLOT_NUMBERS) {
-            "Team slot number must be between 1 and 12."
+        require(teamSlotNumber in TeamSlot.TOURNAMENT_SLOT_NUMBERS) {
+            "Team slot number must be between 1 and 24."
         }
         require(kills >= 0) { "Kills cannot be negative." }
         when (participationStatus) {

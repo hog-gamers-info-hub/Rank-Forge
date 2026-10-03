@@ -18,7 +18,9 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
+import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -61,7 +63,7 @@ class InMemoryTournamentRepository @Inject constructor() : TournamentRepository 
             if (current.containsKey(tournament.id)) {
                 current
             } else {
-                current + (tournament.id to TeamSlot.fixedSlotsForTournament(tournament.id))
+                current + (tournament.id to tournament.formatDerivedSlots())
             }
         }
         cloudRevisions.update { current -> current + (tournament.id to (current[tournament.id] ?: 1)) }
@@ -187,9 +189,11 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
             if (currentTournaments.none { it.id == tournamentId }) {
                 emptyList()
             } else {
+                val tournament = currentTournaments.first { it.id == tournamentId }
+                val expectedSlots = tournament.formatDerivedSlots()
                 currentSlots[tournamentId]
-                    ?.takeIf { slots -> slots.map { it.slotNumber } == TeamSlot.SLOT_NUMBERS.toList() }
-                    ?: TeamSlot.fixedSlotsForTournament(tournamentId)
+                    ?.takeIf { slots -> slots.map { it.slotNumber } == expectedSlots.map { it.slotNumber } }
+                    ?: expectedSlots
             }
         }
 
@@ -200,9 +204,15 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         tournamentId: String,
         namesBySlotNumber: Map<Int, String>,
     ) {
+        val allowedSlotNumbers = tournaments.value
+            .firstOrNull { it.id == tournamentId }
+            ?.formatDerivedSlots()
+            ?.map { it.slotNumber }
+            ?.toSet()
+            ?: TeamSlot.SLOT_NUMBERS.toSet()
         namesBySlotNumber.keys.forEach { slotNumber ->
-            require(slotNumber in TeamSlot.SLOT_NUMBERS) {
-                "Team slot number must be between 1 and 12."
+            require(slotNumber in allowedSlotNumbers) {
+                "Team slot number is not valid for the tournament format."
             }
         }
         teamEntryDraftsByTournamentId.update { current ->
@@ -218,17 +228,27 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         tournamentId: String,
         teamNamesBySlotNumber: Map<Int, String>,
     ) {
+        val allowedSlotNumbers = tournaments.value
+            .firstOrNull { it.id == tournamentId }
+            ?.formatDerivedSlots()
+            ?.map { it.slotNumber }
+            ?.toSet()
+            ?: TeamSlot.SLOT_NUMBERS.toSet()
         teamNamesBySlotNumber.keys.forEach { slotNumber ->
-            require(slotNumber in TeamSlot.SLOT_NUMBERS) { "Team slot number must be between 1 and 12." }
+            require(slotNumber in allowedSlotNumbers) {
+                "Team slot number is not valid for the tournament format."
+            }
         }
         if (tournaments.value.none { it.id == tournamentId }) return
 
         invalidateConfirmation(tournamentId)
 
         slotsByTournamentId.update { current ->
+            val tournament = tournaments.value.first { it.id == tournamentId }
+            val expectedSlots = tournament.formatDerivedSlots()
             val currentSlots = current[tournamentId]
-                ?.takeIf { slots -> slots.map { it.slotNumber } == TeamSlot.SLOT_NUMBERS.toList() }
-                ?: TeamSlot.fixedSlotsForTournament(tournamentId)
+                ?.takeIf { slots -> slots.map { it.slotNumber } == expectedSlots.map { it.slotNumber } }
+                ?: expectedSlots
             current + (
                 tournamentId to currentSlots.map { slot ->
                     if (teamNamesBySlotNumber.containsKey(slot.slotNumber)) {
@@ -245,8 +265,14 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         tournamentId: String,
         slotNumber: Int,
     ): Flow<List<RosterPlayer>> {
-        require(slotNumber in TeamSlot.SLOT_NUMBERS) {
-            "Team slot number must be between 1 and 12."
+        val allowedSlotNumbers = tournaments.value
+            .firstOrNull { it.id == tournamentId }
+            ?.formatDerivedSlots()
+            ?.map { it.slotNumber }
+            ?.toSet()
+            ?: TeamSlot.SLOT_NUMBERS.toSet()
+        require(slotNumber in allowedSlotNumbers) {
+            "Team slot number is not valid for the tournament format."
         }
         return combine(tournaments, rostersByTournamentAndSlot) { currentTournaments, currentRosters ->
             if (currentTournaments.none { it.id == tournamentId }) {
@@ -277,8 +303,14 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         slotNumber: Int,
         players: List<RosterPlayer>,
     ) {
-        require(slotNumber in TeamSlot.SLOT_NUMBERS) {
-            "Team slot number must be between 1 and 12."
+        val allowedSlotNumbers = tournaments.value
+            .firstOrNull { it.id == tournamentId }
+            ?.formatDerivedSlots()
+            ?.map { it.slotNumber }
+            ?.toSet()
+            ?: TeamSlot.SLOT_NUMBERS.toSet()
+        require(slotNumber in allowedSlotNumbers) {
+            "Team slot number is not valid for the tournament format."
         }
         require(players.size <= RosterPlayer.MAX_PLAYERS) {
             "A team roster cannot contain more than six players."
@@ -338,9 +370,18 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
     override suspend fun createDraftMatch(match: Match): CreateMatchRepositoryResult {
         val tournament = tournaments.value.firstOrNull { it.id == match.tournamentId }
             ?: return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.TOURNAMENT_NOT_FOUND)
+        val eligibleSlotNumbers = runCatching {
+            MatchEligibleTeamSlotResolver().resolve(
+                tournament,
+                slotsByTournamentId.value[match.tournamentId].orEmpty(),
+                match,
+            )
+        }.getOrElse {
+            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.INVALID_GROUP_PAIRING)
+        }
         val participation = slotsByTournamentId.value[match.tournamentId]
             .orEmpty()
-            .analyzeTeamSlotParticipation()
+            .analyzeTeamSlotParticipation(eligibleSlotNumbers)
         if (participation.activeCount == 0) {
             return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.NO_PARTICIPATING_TEAMS)
         }
@@ -386,7 +427,8 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         if (match.status != MatchStatus.DRAFT) {
             return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.MATCH_NOT_DRAFT)
         }
-        if (placements.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS }) {
+        val eligibleSlotNumbers = eligibleSlotNumbersForMatch(match)
+        if (eligibleSlotNumbers == null || placements.any { it.teamSlotNumber !in eligibleSlotNumbers }) {
             return SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.INVALID_TEAM_SLOT)
         }
         if (placements.any { it.position !in TeamSlot.SLOT_NUMBERS }) {
@@ -430,7 +472,8 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         if (match.status != MatchStatus.DRAFT) {
             return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.MATCH_NOT_DRAFT)
         }
-        if (kills.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS }) {
+        val eligibleSlotNumbers = eligibleSlotNumbersForMatch(match)
+        if (eligibleSlotNumbers == null || kills.any { it.teamSlotNumber !in eligibleSlotNumbers }) {
             return SaveMatchKillsRepositoryResult.Rejected(SaveMatchKillsFailure.INVALID_TEAM_SLOT)
         }
         if (kills.any { it.kills < 0 }) {
@@ -473,9 +516,11 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         if (match.status != MatchStatus.DRAFT) {
             return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_DRAFT)
         }
+        val eligibleSlotNumbers = eligibleSlotNumbersForMatch(match)
+            ?: return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.INVALID_DATA)
         val participation = slotsByTournamentId.value[match.tournamentId]
             .orEmpty()
-            .analyzeTeamSlotParticipation()
+            .analyzeTeamSlotParticipation(eligibleSlotNumbers)
         val expectedTeamSlots = participation.activeSlotNumbers.toSet()
         val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
         val expectedPlacements = 1..placements.size
@@ -602,6 +647,8 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         if (match.status != MatchStatus.FINALIZED) {
             return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.MATCH_NOT_FINALIZED)
         }
+        val eligibleSlotNumbers = eligibleSlotNumbersForMatch(match)
+            ?: return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
             val previousParticipantResults = match.finalizedParticipantResultsOrNull()
             val correctedParticipantResults = (participantResults ?: placements.map { placement ->
                 val kill = kills.singleOrNull { it.teamSlotNumber == placement.teamSlotNumber }
@@ -615,7 +662,9 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
                         ?: 0,
                 )
             }
-            if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults)) {
+            if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults) ||
+                correctedParticipantResults.any { it.teamSlotNumber !in eligibleSlotNumbers }
+            ) {
             return SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA)
         }
 
@@ -668,10 +717,11 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         killsInput: String?,
         pointAdjustment: Int?,
     ) {
-        require(teamSlotNumber in TeamSlot.SLOT_NUMBERS) {
-            "Team slot number must be between 1 and 12."
+        val match = matchesByTournamentId.value[tournamentId].orEmpty().firstOrNull { it.id == matchId }
+            ?: return
+        require(eligibleSlotNumbersForMatch(match)?.contains(teamSlotNumber) == true) {
+            "Team slot number is not eligible for this match."
         }
-        if (matchesByTournamentId.value[tournamentId].orEmpty().none { it.id == matchId }) return
         draftValuesByMatch.update { current ->
             val key = DraftKey(tournamentId, matchId)
             val existing = current[key]?.get(teamSlotNumber) ?: MatchDraftFieldValues()
@@ -766,6 +816,17 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
             .orEmpty()
             .any { it.id == matchId } &&
             tournaments.value.any { it.id == tournamentId && it.ownerUserId == ownerUserId }
+
+    private fun eligibleSlotNumbersForMatch(match: Match): Set<Int>? {
+        val tournament = tournaments.value.firstOrNull { it.id == match.tournamentId } ?: return null
+        return runCatching {
+            MatchEligibleTeamSlotResolver().resolve(
+                tournament,
+                slotsByTournamentId.value[match.tournamentId].orEmpty(),
+                match,
+            )
+        }.getOrNull()
+    }
 
     private fun invalidateConfirmation(tournamentId: String) {
         tournaments.update { current ->

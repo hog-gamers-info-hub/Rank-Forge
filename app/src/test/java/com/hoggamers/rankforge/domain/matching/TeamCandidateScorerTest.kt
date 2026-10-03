@@ -356,7 +356,7 @@ class TeamCandidateScorerTest {
             TeamCandidateScorer.score(listOf("Unit7"), 0, listOf("Unit7"))
         }
         assertIllegalArgumentException {
-            TeamCandidateScorer.score(listOf("Unit7"), 13, listOf("Unit7"))
+            TeamCandidateScorer.score(listOf("Unit7"), 25, listOf("Unit7"))
         }
     }
 

@@ -5,6 +5,10 @@ import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.nio.charset.StandardCharsets
@@ -65,6 +69,30 @@ class DraftMatchCloudSyncMapperTest {
         assertEquals(1, result.payloads.matches.size)
         assertEquals(0, result.payloads.matchResults.size)
         assertEquals("draft", result.payloads.matches.single().status)
+    }
+
+    @Test
+    fun mapsGroupRotationDraftPairingAndPermanentSlotIdentity() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val groupTournament = snapshot().tournament.copy(
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 4,
+            selectedGroupPairings = listOf(pairing),
+        )
+        val groupMatch = snapshot().matches.first().copy(
+            groupPairing = pairing,
+            placements = listOf(MatchPlacement(13, 1)),
+            kills = listOf(MatchKill(13, 4)),
+        )
+
+        val result = DraftMatchCloudSyncMapper.map(
+            DraftMatchCloudSyncSnapshot(groupTournament, listOf(groupMatch)),
+        ) as DraftMatchCloudSyncMappingResult.Success
+
+        assertEquals("A:C", result.payloads.matches.single().groupPairingKey)
+        assertEquals(13, result.payloads.matchResults.single().teamSlotId.let {
+            (1..24).single { slot -> it == TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), slot) }
+        })
     }
 
     @Test

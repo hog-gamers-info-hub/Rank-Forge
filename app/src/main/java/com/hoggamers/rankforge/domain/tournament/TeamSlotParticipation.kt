@@ -21,10 +21,27 @@ fun List<TeamSlot>.analyzeTeamSlotParticipation(): TeamSlotParticipation =
         firstOrNull { it.slotNumber == slotNumber }?.teamName.orEmpty()
     }
 
+/**
+ * Analyzes only the slots eligible for one match. Standard callers continue to use
+ * [analyzeTeamSlotParticipation] and therefore retain the original 1..12 behavior.
+ */
+fun List<TeamSlot>.analyzeTeamSlotParticipation(
+    eligibleSlotNumbers: Collection<Int>,
+): TeamSlotParticipation =
+    eligibleSlotNumbers
+        .distinct()
+        .sorted()
+        .asSequence()
+        .let { orderedSlots ->
+            orderedSlots.toList().analyzeTeamSlotParticipation { slotNumber ->
+                firstOrNull { it.slotNumber == slotNumber }?.teamName.orEmpty()
+            }
+        }
+
 fun defaultTeamNameForSlot(slotNumber: Int): String =
     "Team ${slotNumber.toString().padStart(2, '0')}"
 
-private fun IntRange.analyzeTeamSlotParticipation(
+private fun Iterable<Int>.analyzeTeamSlotParticipation(
     nameForSlot: (Int) -> String,
 ): TeamSlotParticipation {
     val activeSlotNumbers = mutableListOf<Int>()

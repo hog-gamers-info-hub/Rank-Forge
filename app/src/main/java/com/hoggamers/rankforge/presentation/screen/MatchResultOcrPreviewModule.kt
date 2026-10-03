@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionReason
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionStatus
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotVoteScore
 import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
+import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
 import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import dagger.Module
@@ -65,11 +66,22 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
         preview: MatchResultOcrPreviewUiState,
         resultRows: List<MatchResultOcrRow>,
         lobbyOcrResult: MatchLobbyPlayersOcrResult,
+        eligibleTeamSlots: Collection<Int> =
+            com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.toList(),
+        permanentTeamCandidates: Collection<TeamCandidateRosterInput>? = null,
+        allRosterTeamCandidates: Collection<TeamCandidateRosterInput> =
+            permanentTeamCandidates.orEmpty(),
     ): List<MatchOcrReviewRowUiState>? {
         val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
         val matchResults = resultRows.mapNotNull { resultRow ->
             runCatching {
-                MatchResultLobbyOcrSlotRanker.rank(resultRow, lobbyOcrResult)
+                MatchResultLobbyOcrSlotRanker.rank(
+                    resultRow = resultRow,
+                    lobbyOcrResult = lobbyOcrResult,
+                    eligibleTeamSlots = eligibleTeamSlots,
+                    permanentTeamCandidates = permanentTeamCandidates,
+                    allRosterTeamCandidates = allRosterTeamCandidates,
+                )
             }.getOrNull()
         }
         val evaluation = runCatching {

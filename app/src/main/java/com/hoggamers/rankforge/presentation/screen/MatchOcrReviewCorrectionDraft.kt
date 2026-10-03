@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 data class MatchOcrReviewCorrectionDraft(
     val rows: List<MatchOcrReviewRowCorrectionDraft>,
     val assignmentRequired: Boolean = true,
+    val eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
 ) {
     val isDirty: Boolean
         get() = rows.any { it.isDirty }
@@ -112,6 +113,7 @@ object MatchOcrReviewCorrectionDraftReducer {
     fun createInitialDraft(
         rows: List<MatchOcrReviewRowUiState>,
         assignmentRequired: Boolean = true,
+        eligibleTeamSlots: Collection<Int> = TeamSlot.SLOT_NUMBERS.toList(),
     ): MatchOcrReviewCorrectionDraft {
         val drafts = rows.map { row ->
             val originalPlacementValue = row.originalParsedPlacementValue?.toString().orEmpty()
@@ -150,6 +152,7 @@ object MatchOcrReviewCorrectionDraftReducer {
             MatchOcrReviewCorrectionDraft(
                 rows = drafts,
                 assignmentRequired = assignmentRequired,
+                eligibleTeamSlots = eligibleTeamSlots.toSet(),
             ),
         )
     }
@@ -261,7 +264,7 @@ object MatchOcrReviewCorrectionDraftReducer {
         val teamSlotDuplicates = duplicateRowIndexesForValues(
             draft.includedRows.mapNotNull { row ->
                 row.assignedTeamSlotDraftValue.trim().toStrictPositiveIntOrNull()
-                    ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                    ?.takeIf { it in draft.eligibleTeamSlots }
                     ?.let { row.rowIndex to it }
             },
         )
@@ -324,7 +327,7 @@ object MatchOcrReviewCorrectionDraftReducer {
                         teamSlot.isBlank() && draft.assignmentRequired ->
                             blockers += MatchOcrReviewCorrectionReason.MISSING_TEAM_SLOT
                         teamSlot.isNotBlank() &&
-                            teamSlot.toStrictPositiveIntOrNull()?.let { it in TeamSlot.SLOT_NUMBERS } != true ->
+                        teamSlot.toStrictPositiveIntOrNull()?.let { it in draft.eligibleTeamSlots } != true ->
                             blockers += MatchOcrReviewCorrectionReason.INVALID_TEAM_SLOT
                         teamSlot.isNotBlank() && row.rowIndex in teamSlotDuplicates ->
                             blockers += MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT

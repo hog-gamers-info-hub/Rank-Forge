@@ -45,12 +45,15 @@ class ReplaceConfirmedTournamentRosterUseCase(
     suspend operator fun invoke(
         candidate: ConfirmedRosterReplacementCandidate,
     ): ReplaceConfirmedTournamentRosterResult {
-        if (!candidate.isStructurallyComplete()) {
+        val tournament = repository.observeById(candidate.tournamentId).first()
+            ?: return ReplaceConfirmedTournamentRosterResult.TournamentNotFound
+        val expectedSlots = tournament.formatDerivedSlots().map { it.slotNumber }.toSet()
+        if (!candidate.isStructurallyComplete(expectedSlots)) {
             return ReplaceConfirmedTournamentRosterResult.InvalidCandidate
         }
 
         val validation = rosterValidator.validate(
-            TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+            expectedSlots.map { slotNumber ->
                 RosterValidationTeam(
                     slotNumber = slotNumber,
                     teamName = candidate.teamNamesBySlotNumber.getValue(slotNumber),
@@ -91,8 +94,9 @@ class ReplaceConfirmedTournamentRosterUseCase(
         }
 }
 
-private fun ConfirmedRosterReplacementCandidate.isStructurallyComplete(): Boolean {
-    val expectedSlots = TeamSlot.SLOT_NUMBERS.toSet()
+private fun ConfirmedRosterReplacementCandidate.isStructurallyComplete(
+    expectedSlots: Set<Int>,
+): Boolean {
     return tournamentId.isNotBlank() &&
         teamNamesBySlotNumber.keys == expectedSlots &&
         rosterPlayersBySlotNumber.keys == expectedSlots &&

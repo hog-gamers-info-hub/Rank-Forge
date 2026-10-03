@@ -411,10 +411,10 @@ class CumulativeTournamentStandingsTest {
     }
 
     @Test
-    fun moreThanTenFinalizedMatchesAreRejected() {
+    fun moreThanEighteenFinalizedMatchesAreRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             standings(
-                (1..11).map { matchNumber ->
+                (1..19).map { matchNumber ->
                     match(id = "match-$matchNumber", matchNumber = matchNumber)
                 },
             )

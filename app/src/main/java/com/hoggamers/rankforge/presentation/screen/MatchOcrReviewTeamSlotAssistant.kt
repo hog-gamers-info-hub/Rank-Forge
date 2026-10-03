@@ -1,7 +1,5 @@
 package com.hoggamers.rankforge.presentation.screen
 
-import com.hoggamers.rankforge.domain.tournament.TeamSlot
-
 data class MatchOcrReviewTeamSlotAssistantState(
     val claimedTeamSlots: Set<Int>,
     val remainingTeamSlots: List<Int>,
@@ -20,12 +18,14 @@ object MatchOcrReviewTeamSlotAssistant {
         correctionDraft: MatchOcrReviewCorrectionDraft,
         manualRowIndexes: Set<Int> = emptySet(),
         evidenceByRow: Map<Int, List<MatchOcrReviewTeamSlotCandidateUiState>> = emptyMap(),
+        eligibleTeamSlots: Collection<Int> = correctionDraft.eligibleTeamSlots,
     ): MatchOcrReviewTeamSlotAssistantState {
+        val allowedTeamSlots = eligibleTeamSlots.toSet()
         val claimedTeamSlots = correctionDraft.rows
             .filterNot { it.isExcluded }
-            .mapNotNull { it.assignedTeamSlotDraftValue.validTeamSlotOrNull() }
+            .mapNotNull { it.assignedTeamSlotDraftValue.validTeamSlotOrNull(allowedTeamSlots) }
             .toSet()
-        val remainingTeamSlots = TeamSlot.SLOT_NUMBERS
+        val remainingTeamSlots = allowedTeamSlots.sorted()
             .filterNot { it in claimedTeamSlots }
         val unresolvedRows = correctionDraft.rows
             .filter { row ->
@@ -40,7 +40,7 @@ object MatchOcrReviewTeamSlotAssistant {
         val availableOptionsByRow = unresolvedRows.associate { row ->
             val availableSlots = remainingTeamSlots
             val candidatesBySlot = evidenceByRow[row.rowIndex].orEmpty()
-                .filter { it.teamSlot in availableSlots && it.teamSlot in TeamSlot.SLOT_NUMBERS }
+                .filter { it.teamSlot in availableSlots && it.teamSlot in allowedTeamSlots }
                 .groupBy { it.teamSlot }
                 .mapValues { (_, candidates) -> candidates.maxWithOrNull(candidateComparator)!! }
             val rankedEvidence = candidatesBySlot.values.sortedWith(candidateComparator)
@@ -75,6 +75,7 @@ object MatchOcrReviewTeamSlotAssistant {
                 .map { it.rowIndex }
                 .toSet(),
             evidenceByRow = uiState.rows.associate { it.rowIndex to it.resultLobbyTeamSlotCandidates },
+            eligibleTeamSlots = uiState.eligibleTeamSlots,
         )
     }
 
@@ -86,8 +87,8 @@ object MatchOcrReviewTeamSlotAssistant {
         it.teamSlot
     }
 
-    private fun String.validTeamSlotOrNull(): Int? = trim()
+    private fun String.validTeamSlotOrNull(allowedTeamSlots: Set<Int>): Int? = trim()
         .takeIf { it.isNotEmpty() && it.all { character -> character in '0'..'9' } }
         ?.toIntOrNull()
-        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+        ?.takeIf { it in allowedTeamSlots }
 }

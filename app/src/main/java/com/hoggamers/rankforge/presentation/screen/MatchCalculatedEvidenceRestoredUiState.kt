@@ -11,6 +11,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
     tournamentId: String,
     matchId: String,
     teamNamesBySlot: Map<Int, String>,
+    eligibleTeamSlots: Set<Int> = com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.toSet(),
 ): MatchOcrReviewUiState {
     val excludedSourcePositions = result.excludedSourcePositions
     val positions = result.positions.sortedBy { it.position }
@@ -19,6 +20,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
             tournamentId = tournamentId,
             matchId = matchId,
             teamNamesBySlot = teamNamesBySlot,
+            eligibleTeamSlots = eligibleTeamSlots,
         )
     }
     val positionsByNumber = positions.associateBy { it.position }
@@ -54,7 +56,10 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
             position.toRestoredReviewRow()
         }
     }
-    val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(reviewRows)
+    val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
+        reviewRows,
+        eligibleTeamSlots = eligibleTeamSlots,
+    )
     val correctionDraft = MatchOcrReviewCorrectionDraftReducer.validate(
         initialDraft.copy(
             rows = initialDraft.rows.map { draft ->
@@ -113,6 +118,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         correctionDraft = correctionDraft,
         matchResultOcrPreview = preview,
         teamNamesBySlot = restoredTeamNames,
+        eligibleTeamSlots = eligibleTeamSlots,
         evidenceSource = MatchOcrReviewEvidenceSource.RESTORED_CALCULATED,
         calculatedEvidenceOrigin = result.calculationOrigin,
         manuallyRevealedPositions = restoredManualPositions,

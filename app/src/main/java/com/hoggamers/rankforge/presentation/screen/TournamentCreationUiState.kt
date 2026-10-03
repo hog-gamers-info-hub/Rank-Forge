@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.TournamentField
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
 
 enum class TournamentCreationSubmissionError {
@@ -22,6 +24,9 @@ data class TournamentCreationUiState(
     val tournamentName: String = "",
     val stageName: String = "",
     val organizerContactNumber: String = "",
+    val format: TournamentFormat = TournamentFormat.STANDARD,
+    val groupCount: Int? = null,
+    val selectedGroupPairings: List<GroupPairing> = emptyList(),
     val validationErrors: Map<TournamentField, TournamentValidationError> = emptyMap(),
     val isSubmitting: Boolean = false,
     val submissionError: TournamentCreationSubmissionError? = null,
@@ -31,5 +36,6 @@ data class TournamentCreationUiState(
     val isDirty: Boolean
         get() = tournamentName.isNotEmpty() ||
             stageName.isNotEmpty() ||
-            organizerContactNumber.isNotEmpty()
+            organizerContactNumber.isNotEmpty() ||
+            format != TournamentFormat.STANDARD
 }

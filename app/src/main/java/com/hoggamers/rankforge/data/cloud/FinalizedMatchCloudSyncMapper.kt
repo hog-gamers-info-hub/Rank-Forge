@@ -6,6 +6,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
+import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -18,6 +20,7 @@ data class FinalizedMatchUploadPayload(
     @SerialName("match_date") val matchDate: String,
     @SerialName("map_name") val mapName: String,
     val status: String,
+    @SerialName("group_pairing_key") val groupPairingKey: String? = null,
 )
 
 @Serializable
@@ -47,8 +50,7 @@ object FinalizedMatchCloudSyncMapper {
         val tournamentUuid = snapshot.tournament.id.toUuidOrNull()
             ?: return FinalizedMatchCloudSyncMappingResult.Invalid
         if (
-            snapshot.teamSlots.size != TeamSlot.SLOT_NUMBERS.count() ||
-            snapshot.teamSlots.map { it.slotNumber }.toSet() != TeamSlot.SLOT_NUMBERS.toSet() ||
+            snapshot.teamSlots.map { it.slotNumber }.toSet() != snapshot.tournament.formatDerivedSlots().map { it.slotNumber }.toSet() ||
             snapshot.teamSlots.map { it.slotNumber }.distinct().size != snapshot.teamSlots.size ||
             snapshot.teamSlots.any { it.tournamentId != snapshot.tournament.id }
         ) {
@@ -76,12 +78,16 @@ object FinalizedMatchCloudSyncMapper {
                     matchDate = match.date.toString(),
                     mapName = match.mapName,
                     status = "finalized",
+                    groupPairingKey = match.groupPairing?.canonicalKey,
                 )
             }
         val resultPayloads = orderedFinalizedMatches.flatMap { match ->
             match.toFinalizedResultPayloads(
                 tournamentId = tournamentUuid,
                 cloudMatchId = matchPayloadByLocalId.getValue(match.id).id,
+                eligibleSlotNumbers = runCatching {
+                    MatchEligibleTeamSlotResolver().resolve(snapshot.tournament, snapshot.teamSlots, match)
+                }.getOrNull() ?: return FinalizedMatchCloudSyncMappingResult.Invalid,
             ) ?: return FinalizedMatchCloudSyncMappingResult.Invalid
         }
 
@@ -96,9 +102,11 @@ object FinalizedMatchCloudSyncMapper {
     private fun Match.toFinalizedResultPayloads(
         tournamentId: UUID,
         cloudMatchId: String,
+        eligibleSlotNumbers: Set<Int>,
     ): List<FinalizedMatchResultUploadPayload>? {
         val participantResults = finalizedParticipantResultsOrNull() ?: return null
 
+        if (participantResults.any { it.teamSlotNumber !in eligibleSlotNumbers }) return null
         return participantResults.map { result ->
             val slotNumber = result.teamSlotNumber
             val teamSlotId = TournamentCloudIdentity.teamSlotId(tournamentId, slotNumber)

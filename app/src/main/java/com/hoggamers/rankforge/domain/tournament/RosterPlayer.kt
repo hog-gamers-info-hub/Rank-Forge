@@ -7,8 +7,8 @@ data class RosterPlayer(
 ) {
     init {
         require(tournamentId.isNotBlank()) { "Tournament id is required." }
-        require(slotNumber in TeamSlot.SLOT_NUMBERS) {
-            "Team slot number must be between 1 and 12."
+        require(slotNumber in TeamSlot.TOURNAMENT_SLOT_NUMBERS) {
+            "Team slot number must be between 1 and 24."
         }
     }
 

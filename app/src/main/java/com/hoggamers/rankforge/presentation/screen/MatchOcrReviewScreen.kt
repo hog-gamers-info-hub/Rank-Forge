@@ -363,6 +363,7 @@ private fun MatchOcrReviewEmptyState(
                     preview = preview,
                     reviewRowsByPosition = emptyMap(),
                     teamNamesBySlot = emptyMap(),
+                    eligibleTeamSlots = uiState.eligibleTeamSlots,
                 )
             } else {
                 MatchResultOcrPreviewSection(preview)
@@ -642,6 +643,7 @@ internal fun MatchOcrReviewResultContent(
                     row = row,
                     previewRow = previewRowsByPosition[row.rowIndex + 1],
                     teamNamesBySlot = uiState.teamNamesBySlot,
+                    eligibleTeamSlots = uiState.eligibleTeamSlots,
                     correctionDraft = correctionRowsByIndex[row.rowIndex],
                     onPlacementChanged = onPlacementChanged,
                     onKillsChanged = onKillsChanged,
@@ -676,6 +678,7 @@ internal fun MatchOcrReviewCompactPreviewList(
     preview: MatchResultOcrPreviewUiState.Ready,
     reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
     teamNamesBySlot: Map<Int, String>,
+    eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
 ) {
     Column(
         modifier = Modifier
@@ -688,6 +691,7 @@ internal fun MatchOcrReviewCompactPreviewList(
                 previewRow = previewRow,
                 reviewRow = reviewRowsByPosition[previewRow.position],
                 teamNamesBySlot = teamNamesBySlot,
+                eligibleTeamSlots = eligibleTeamSlots,
             )
             if (index < preview.rows.lastIndex) HorizontalDivider()
         }
@@ -699,6 +703,7 @@ internal fun MatchOcrReviewCompactRow(
     previewRow: MatchResultOcrPreviewRowUiState,
     reviewRow: MatchOcrReviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
+    eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
     onCompactDelete: (() -> Unit)? = null,
     compactDeleteEnabled: Boolean = true,
     compactDeleteTestTag: String? = null,
@@ -719,7 +724,7 @@ internal fun MatchOcrReviewCompactRow(
     val placement = previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
     val suggestedSlot = reviewRow?.suggestedTeamSlotDisplayValue
         ?.toIntOrNull()
-        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+        ?.takeIf { it in eligibleTeamSlots }
     val slotLabel = suggestedSlot?.toString()
         ?: stringResource(R.string.match_ocr_review_compact_not_matched)
     val teamNameLabel = if (suggestedSlot == null) {
@@ -1168,6 +1173,7 @@ internal fun MatchOcrReviewRow(
     row: MatchOcrReviewRowUiState,
     previewRow: MatchResultOcrPreviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
+    eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
     correctionDraft: MatchOcrReviewRowCorrectionDraft?,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
@@ -1217,6 +1223,7 @@ internal fun MatchOcrReviewRow(
                 previewRow = previewRow,
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
+                eligibleTeamSlots = eligibleTeamSlots,
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = effectiveCorrectionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
@@ -1237,6 +1244,7 @@ internal fun MatchOcrReviewRow(
             row.isSyntheticManualPlaceholder() -> MatchOcrReviewMissingPreviewRow(
                 row = row,
                 teamNamesBySlot = teamNamesBySlot,
+                eligibleTeamSlots = eligibleTeamSlots,
                 correctionDraft = correctionDraft,
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = effectiveCorrectionEnabled,
@@ -1254,6 +1262,7 @@ internal fun MatchOcrReviewRow(
                 previewRow = row.toCompactPreviewRow(),
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
+                eligibleTeamSlots = eligibleTeamSlots,
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = effectiveCorrectionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
@@ -1345,6 +1354,7 @@ private fun MatchOcrReviewRowUiState.isSyntheticManualPlaceholder(): Boolean =
 private fun MatchOcrReviewMissingPreviewRow(
     row: MatchOcrReviewRowUiState,
     teamNamesBySlot: Map<Int, String>,
+    eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
     correctionDraft: MatchOcrReviewRowCorrectionDraft?,
     onCompactDelete: (() -> Unit)? = null,
     compactDeleteEnabled: Boolean = true,
@@ -1363,7 +1373,7 @@ private fun MatchOcrReviewMissingPreviewRow(
         ?.assignedTeamSlotDraftValue
         ?.trim()
         ?.toIntOrNull()
-        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+        ?.takeIf { it in eligibleTeamSlots }
     val teamName = if (assignedSlot == null) {
         stringResource(R.string.match_ocr_review_compact_not_matched)
     } else {

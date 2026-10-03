@@ -112,6 +112,7 @@ sealed interface MatchOcrReviewUiState {
         val calculatedEvidenceOrigin: MatchCalculatedEvidenceOrigin =
             MatchCalculatedEvidenceOrigin.AUTOMATIC,
         val manuallyRevealedPositions: Set<Int> = emptySet(),
+        val eligibleTeamSlots: Set<Int> = com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.toSet(),
     ) : MatchOcrReviewUiState
 
     data class Empty(
@@ -120,6 +121,7 @@ sealed interface MatchOcrReviewUiState {
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
         val teamNamesBySlot: Map<Int, String> = emptyMap(),
         val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
+        val eligibleTeamSlots: Set<Int> = com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.toSet(),
     ) : MatchOcrReviewUiState
 
     data class Error(

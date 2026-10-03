@@ -25,7 +25,10 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
@@ -57,6 +60,39 @@ class TeamEntryViewModelTest {
         advanceUntilIdle()
 
         assertEquals((1..12).toList(), viewModel.uiState.value.slots.map { it.slotNumber })
+    }
+
+    @Test
+    fun groupRotationTeamEntryLoadsAndSavesPermanentSlotsAboveTwelve() = runTest {
+        repository.create(
+            tournament().copy(
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 4,
+                selectedGroupPairings = defaultGroupPairings(4),
+            ),
+        )
+        val viewModel = viewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        assertEquals((1..24).toList(), viewModel.uiState.value.slots.map { it.slotNumber })
+        assertEquals(
+            List(6) { TournamentGroup.D },
+            viewModel.uiState.value.slots.takeLast(6).map { it.group },
+        )
+
+        viewModel.onTeamNameChanged(24, "  Delta Team  ")
+        advanceUntilIdle()
+        assertEquals("  Delta Team  ", repository.readTeamEntryDraft("stable-id")?.get(24))
+
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(
+            "Delta Team",
+            repository.observeSlotsByTournamentId("stable-id").first().single { it.slotNumber == 24 }.teamName,
+        )
     }
 
     @Test

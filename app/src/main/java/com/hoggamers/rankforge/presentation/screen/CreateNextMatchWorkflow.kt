@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
@@ -28,22 +29,35 @@ class CreateNextMatchWorkflow @Inject constructor(
 ) {
     suspend fun teamCountConfirmationOrNull(
         tournamentId: String,
+        groupPairing: GroupPairing? = null,
     ): TeamCountConfirmationUiState? {
-        val participation = observeTournamentSlots(tournamentId)
-            .first()
-            .analyzeTeamSlotParticipation()
-        return if (participation.activeCount < TeamSlot.MAX_SLOT_NUMBER) {
+        val persistedSlots = observeTournamentSlots(tournamentId).first()
+        val eligibleSlots = groupPairing?.let { pairing ->
+            persistedSlots.filter { it.group == pairing.firstGroup || it.group == pairing.secondGroup }
+        } ?: persistedSlots
+        val participation = eligibleSlots.analyzeTeamSlotParticipation(
+            eligibleSlots.map { it.slotNumber },
+        )
+        return if (participation.activeCount < eligibleSlots.size) {
             TeamCountConfirmationUiState(
                 enteredCount = participation.activeCount,
-                emptyCount = TeamSlot.MAX_SLOT_NUMBER - participation.activeCount,
+                emptyCount = eligibleSlots.size - participation.activeCount,
             )
         } else {
             null
         }
     }
 
-    suspend fun applyDefaults(tournamentId: String): Boolean {
+    suspend fun applyDefaults(
+        tournamentId: String,
+        groupPairing: GroupPairing? = null,
+    ): Boolean {
         val slots = observeTournamentSlots(tournamentId).first()
+            .filter { slot ->
+                groupPairing == null ||
+                    slot.group == groupPairing.firstGroup ||
+                    slot.group == groupPairing.secondGroup
+            }
         val names = slots.associate { slot ->
             val trimmedName = slot.teamName.trim()
             slot.slotNumber to if (trimmedName.isBlank()) {
@@ -55,7 +69,7 @@ class CreateNextMatchWorkflow @Inject constructor(
         val validation = validateTournamentRoster(
             tournamentId = tournamentId,
             teamNamesBySlotNumber = names,
-            activeTeamSlotNumbers = TeamSlot.SLOT_NUMBERS.toSet(),
+            activeTeamSlotNumbers = slots.map { it.slotNumber }.toSet(),
         )
         if (validation.hasBlockingIssues) return false
 
@@ -64,8 +78,11 @@ class CreateNextMatchWorkflow @Inject constructor(
         }.getOrNull() == SaveTeamSlotNamesResult.Saved
     }
 
-    suspend fun create(tournamentId: String): CreateNextMatchResult {
-        val result = createNextMatch(tournamentId)
+    suspend fun create(
+        tournamentId: String,
+        groupPairing: GroupPairing? = null,
+    ): CreateNextMatchResult {
+        val result = createNextMatch(tournamentId, groupPairing)
         if (result !is CreateNextMatchResult.Created) return result
 
         val inheritedLobby = try {
@@ -106,6 +123,7 @@ class CreateNextMatchWorkflow @Inject constructor(
 fun CreateNextMatchFailure.toCalculatePointsMessage(): CalculatePointsMessage = when (this) {
     CreateNextMatchFailure.NO_PARTICIPATING_TEAMS -> CalculatePointsMessage.NO_TEAMS_SAVED
     CreateNextMatchFailure.INVALID_TEAM_SLOTS -> CalculatePointsMessage.INVALID_TEAM_SLOTS
+    CreateNextMatchFailure.INVALID_GROUP_PAIRING -> CalculatePointsMessage.MATCH_CREATION_FAILED
     CreateNextMatchFailure.AUTHENTICATION_REQUIRED,
     CreateNextMatchFailure.TOURNAMENT_NOT_FOUND,
     CreateNextMatchFailure.LIMIT_REACHED,

@@ -122,6 +122,36 @@ class CreateNextMatchUseCaseTest {
         assertEquals(MAX_MATCHES_PER_TOURNAMENT, repository.observeMatchesByTournamentId("tournament").first().size)
     }
 
+    @Test
+    fun groupRotationRequiresSelectedPairingAndPreservesIt() = runTest {
+        val tournamentId = "rotation"
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        repository.create(groupTournament(tournamentId))
+        repository.saveTeamNames(tournamentId, mapOf(13 to "Team 13"))
+
+        assertEquals(
+            CreateNextMatchFailure.INVALID_GROUP_PAIRING,
+            (useCase(tournamentId) as CreateNextMatchResult.Rejected).failure,
+        )
+
+        val created = useCase(tournamentId, pairing).createdMatch()
+        assertEquals(1, created.matchNumber)
+        assertEquals(pairing, created.groupPairing)
+    }
+
+    @Test
+    fun groupRotationIgnoresRestingGroupParticipation() = runTest {
+        val tournamentId = "rotation-resting"
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        repository.create(groupTournament(tournamentId))
+        repository.saveTeamNames(tournamentId, mapOf(19 to "Resting Team"))
+
+        assertEquals(
+            CreateNextMatchFailure.NO_PARTICIPATING_TEAMS,
+            (useCase(tournamentId, pairing) as CreateNextMatchResult.Rejected).failure,
+        )
+    }
+
     private suspend fun createReadyTournament(id: String) {
         repository.create(tournament(id))
         repository.saveTeamNames(id, mapOf(1 to "Team 1"))
@@ -148,5 +178,19 @@ class CreateNextMatchUseCaseTest {
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
         ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+    )
+
+    private fun groupTournament(id: String) = Tournament(
+        id = id,
+        name = "Rotation Cup",
+        stageName = "Organizer",
+        organizerContactNumber = "123",
+        status = TournamentStatus.DRAFT,
+        ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+        format = TournamentFormat.GROUP_ROTATION,
+        groupCount = 4,
+        selectedGroupPairings = listOf(
+            GroupPairing(TournamentGroup.A, TournamentGroup.C),
+        ),
     )
 }

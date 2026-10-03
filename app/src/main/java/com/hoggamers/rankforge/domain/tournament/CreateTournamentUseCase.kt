@@ -11,6 +11,9 @@ data class CreateTournamentInput(
     val stageName: String,
     val organizerContactNumber: String,
     val status: TournamentStatus = TournamentStatus.DRAFT,
+    val format: TournamentFormat = TournamentFormat.STANDARD,
+    val groupCount: Int? = null,
+    val selectedGroupPairings: List<GroupPairing> = emptyList(),
 )
 
 enum class TournamentField {
@@ -18,11 +21,13 @@ enum class TournamentField {
     STAGE_NAME,
     ORGANIZER_CONTACT_NUMBER,
     STATUS,
+    GROUP_CONFIGURATION,
 }
 
 enum class TournamentValidationError {
     REQUIRED,
     UNSUPPORTED_STATUS,
+    INVALID_GROUP_CONFIGURATION,
 }
 
 fun validateCreateTournamentInput(
@@ -33,6 +38,21 @@ fun validateCreateTournamentInput(
     }
     if (input.status != TournamentStatus.DRAFT) {
         put(TournamentField.STATUS, TournamentValidationError.UNSUPPORTED_STATUS)
+    }
+    if (input.format == TournamentFormat.STANDARD) {
+        if (input.groupCount != null || input.selectedGroupPairings.isNotEmpty()) {
+            put(TournamentField.GROUP_CONFIGURATION, TournamentValidationError.INVALID_GROUP_CONFIGURATION)
+        }
+    } else if (
+        input.groupCount !in setOf(3, 4) ||
+        input.selectedGroupPairings.isEmpty() ||
+        input.selectedGroupPairings.any { pairing ->
+            pairing.firstGroup.ordinal >= input.groupCount!! ||
+                pairing.secondGroup.ordinal >= input.groupCount
+        } ||
+        input.selectedGroupPairings.map { it.canonicalKey }.distinct().size != input.selectedGroupPairings.size
+    ) {
+        put(TournamentField.GROUP_CONFIGURATION, TournamentValidationError.INVALID_GROUP_CONFIGURATION)
     }
 }
 
@@ -74,6 +94,9 @@ class CreateTournamentUseCase(
             organizerContactNumber = input.organizerContactNumber.trim(),
             status = TournamentStatus.DRAFT,
             ownerUserId = ownerUserId,
+            format = input.format,
+            groupCount = input.groupCount,
+            selectedGroupPairings = input.selectedGroupPairings,
         )
         repository.create(tournament)
         return CreateTournamentResult.Created(tournament)

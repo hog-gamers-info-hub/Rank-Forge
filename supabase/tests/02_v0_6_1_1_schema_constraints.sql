@@ -53,7 +53,7 @@ select throws_ok($$
     update public.tournaments set status = 'invalid' where id = '20000000-0000-0000-0000-000000000001'
 $$, '23514', null, 'invalid tournament status is rejected');
 select throws_ok($$
-    update public.tournament_team_slots set slot_number = 13 where id = '30000000-0000-0000-0000-000000000001'
+    update public.tournament_team_slots set slot_number = 25 where id = '30000000-0000-0000-0000-000000000001'
 $$, '23514', null, 'invalid slot number is rejected');
 update public.matches
 set match_number = 18

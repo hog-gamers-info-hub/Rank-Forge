@@ -15,6 +15,9 @@ import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.NoOpDeletionIntentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentField
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
@@ -70,6 +73,57 @@ class TournamentCreationViewModel @Inject constructor(
         }
     }
 
+    fun onGroupRotationChanged(enabled: Boolean) {
+        _uiState.update { current ->
+            if (enabled) {
+                current.copy(
+                    format = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 3,
+                    selectedGroupPairings = defaultGroupPairings(3),
+                    validationErrors = current.validationErrors - TournamentField.GROUP_CONFIGURATION,
+                    submissionError = null,
+                )
+            } else {
+                current.copy(
+                    format = TournamentFormat.STANDARD,
+                    groupCount = null,
+                    selectedGroupPairings = emptyList(),
+                    validationErrors = current.validationErrors - TournamentField.GROUP_CONFIGURATION,
+                    submissionError = null,
+                )
+            }
+        }
+    }
+
+    fun onGroupCountChanged(groupCount: Int) {
+        if (groupCount !in setOf(3, 4)) return
+        _uiState.update { current ->
+            if (current.format != TournamentFormat.GROUP_ROTATION) return@update current
+            current.copy(
+                groupCount = groupCount,
+                selectedGroupPairings = defaultGroupPairings(groupCount),
+                validationErrors = current.validationErrors - TournamentField.GROUP_CONFIGURATION,
+                submissionError = null,
+            )
+        }
+    }
+
+    fun onGroupPairingToggled(pairing: GroupPairing) {
+        _uiState.update { current ->
+            if (current.format != TournamentFormat.GROUP_ROTATION) return@update current
+            val pairings = if (pairing in current.selectedGroupPairings) {
+                current.selectedGroupPairings - pairing
+            } else {
+                current.selectedGroupPairings + pairing
+            }
+            current.copy(
+                selectedGroupPairings = pairings,
+                validationErrors = current.validationErrors - TournamentField.GROUP_CONFIGURATION,
+                submissionError = null,
+            )
+        }
+    }
+
     fun submit() {
         if (_uiState.value.isSubmitting || _uiState.value.navigation != null) return
 
@@ -78,6 +132,9 @@ class TournamentCreationViewModel @Inject constructor(
             name = currentState.tournamentName,
             stageName = currentState.stageName,
             organizerContactNumber = currentState.organizerContactNumber,
+            format = currentState.format,
+            groupCount = currentState.groupCount,
+            selectedGroupPairings = currentState.selectedGroupPairings,
         )
         val validationErrors = validateCreateTournamentInput(input)
         if (validationErrors.isNotEmpty()) {

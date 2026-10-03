@@ -26,6 +26,8 @@ data class Match(
     val correctionHistory: List<MatchCorrectionRecord> = emptyList(),
     /** Complete finalized participant identity/status snapshot; empty for legacy or draft matches. */
     val participantResults: List<MatchParticipantResult> = emptyList(),
+    /** The selected group pairing for a Group Rotation match; null for Standard matches. */
+    val groupPairing: GroupPairing? = null,
 )
 
 data class MatchPlacement(

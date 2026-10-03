@@ -30,6 +30,7 @@ interface RankForgeStateDao {
         RankForgeStateEntity::class,
         TournamentEntity::class,
         TeamSlotEntity::class,
+        TournamentGroupPairingEntity::class,
         RosterPlayerEntity::class,
         MatchEntity::class,
         MatchPlacementEntity::class,
@@ -55,13 +56,14 @@ interface RankForgeStateDao {
         PointTableDetailsEntity::class,
         PointTableLogoPlacementEntity::class,
     ],
-    version = 27,
+    version = 29,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun stateDao(): RankForgeStateDao
     abstract fun tournamentDao(): TournamentDao
     abstract fun teamSlotDao(): TeamSlotDao
+    abstract fun tournamentGroupPairingDao(): TournamentGroupPairingDao
     abstract fun rosterPlayerDao(): RosterPlayerDao
     abstract fun matchDao(): MatchDao
     abstract fun matchPlacementDao(): MatchPlacementDao
@@ -876,6 +878,48 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_point_table_logo_placements_tournament_id` " +
                         "ON `point_table_logo_placements` (`tournament_id`)",
+                )
+            }
+        }
+
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `tournaments` ADD COLUMN `format` TEXT NOT NULL DEFAULT 'STANDARD'",
+                )
+                db.execSQL(
+                    "ALTER TABLE `tournaments` ADD COLUMN `group_count` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `team_slots` ADD COLUMN `group_name` TEXT",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `tournament_group_pairings` (
+                        `tournament_id` TEXT NOT NULL,
+                        `pairing_key` TEXT NOT NULL,
+                        `first_group` TEXT NOT NULL,
+                        `second_group` TEXT NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `pairing_key`),
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournament_group_pairings_tournament_id` " +
+                        "ON `tournament_group_pairings` (`tournament_id`)",
+                )
+            }
+        }
+
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `matches` ADD COLUMN `group_pairing_key` TEXT",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id_group_pairing_key` " +
+                        "ON `matches` (`tournament_id`, `group_pairing_key`)",
                 )
             }
         }

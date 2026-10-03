@@ -22,6 +22,9 @@ data class TournamentCloudRestorePayload(
     @SerialName("organizer_contact") val organizerContact: String,
     val status: String,
     val revision: Int,
+    val format: String = "standard",
+    @SerialName("group_count") val groupCount: Int? = null,
+    @SerialName("selected_group_pairings") val selectedGroupPairings: List<GroupPairingUploadPayload> = emptyList(),
 )
 
 @Serializable
@@ -31,6 +34,7 @@ data class TeamSlotCloudRestorePayload(
     @SerialName("slot_number") val slotNumber: Int,
     @SerialName("team_name") val teamName: String,
     val status: String,
+    @SerialName("group") val group: String? = null,
 )
 
 @Serializable
@@ -102,9 +106,15 @@ class SupabaseTournamentCloudRestorationRemoteDataSource @Inject constructor(
                     }
                     .decodeList<PlayerCloudRestorePayload>()
             }
+            val pairings = client
+                .from("tournament_group_pairings")
+                .select {
+                    filter { eq("tournament_id", tournamentId) }
+                }
+                .decodeList<GroupPairingUploadPayload>()
             TournamentCloudRestorationRemoteResult.Success(
                 TournamentCloudRestorationPayloads(
-                    tournament = tournament.toUploadPayload(),
+                    tournament = tournament.toUploadPayload(pairings),
                     teamSlots = slots.map { it.toUploadPayload() },
                     players = players.map { it.toUploadPayload() },
                 ),
@@ -132,7 +142,9 @@ class SupabaseTournamentCloudRestorationRemoteDataSource @Inject constructor(
     }
 }
 
-private fun TournamentCloudRestorePayload.toUploadPayload() = TournamentUploadPayload(
+private fun TournamentCloudRestorePayload.toUploadPayload(
+    pairings: List<GroupPairingUploadPayload> = selectedGroupPairings,
+) = TournamentUploadPayload(
     id = id,
     ownerId = ownerId,
     name = name,
@@ -140,6 +152,9 @@ private fun TournamentCloudRestorePayload.toUploadPayload() = TournamentUploadPa
     organizerContact = organizerContact,
     status = status,
     revision = revision,
+    format = format,
+    groupCount = groupCount,
+    selectedGroupPairings = pairings,
 )
 
 private fun TeamSlotCloudRestorePayload.toUploadPayload() = TeamSlotUploadPayload(
@@ -148,6 +163,7 @@ private fun TeamSlotCloudRestorePayload.toUploadPayload() = TeamSlotUploadPayloa
     slotNumber = slotNumber,
     teamName = teamName,
     status = status,
+    group = group,
 )
 
 private fun PlayerCloudRestorePayload.toUploadPayload() = PlayerUploadPayload(

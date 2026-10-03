@@ -112,6 +112,7 @@ enum class MatchCreationFailure(val field: MatchField, val error: MatchValidatio
     TOURNAMENT_NOT_CONFIRMED(MatchField.TOURNAMENT, MatchValidationError.TOURNAMENT_NOT_CONFIRMED),
     NO_PARTICIPATING_TEAMS(MatchField.TOURNAMENT, MatchValidationError.NO_PARTICIPATING_TEAMS),
     INVALID_TEAM_SLOTS(MatchField.TOURNAMENT, MatchValidationError.INVALID_TEAM_SLOTS),
+    INVALID_GROUP_PAIRING(MatchField.TOURNAMENT, MatchValidationError.INVALID_TEAM_SLOTS),
     DUPLICATE_MATCH_NUMBER(MatchField.MATCH_NUMBER, MatchValidationError.DUPLICATE),
     INVALID_MATCH_NUMBER(MatchField.MATCH_NUMBER, MatchValidationError.INVALID),
     LIMIT_REACHED(MatchField.TOURNAMENT, MatchValidationError.LIMIT_REACHED),

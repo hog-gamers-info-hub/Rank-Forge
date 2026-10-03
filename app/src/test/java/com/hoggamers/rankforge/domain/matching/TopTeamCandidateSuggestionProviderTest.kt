@@ -273,7 +273,7 @@ class TopTeamCandidateSuggestionProviderTest {
         assertIllegalArgumentException {
             TopTeamCandidateSuggestionProvider.suggestTopThree(
                 detectedPlayerNames = listOf("Unit7"),
-                candidateTeams = listOf(TeamCandidateRosterInput(13, listOf("Unit7"))),
+                candidateTeams = listOf(TeamCandidateRosterInput(25, listOf("Unit7"))),
             )
         }
     }
