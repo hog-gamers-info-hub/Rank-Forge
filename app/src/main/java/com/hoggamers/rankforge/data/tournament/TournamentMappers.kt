@@ -63,7 +63,9 @@ internal fun TournamentEntity.toDomain(
     selectedGroupPairings = selectedGroupPairings,
 )
 
-internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = TournamentSummary(
+internal fun TournamentSummaryProjection.toDomain(
+    selectedGroupPairings: List<GroupPairing>,
+): TournamentSummary = TournamentSummary(
     tournament = Tournament(
         id = id,
         name = name,
@@ -73,6 +75,7 @@ internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = Tournam
         ownerUserId = ownerUserId,
         format = TournamentFormat.valueOf(format),
         groupCount = groupCount,
+        selectedGroupPairings = selectedGroupPairings,
     ),
     totalTeams = totalTeams,
     totalMatches = totalMatches,

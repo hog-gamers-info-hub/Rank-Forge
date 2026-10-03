@@ -5,12 +5,15 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.domain.tournament.ConfirmedRosterReplacementCandidate
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import java.time.Clock
@@ -25,6 +28,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -46,6 +50,134 @@ class TournamentSummaryRepositoryTest {
             assertEquals(2, summary.totalTeams)
             assertEquals(2, summary.totalMatches)
             assertEquals(database.tournamentDao().observeById(TOURNAMENT_ID).first()!!.lastUpdatedEpochMillis, summary.lastUpdatedEpochMillis)
+            assertEquals(TournamentFormat.STANDARD, summary.tournament.format)
+            assertNull(summary.tournament.groupCount)
+            assertTrue(summary.tournament.selectedGroupPairings.isEmpty())
+        }
+    }
+
+    @Test
+    fun groupRotationSummariesRetainPairingsForUnscopedAndOwnerScopedReads() = runBlocking {
+        val groupThreePairings = listOf(
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+            GroupPairing.of(TournamentGroup.B, TournamentGroup.C),
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.C),
+        )
+        val groupFourPairings = listOf(
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.D),
+            GroupPairing.of(TournamentGroup.B, TournamentGroup.C),
+        )
+        withRepository(
+            initialTournament = groupRotationTournament(
+                id = TOURNAMENT_ID,
+                groupCount = 3,
+                pairings = groupThreePairings,
+                ownerUserId = "owner-a",
+            ),
+        ) { repository, _, _ ->
+            repository.create(
+                groupRotationTournament(
+                    id = "group-four",
+                    groupCount = 4,
+                    pairings = groupFourPairings,
+                    ownerUserId = "owner-b",
+                ),
+            )
+
+            val summaries = repository.observeSummaries().first { it.size == 2 }
+            val groupThreeSummary = summaries.single { it.tournament.id == TOURNAMENT_ID }
+            val groupFourSummary = summaries.single { it.tournament.id == "group-four" }
+            assertEquals(TournamentFormat.GROUP_ROTATION, groupThreeSummary.tournament.format)
+            assertEquals(3, groupThreeSummary.tournament.groupCount)
+            assertEquals(groupThreePairings, groupThreeSummary.tournament.selectedGroupPairings)
+            assertEquals(4, groupFourSummary.tournament.groupCount)
+            assertEquals(groupFourPairings, groupFourSummary.tournament.selectedGroupPairings)
+
+            val ownerASummaries = repository.observeSummariesByOwner("owner-a")
+                .first { it.size == 1 }
+            assertEquals(listOf(TOURNAMENT_ID), ownerASummaries.map { it.tournament.id })
+            assertEquals(groupThreePairings, ownerASummaries.single().tournament.selectedGroupPairings)
+
+            val ownerBSummaries = repository.observeSummariesByOwner("owner-b")
+                .first { it.size == 1 }
+            assertEquals(listOf("group-four"), ownerBSummaries.map { it.tournament.id })
+            assertEquals(groupFourPairings, ownerBSummaries.single().tournament.selectedGroupPairings)
+        }
+    }
+
+    @Test
+    fun malformedGroupRotationSummaryDoesNotBreakOtherSummaryRows() = runBlocking {
+        withRepository { repository, database, _ ->
+            val emissions = Channel<List<com.hoggamers.rankforge.domain.tournament.TournamentSummary>>(
+                Channel.UNLIMITED,
+            )
+            val observation = launch {
+                repository.observeSummaries().collect { summaries -> emissions.send(summaries) }
+            }
+            try {
+                assertEquals(
+                    listOf(TOURNAMENT_ID),
+                    withTimeout(5_000L) { emissions.receive() }.map { it.tournament.id },
+                )
+
+                database.tournamentDao().upsert(
+                    groupRotationTournament(
+                        id = "malformed-group",
+                        groupCount = 3,
+                        pairings = emptyList(),
+                    ).toEntity(creationOrder = 2L),
+                )
+
+                val afterMalformed = withTimeout(5_000L) { emissions.receive() }
+                assertEquals(listOf(TOURNAMENT_ID), afterMalformed.map { it.tournament.id })
+            } finally {
+                observation.cancel()
+                emissions.close()
+            }
+        }
+    }
+
+    @Test
+    fun groupRotationSummarySurvivesRepositoryReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "tournament-summary-group-reopen-${System.nanoTime()}.db"
+        val databases = mutableListOf<RankForgeDatabase>()
+        val pairings = listOf(
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+            GroupPairing.of(TournamentGroup.B, TournamentGroup.C),
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.C),
+        )
+        val groupTournament = groupRotationTournament(
+            id = "reopened-group",
+            groupCount = 3,
+            pairings = pairings,
+        )
+        try {
+            val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName)
+                .build()
+                .also { databases += it }
+            val repository = RoomTournamentRepository(database)
+            repository.create(groupTournament)
+            assertEquals(
+                pairings,
+                repository.observeSummaries().first { it.size == 1 }
+                    .single().tournament.selectedGroupPairings,
+            )
+
+            database.close()
+            val reopenedDatabase = Room.databaseBuilder(
+                context,
+                RankForgeDatabase::class.java,
+                databaseName,
+            ).build().also { databases += it }
+            val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
+            val reopenedSummary = reopenedRepository.observeSummaries().first { it.size == 1 }.single()
+            assertEquals(TournamentFormat.GROUP_ROTATION, reopenedSummary.tournament.format)
+            assertEquals(3, reopenedSummary.tournament.groupCount)
+            assertEquals(pairings, reopenedSummary.tournament.selectedGroupPairings)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
         }
     }
 
@@ -255,6 +387,7 @@ class TournamentSummaryRepositoryTest {
     }
 
     private suspend fun withRepository(
+        initialTournament: Tournament = tournament(),
         block: suspend (RoomTournamentRepository, RankForgeDatabase, TestClock) -> Unit,
     ) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -263,7 +396,7 @@ class TournamentSummaryRepositoryTest {
         val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
         try {
             val repository = RoomTournamentRepository(database, clock)
-            repository.create(tournament())
+            repository.create(initialTournament)
             block(repository, database, clock)
         } finally {
             database.close()
@@ -283,6 +416,23 @@ class TournamentSummaryRepositoryTest {
         stageName = "Organizer",
         organizerContactNumber = "123",
         status = status,
+    )
+
+    private fun groupRotationTournament(
+        id: String,
+        groupCount: Int,
+        pairings: List<GroupPairing>,
+        ownerUserId: String? = null,
+    ) = Tournament(
+        id = id,
+        name = "Group Rotation Cup",
+        stageName = "Organizer",
+        organizerContactNumber = "123",
+        status = TournamentStatus.DRAFT,
+        ownerUserId = ownerUserId,
+        format = TournamentFormat.GROUP_ROTATION,
+        groupCount = groupCount,
+        selectedGroupPairings = pairings,
     )
 
     private fun replacementCandidate(

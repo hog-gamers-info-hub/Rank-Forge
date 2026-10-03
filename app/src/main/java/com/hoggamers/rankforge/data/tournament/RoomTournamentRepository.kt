@@ -58,6 +58,7 @@ import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
+import com.hoggamers.rankforge.data.local.TournamentSummaryProjection
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupResult
 import com.hoggamers.rankforge.domain.auth.AccountDeletionMarker
@@ -268,16 +269,16 @@ class RoomTournamentRepository @Inject constructor(
 
     override fun observeSummaries(): Flow<List<TournamentSummary>> = flow {
         ready.await()
-        emitAll(database.tournamentDao().observeSummaries().map { summaries ->
-            summaries.map { it.toDomain() }
-        })
+        emitAll(observeTournamentSummaries(database.tournamentDao().observeSummaries()))
     }
 
     override fun observeSummariesByOwner(ownerUserId: String): Flow<List<TournamentSummary>> = flow {
         ready.await()
-        emitAll(database.tournamentDao().observeSummariesByOwner(ownerUserId).map { summaries ->
-            summaries.map { it.toDomain() }
-        })
+        emitAll(
+            observeTournamentSummaries(
+                database.tournamentDao().observeSummariesByOwner(ownerUserId),
+            ),
+        )
     }
 
     override fun observeById(tournamentId: String): Flow<Tournament?> = flow {
@@ -2720,6 +2721,32 @@ class RoomTournamentRepository @Inject constructor(
             .groupBy { it.tournamentId }
             .mapValues { (_, pairings) -> pairings.map { it.toDomain() } }
         entities.map { entity -> entity.toDomain(pairingsByTournament[entity.id].orEmpty()) }
+    }
+
+    private fun observeTournamentSummaries(
+        summaries: Flow<List<TournamentSummaryProjection>>,
+    ): Flow<List<TournamentSummary>> = combine(
+        summaries,
+        database.tournamentGroupPairingDao().observeAll(),
+    ) { projections, pairingEntities ->
+        val pairingsByTournament = pairingEntities
+            .groupBy { it.tournamentId }
+            .mapValues { (_, pairings) ->
+                pairings.mapNotNull { pairing ->
+                    try {
+                        pairing.toDomain()
+                    } catch (_: IllegalArgumentException) {
+                        null
+                    }
+                }
+            }
+        projections.mapNotNull { projection ->
+            try {
+                projection.toDomain(pairingsByTournament[projection.id].orEmpty())
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
     }
 
     private fun observeTournament(
