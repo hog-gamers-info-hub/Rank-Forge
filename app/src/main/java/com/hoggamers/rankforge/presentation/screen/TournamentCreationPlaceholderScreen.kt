@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -73,6 +74,10 @@ import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
+import com.hoggamers.rankforge.domain.tournament.availableGroupPairings
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
 import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
@@ -99,6 +104,9 @@ const val TOURNAMENT_MODE_DROPDOWN_TEST_TAG = "tournament_mode_dropdown"
 const val TOURNAMENT_MODE_OPTION_SOLO_TEST_TAG = "tournament_mode_option_solo"
 const val TOURNAMENT_MODE_OPTION_DUO_TEST_TAG = "tournament_mode_option_duo"
 const val TOURNAMENT_MODE_OPTION_SQUAD_TEST_TAG = "tournament_mode_option_squad"
+const val TOURNAMENT_GROUP_ROTATION_CHECKBOX_TEST_TAG = "tournament_group_rotation_checkbox"
+const val TOURNAMENT_GROUP_COUNT_OPTION_TEST_TAG_PREFIX = "tournament_group_count_option_"
+const val TOURNAMENT_GROUP_PAIRING_TEST_TAG_PREFIX = "tournament_group_pairing_"
 
 @Composable
 fun TournamentCreationRoute(
@@ -129,6 +137,9 @@ fun TournamentCreationRoute(
         onTournamentNameChanged = viewModel::onTournamentNameChanged,
         onStageNameChanged = viewModel::onStageNameChanged,
         onOrganizerContactNumberChanged = viewModel::onOrganizerContactNumberChanged,
+        onGroupRotationChanged = viewModel::onGroupRotationChanged,
+        onGroupCountChanged = viewModel::onGroupCountChanged,
+        onGroupPairingToggled = viewModel::onGroupPairingToggled,
         onSubmit = viewModel::submit,
         onBackPressed = viewModel::onBackPressed,
         onKeepEditing = viewModel::keepEditing,
@@ -141,6 +152,9 @@ fun TournamentCreationScreen(
     onTournamentNameChanged: (String) -> Unit,
     onStageNameChanged: (String) -> Unit,
     onOrganizerContactNumberChanged: (String) -> Unit,
+    onGroupRotationChanged: (Boolean) -> Unit = {},
+    onGroupCountChanged: (Int) -> Unit = {},
+    onGroupPairingToggled: (GroupPairing) -> Unit = {},
     onSubmit: () -> Unit,
     onBackPressed: () -> Unit,
     onKeepEditing: () -> Unit,
@@ -325,6 +339,107 @@ fun TournamentCreationScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(TOURNAMENT_GROUP_ROTATION_CHECKBOX_TEST_TAG),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = uiState.format == TournamentFormat.GROUP_ROTATION,
+                    onCheckedChange = { checked -> onGroupRotationChanged(checked) },
+                )
+                Text(
+                    text = stringResource(R.string.tournament_group_rotation_label),
+                    color = PointIqCreateHeader,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+
+            if (uiState.format == TournamentFormat.GROUP_ROTATION) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.tournament_group_count_label),
+                    color = PointIqCreateSubtitle,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(3, 4).forEach { groupCount ->
+                        val selected = uiState.groupCount == groupCount
+                        Button(
+                            onClick = { onGroupCountChanged(groupCount) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selected) PointIqCreateCyan else PointIqCreateCtaDeepBlue,
+                                contentColor = Color.White,
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag(TOURNAMENT_GROUP_COUNT_OPTION_TEST_TAG_PREFIX + groupCount),
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    if (groupCount == 3) {
+                                        R.string.tournament_group_count_three
+                                    } else {
+                                        R.string.tournament_group_count_four
+                                    },
+                                ),
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = stringResource(R.string.tournament_group_pairings_label),
+                    color = PointIqCreateSubtitle,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                availableGroupPairings(uiState.groupCount ?: 3)
+                    .chunked(2)
+                    .forEach { rowPairings ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rowPairings.forEach { pairing ->
+                                val selected = pairing in uiState.selectedGroupPairings
+                                Button(
+                                    onClick = { onGroupPairingToggled(pairing) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (selected) PointIqCreateCyan else PointIqCreateCtaDeepBlue,
+                                        contentColor = Color.White,
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag(
+                                            TOURNAMENT_GROUP_PAIRING_TEST_TAG_PREFIX + pairing.canonicalKey,
+                                        ),
+                                ) {
+                                    Text(text = pairingLabel(pairing))
+                                }
+                            }
+                            if (rowPairings.size == 1) Spacer(modifier = Modifier.weight(1f))
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                if (uiState.validationErrors[TournamentField.GROUP_CONFIGURATION] != null) {
+                    Text(
+                        text = stringResource(R.string.tournament_group_pairing_required_error),
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
             if (SHOW_ORGANIZER_CONTACT_NUMBER) {
                 Spacer(modifier = Modifier.height(16.dp))
                 PointIqTournamentField(
@@ -394,6 +509,19 @@ fun TournamentCreationScreen(
             destructive = true,
         )
     }
+}
+
+@Composable
+private fun pairingLabel(pairing: GroupPairing): String =
+    stringResource(groupStringRes(pairing.firstGroup)) +
+        " × " +
+        stringResource(groupStringRes(pairing.secondGroup))
+
+private fun groupStringRes(group: TournamentGroup): Int = when (group) {
+    TournamentGroup.A -> R.string.tournament_group_a
+    TournamentGroup.B -> R.string.tournament_group_b
+    TournamentGroup.C -> R.string.tournament_group_c
+    TournamentGroup.D -> R.string.tournament_group_d
 }
 @Composable
 private fun PointIqCreateBackgroundDecoration(
@@ -581,6 +709,8 @@ private fun PointIqTournamentField(
 private fun validationErrorMessage(error: TournamentValidationError): String = when (error) {
     TournamentValidationError.REQUIRED -> stringResource(R.string.required_field_error)
     TournamentValidationError.UNSUPPORTED_STATUS -> stringResource(R.string.unsupported_status_error)
+    TournamentValidationError.INVALID_GROUP_CONFIGURATION ->
+        stringResource(R.string.tournament_group_pairing_required_error)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

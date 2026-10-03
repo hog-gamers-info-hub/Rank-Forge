@@ -4,7 +4,10 @@ import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.encodeToString
@@ -70,6 +73,33 @@ class TournamentCloudUploadMapperTest {
         val second = TournamentCloudUploadMapper.map(snapshot, OWNER_ID)
 
         assertEquals(first, second)
+    }
+
+    @Test
+    fun mapsThreeGroupRotationConfigurationAndAllPermanentSlots() {
+        val tournament = snapshot().tournament.copy(
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 3,
+            selectedGroupPairings = defaultGroupPairings(3),
+        )
+        val result = TournamentCloudUploadMapper.map(
+            TournamentCloudUploadSnapshot(
+                tournament = tournament,
+                slots = tournament.formatDerivedSlots().map { it.copy(teamName = "Team ${it.slotNumber}") },
+                rosters = emptyMap(),
+            ),
+            OWNER_ID,
+        ) as TournamentCloudUploadMappingResult.Success
+
+        assertEquals("group_rotation", result.payloads.tournament.format)
+        assertEquals(3, result.payloads.tournament.groupCount)
+        assertEquals(3, result.payloads.tournament.selectedGroupPairings.size)
+        assertEquals(18, result.payloads.teamSlots.size)
+        assertEquals("C", result.payloads.teamSlots.single { it.slotNumber == 13 }.group)
+        assertEquals(
+            TournamentCloudIdentity.teamSlotId(UUID.fromString(TENANT_ID), 18),
+            result.payloads.teamSlots.single { it.slotNumber == 18 }.id,
+        )
     }
 
     @Test

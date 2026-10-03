@@ -8,7 +8,6 @@ import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
-import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -200,12 +199,15 @@ class TeamEntryViewModel @Inject constructor(
         val teamNamesBySlotNumber = slotsToSave.associate { slot ->
             slot.slotNumber to slot.teamName.trim()
         }
-        val participation = teamNamesBySlotNumber.analyzeTeamSlotParticipation()
+        val activeSlotNumbers = slotsToSave
+            .filter { it.teamName.trim().isNotEmpty() }
+            .map { it.slotNumber }
+            .toSet()
         val saveEditGeneration = editGeneration
         persistTeamNames(
             tournamentId = tournamentId,
             teamNamesBySlotNumber = teamNamesBySlotNumber,
-            activeSlotNumbers = participation.activeSlotNumbers.toSet(),
+            activeSlotNumbers = activeSlotNumbers,
             saveEditGeneration = saveEditGeneration,
         )
     }

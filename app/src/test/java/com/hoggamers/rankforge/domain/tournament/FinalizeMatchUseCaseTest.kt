@@ -67,6 +67,53 @@ class FinalizeMatchUseCaseTest {
     }
 
     @Test
+    fun groupRotationFinalizationExcludesRestingGroupsFromParticipantSnapshot() = runTest {
+        val repository = InMemoryTournamentRepository()
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        repository.create(
+            Tournament(
+                id = "rotation-id",
+                name = "Rotation Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 4,
+                selectedGroupPairings = listOf(pairing),
+            ),
+        )
+        repository.saveTeamNames(
+            "rotation-id",
+            ((1..6).toList() + (13..18).toList()).associateWith { slot -> "Team $slot" },
+        )
+        repository.createDraftMatch(
+            Match(
+                id = "rotation-match",
+                tournamentId = "rotation-id",
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            ),
+        )
+
+        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
+        val result = useCase(
+            FinalizeMatchInput(
+                matchId = "rotation-match",
+                rows = (1..6).toList().plus((13..18).toList()).mapIndexed { index, slot ->
+                    MatchResultRowInput(slot, (index + 1).toString(), "0")
+                },
+            ),
+        ) as FinalizeMatchResult.Finalized
+
+        assertEquals((1..6).toList() + (13..18).toList(), result.match.participantResults.map { it.teamSlotNumber })
+        assertTrue(result.match.participantResults.none { it.teamSlotNumber == 7 || it.teamSlotNumber == 19 })
+    }
+
+    @Test
     fun invalidDraftCannotFinalize() = runTest {
         val repository = createRepository()
         val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())

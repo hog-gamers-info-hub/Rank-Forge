@@ -46,9 +46,9 @@ internal fun Match.finalizedParticipantResultsOrNull(): List<MatchParticipantRes
             }
         }.getOrElse { return null }
     }
-    if (snapshot.isEmpty() || snapshot.size > TeamSlot.MAX_SLOT_NUMBER) return null
+    if (snapshot.isEmpty() || snapshot.size > TeamSlot.MAX_TOURNAMENT_SLOT_NUMBER) return null
     if (snapshot.map { it.teamSlotNumber }.toSet().size != snapshot.size) return null
-    if (snapshot.any { it.teamSlotNumber !in TeamSlot.SLOT_NUMBERS }) return null
+    if (snapshot.any { it.teamSlotNumber !in TeamSlot.TOURNAMENT_SLOT_NUMBERS }) return null
 
     val participated = snapshot.filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
     if (participated.isEmpty()) return null

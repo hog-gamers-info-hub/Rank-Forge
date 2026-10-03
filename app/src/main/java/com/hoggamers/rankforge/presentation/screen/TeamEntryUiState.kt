@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 
 data class TeamEntryUiState(
     val isLoading: Boolean = true,
@@ -19,6 +20,7 @@ data class TeamEntryUiState(
 data class TeamEntrySlotUiState(
     val slotNumber: Int,
     val teamName: String,
+    val group: TournamentGroup? = null,
 )
 
 fun List<TeamSlot>.toTeamEntrySlotUiState(): List<TeamEntrySlotUiState> =
@@ -27,5 +29,6 @@ fun List<TeamSlot>.toTeamEntrySlotUiState(): List<TeamEntrySlotUiState> =
             TeamEntrySlotUiState(
                 slotNumber = slot.slotNumber,
                 teamName = slot.teamName,
+                group = slot.group,
             )
         }

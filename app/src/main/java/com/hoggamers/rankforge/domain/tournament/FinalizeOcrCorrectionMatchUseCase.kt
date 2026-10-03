@@ -121,13 +121,6 @@ class FinalizeOcrCorrectionMatchUseCase(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.MISSING_CORRECTION_DRAFT),
             )
 
-        val rowValidation = validateCorrectionRows(correctionRows)
-        if (rowValidation.failures.isNotEmpty()) {
-            return FinalizeOcrCorrectionMatchResult.Blocked(
-                failures = rowValidation.failures,
-                failuresByRowIndex = rowValidation.failuresByRowIndex,
-            )
-        }
         val tournament = repository.observeByIdAndOwner(input.tournamentId, ownerUserId).first()
             ?: return FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.MISSING_TOURNAMENT),
@@ -148,7 +141,21 @@ class FinalizeOcrCorrectionMatchUseCase(
         }
 
         val slots = repository.observeSlotsByTournamentIdAndOwner(input.tournamentId, ownerUserId).first()
-        val participation = slots.analyzeTeamSlotParticipation()
+        val eligibleTeamSlots = runCatching {
+            MatchEligibleTeamSlotResolver().resolve(tournament, slots, match)
+        }.getOrElse {
+            return FinalizeOcrCorrectionMatchResult.Blocked(
+                failures = setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT),
+            )
+        }
+        val rowValidation = validateCorrectionRows(correctionRows, eligibleTeamSlots)
+        if (rowValidation.failures.isNotEmpty()) {
+            return FinalizeOcrCorrectionMatchResult.Blocked(
+                failures = rowValidation.failures,
+                failuresByRowIndex = rowValidation.failuresByRowIndex,
+            )
+        }
+        val participation = slots.analyzeTeamSlotParticipation(eligibleTeamSlots)
         if (!participation.isReadyForMatchCreation) {
             // Invalid participation is reported through the existing draft-integrity contract.
             return FinalizeOcrCorrectionMatchResult.Blocked(
@@ -224,6 +231,7 @@ class FinalizeOcrCorrectionMatchUseCase(
 
     private fun validateCorrectionRows(
         rows: List<FinalizeOcrCorrectionRowInput>,
+        eligibleTeamSlots: Set<Int>,
     ): RowValidation {
         val failures = mutableSetOf<FinalizeOcrCorrectionMatchFailure>()
         val failuresByRowIndex = mutableMapOf<Int, MutableSet<FinalizeOcrCorrectionMatchFailure>>()
@@ -256,7 +264,7 @@ class FinalizeOcrCorrectionMatchUseCase(
             val teamSlot = if (row.isExcluded) {
                 ParsedInt(null, null)
             } else {
-                row.correctedTeamSlotNumber.parseTeamSlot()
+                row.correctedTeamSlotNumber.parseTeamSlot(eligibleTeamSlots)
             }
 
             if (placement.failure != null) {
@@ -356,11 +364,11 @@ class FinalizeOcrCorrectionMatchUseCase(
             invalidFailure = FinalizeOcrCorrectionMatchFailure.INVALID_PLACEMENT,
         ).requireInSlotRange(FinalizeOcrCorrectionMatchFailure.INVALID_PLACEMENT)
 
-    private fun String?.parseTeamSlot(): ParsedInt =
+    private fun String?.parseTeamSlot(eligibleTeamSlots: Set<Int>): ParsedInt =
         parseStrictPositiveInt(
             missingFailure = FinalizeOcrCorrectionMatchFailure.MISSING_TEAM_SLOT,
             invalidFailure = FinalizeOcrCorrectionMatchFailure.INVALID_TEAM_SLOT,
-        ).requireInSlotRange(FinalizeOcrCorrectionMatchFailure.INVALID_TEAM_SLOT)
+        ).requireInAllowedSlots(eligibleTeamSlots, FinalizeOcrCorrectionMatchFailure.INVALID_TEAM_SLOT)
 
     private fun String?.parseKills(): ParsedInt {
         val trimmed = this?.trim().orEmpty()
@@ -392,6 +400,16 @@ class FinalizeOcrCorrectionMatchUseCase(
         invalidFailure: FinalizeOcrCorrectionMatchFailure,
     ): ParsedInt =
         if (failure == null && value?.let { it !in TeamSlot.SLOT_NUMBERS } == true) {
+            ParsedInt(null, invalidFailure)
+        } else {
+            this
+        }
+
+    private fun ParsedInt.requireInAllowedSlots(
+        allowedSlots: Set<Int>,
+        invalidFailure: FinalizeOcrCorrectionMatchFailure,
+    ): ParsedInt =
+        if (failure == null && value?.let { it !in allowedSlots } == true) {
             ParsedInt(null, invalidFailure)
         } else {
             this

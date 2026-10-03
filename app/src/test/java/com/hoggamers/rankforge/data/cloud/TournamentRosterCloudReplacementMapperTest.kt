@@ -3,8 +3,11 @@ package com.hoggamers.rankforge.data.cloud
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacement
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -52,6 +55,26 @@ class TournamentRosterCloudReplacementMapperTest {
             TournamentRosterCloudReplacementMappingResult.Invalid,
             TournamentRosterCloudReplacementMapper.map(invalid, OWNER_ID),
         )
+    }
+
+    @Test
+    fun mapsFourGroupReplacementThroughPermanentSlotTwentyFour() {
+        val tournament = snapshot().tournament.copy(
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 4,
+            selectedGroupPairings = defaultGroupPairings(4),
+        )
+        val result = TournamentRosterCloudReplacementMapper.map(
+            snapshot().copy(
+                tournament = tournament,
+                slots = tournament.formatDerivedSlots().map { it.copy(teamName = "Team ${it.slotNumber}") },
+                rosters = emptyMap(),
+            ),
+            OWNER_ID,
+        ) as TournamentRosterCloudReplacementMappingResult.Success
+
+        assertEquals(24, result.payloads.teamSlots.size)
+        assertEquals("D", result.payloads.teamSlots.single { it.slotNumber == 24 }.group)
     }
 
     private fun snapshot() = TournamentRosterCloudReplacement(

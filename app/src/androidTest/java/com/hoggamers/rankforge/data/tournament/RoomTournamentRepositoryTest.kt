@@ -21,6 +21,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedMatchMutationResult
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
@@ -65,6 +66,8 @@ import com.hoggamers.rankforge.domain.tournament.SaveRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
@@ -361,6 +364,48 @@ class RoomTournamentRepositoryTest {
             assertEquals(12, reopenedRepository.observeSlotsByTournamentId("tournament-1").first().size)
             assertEquals("user-a", reopenedRepository.observeById("tournament-1").first()!!.ownerUserId)
             assertEquals(12, reopenedDatabase.teamSlotDao().observeByTournamentId("tournament-1").first().size)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationCreationPersistsFormatPairingsAndDerivedSlots() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournament = Tournament(
+                id = "group-rotation",
+                name = "Group Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.DRAFT,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = listOf(
+                    GroupPairing.of(TournamentGroup.C, TournamentGroup.A),
+                ),
+            )
+
+            repository.create(tournament)
+
+            val slots = repository.observeSlotsByTournamentId(tournament.id).first()
+            assertEquals(18, slots.size)
+            assertEquals((1..6).toList(), slots.filter { it.group == TournamentGroup.A }.map { it.slotNumber })
+            assertEquals((13..18).toList(), slots.filter { it.group == TournamentGroup.C }.map { it.slotNumber })
+            assertEquals(tournament, repository.observeById(tournament.id).first())
+            assertEquals(
+                listOf("A:C"),
+                database.tournamentGroupPairingDao()
+                    .observeByTournamentId(tournament.id)
+                    .first()
+                    .map { it.pairingKey },
+            )
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)

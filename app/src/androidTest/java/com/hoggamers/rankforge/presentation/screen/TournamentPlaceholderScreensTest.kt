@@ -21,7 +21,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentField
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 
 @RunWith(AndroidJUnit4::class)
@@ -89,6 +91,35 @@ class TournamentCreationScreenTest {
         composeTestRule.onNodeWithTag(TOURNAMENT_MODE_DROPDOWN_TEST_TAG)
             .assertIsDisplayed()
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun groupRotationConfigurationRendersThreeGroupDefaults() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentCreationScreen(
+                    uiState = TournamentCreationUiState(
+                        format = TournamentFormat.GROUP_ROTATION,
+                        groupCount = 3,
+                        selectedGroupPairings = defaultGroupPairings(3),
+                    ),
+                    onTournamentNameChanged = {},
+                    onStageNameChanged = {},
+                    onOrganizerContactNumberChanged = {},
+                    onSubmit = {},
+                    onBackPressed = {},
+                    onKeepEditing = {},
+                    onDiscardChanges = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(TOURNAMENT_GROUP_ROTATION_CHECKBOX_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.tournament_group_count_three)).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_GROUP_PAIRING_TEST_TAG_PREFIX + "A:B")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_GROUP_PAIRING_TEST_TAG_PREFIX + "A:C")
+            .assertIsDisplayed()
     }
 
     @Test

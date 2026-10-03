@@ -85,6 +85,8 @@ import com.hoggamers.rankforge.data.export.TeamListFormatter
 import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import kotlinx.coroutines.launch
@@ -209,6 +211,7 @@ fun TournamentDetailsRoute(
             onEnterTeams = onEnterTeams,
             onCreateMatch = onCreateMatch,
             onCalculatePointsRequested = { viewModel.onCalculatePointsRequested() },
+            onCalculatePointsRequestedForPairing = { _, pairing -> viewModel.onCalculatePointsRequested(pairing) },
             pendingTeamCountConfirmation = uiState.pendingTeamCountConfirmation,
             calculatePointsMessage = uiState.calculatePointsMessage,
             isCreatingMatch = uiState.isCreatingMatch,
@@ -282,6 +285,7 @@ fun TournamentDetailsScreen(
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit = {},
     onCalculatePointsRequested: ((String) -> Unit)? = null,
+    onCalculatePointsRequestedForPairing: ((String, GroupPairing) -> Unit)? = null,
     pendingTeamCountConfirmation: TeamCountConfirmationUiState? = null,
     calculatePointsMessage: CalculatePointsMessage? = null,
     isCreatingMatch: Boolean = false,
@@ -323,6 +327,7 @@ fun TournamentDetailsScreen(
             onEnterTeams = onEnterTeams,
             onCreateMatch = onCreateMatch,
             onCalculatePointsRequested = onCalculatePointsRequested ?: onCreateMatch,
+            onCalculatePointsRequestedForPairing = onCalculatePointsRequestedForPairing,
             pendingTeamCountConfirmation = pendingTeamCountConfirmation,
             calculatePointsMessage = calculatePointsMessage,
             isCreatingMatch = isCreatingMatch,
@@ -597,6 +602,92 @@ private fun PointIqTournamentHero(
 }
 
 @Composable
+private fun GroupRotationMatchSections(
+    tournament: TournamentDetailsItemUiState,
+    isCreatingMatch: Boolean,
+    onCreateMatch: (GroupPairing) -> Unit,
+    onReviewMatch: (MatchUiState) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TOURNAMENT_MATCH_LIST_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        tournament.groupMatchSections.forEach { section ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("group_pairing_section_${section.pairing.canonicalKey}"),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.group_pairing_matches_title,
+                            section.pairing.firstGroup.name,
+                            section.pairing.secondGroup.name,
+                        ),
+                        color = PointIqDetailsHeader,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (tournament.matches.size < MAX_MATCHES_PER_TOURNAMENT) {
+                        OutlinedButton(
+                            onClick = { onCreateMatch(section.pairing) },
+                            enabled = !isCreatingMatch,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 9.dp),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .testTag("create_match_${section.pairing.canonicalKey}"),
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                stringResource(
+                                    R.string.group_pairing_match_action,
+                                    section.matches.size + 1,
+                                ),
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
+                }
+                if (section.matches.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.group_pairing_no_matches_message),
+                        color = PointIqDetailsSubtitle,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 7.dp),
+                    )
+                } else {
+                    section.matches.asReversed().forEachIndexed { index, match ->
+                        PointIqMatchRow(
+                            match = match,
+                            matchLabel = stringResource(
+                                R.string.group_pairing_match_label,
+                                section.matches.size - index,
+                            ),
+                            onClick = { onReviewMatch(match) },
+                        )
+                    }
+                }
+            }
+        }
+        if (tournament.matches.size >= MAX_MATCHES_PER_TOURNAMENT) {
+            Text(
+                text = stringResource(R.string.match_limit_reached_message),
+                color = PointIqDetailsInactiveBlue,
+                fontSize = 12.sp,
+            )
+        }
+    }
+}
+
+@Composable
 private fun PointIqMatchProcessingHeader(
     nextMatchNumber: Int?,
     canCreateMatch: Boolean,
@@ -672,6 +763,7 @@ private fun PointIqMatchProcessingHeader(
 @Composable
 private fun PointIqMatchRow(
     match: MatchUiState,
+    matchLabel: String? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -683,7 +775,7 @@ private fun PointIqMatchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = stringResource(R.string.tournament_details_match_number_label, match.matchNumber),
+            text = matchLabel ?: stringResource(R.string.tournament_details_match_number_label, match.matchNumber),
             color = PointIqDetailsHeader,
             fontSize = 16.sp,
             lineHeight = 22.sp,
@@ -804,6 +896,7 @@ private fun TournamentDetailsContent(
     onEnterTeams: (String) -> Unit,
     onCreateMatch: (String) -> Unit,
     onCalculatePointsRequested: (String) -> Unit,
+    onCalculatePointsRequestedForPairing: ((String, GroupPairing) -> Unit)?,
     pendingTeamCountConfirmation: TeamCountConfirmationUiState?,
     calculatePointsMessage: CalculatePointsMessage?,
     isCreatingMatch: Boolean,
@@ -877,12 +970,14 @@ private fun TournamentDetailsContent(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 24.dp),
         ) {
-            PointIqMatchProcessingHeader(
-                nextMatchNumber = tournament.nextMatchNumber,
-                canCreateMatch = tournament.canCreateMatch(),
-                isCreatingMatch = isCreatingMatch || isDeleting,
-                onCreateMatch = { onCalculatePointsRequested(tournament.id) },
-            )
+            if (tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.STANDARD) {
+                PointIqMatchProcessingHeader(
+                    nextMatchNumber = tournament.nextMatchNumber,
+                    canCreateMatch = tournament.canCreateMatch(),
+                    isCreatingMatch = isCreatingMatch || isDeleting,
+                    onCreateMatch = { onCalculatePointsRequested(tournament.id) },
+                )
+            }
 
             if (calculatePointsMessage != null) {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -915,7 +1010,18 @@ private fun TournamentDetailsContent(
             }
 
             Spacer(modifier = Modifier.height(18.dp))
-            if (tournament.matches.isEmpty()) {
+            if (tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION) {
+                GroupRotationMatchSections(
+                    tournament = tournament,
+                    isCreatingMatch = isCreatingMatch || isDeleting,
+                    onCreateMatch = { pairing ->
+                        onCalculatePointsRequestedForPairing?.invoke(tournament.id, pairing)
+                    },
+                    onReviewMatch = { match ->
+                        if (!isDeleting) onReviewMatch(tournament.id, match.id)
+                    },
+                )
+            } else if (tournament.matches.isEmpty()) {
                 Text(
                     text = stringResource(R.string.tournament_details_no_matches_message),
                     color = PointIqDetailsSubtitle,

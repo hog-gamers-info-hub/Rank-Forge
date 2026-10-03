@@ -5,6 +5,8 @@ import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.SerialName
@@ -18,6 +20,7 @@ data class DraftMatchUploadPayload(
     @SerialName("match_date") val matchDate: String,
     @SerialName("map_name") val mapName: String,
     val status: String,
+    @SerialName("group_pairing_key") val groupPairingKey: String? = null,
 )
 
 @Serializable
@@ -68,6 +71,7 @@ object DraftMatchCloudSyncMapper {
                     matchDate = match.date.toString(),
                     mapName = match.mapName,
                     status = "draft",
+                    groupPairingKey = match.groupPairing?.canonicalKey,
                 )
             }
         val matchPayloads = matchPayloadByLocalId.values.sortedBy { it.matchNumber }
@@ -75,6 +79,13 @@ object DraftMatchCloudSyncMapper {
             match.toResultPayloads(
                 tournamentId = tournamentUuid,
                 cloudMatchId = matchPayloadByLocalId.getValue(match.id).id,
+                eligibleSlotNumbers = runCatching {
+                    MatchEligibleTeamSlotResolver().resolve(
+                        snapshot.tournament,
+                        snapshot.tournament.formatDerivedSlots(),
+                        match,
+                    )
+                }.getOrNull() ?: return DraftMatchCloudSyncMappingResult.Invalid,
             ) ?: return DraftMatchCloudSyncMappingResult.Invalid
         }
 
@@ -91,12 +102,13 @@ object DraftMatchCloudSyncMapper {
     private fun Match.toResultPayloads(
         tournamentId: UUID,
         cloudMatchId: String,
+        eligibleSlotNumbers: Set<Int>,
     ): List<DraftMatchResultUploadPayload>? {
         val placementsBySlot = placements.associateBy { it.teamSlotNumber }
         val killsBySlot = kills.associateBy { it.teamSlotNumber }
         if (placementsBySlot.size != placements.size || killsBySlot.size != kills.size) return null
         val slots = placementsBySlot.keys + killsBySlot.keys
-        if (slots.any { it !in TeamSlot.SLOT_NUMBERS } ||
+        if (slots.any { it !in eligibleSlotNumbers } ||
             placements.any { it.position !in TeamSlot.SLOT_NUMBERS } ||
             kills.any { it.kills < 0 }
         ) {

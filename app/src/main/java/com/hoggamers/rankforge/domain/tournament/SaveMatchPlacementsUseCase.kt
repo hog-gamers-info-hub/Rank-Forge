@@ -47,6 +47,17 @@ class SaveMatchPlacementsUseCase(
         if (match.status != MatchStatus.DRAFT) {
             return SaveMatchPlacementsResult.Invalid(globalError = PlacementGlobalError.MATCH_NOT_DRAFT)
         }
+        val tournament = repository.observeByIdAndOwner(match.tournamentId, ownerUserId).first()
+            ?: return SaveMatchPlacementsResult.Invalid(globalError = PlacementGlobalError.MATCH_NOT_FOUND)
+        val eligibleTeamSlots = runCatching {
+            MatchEligibleTeamSlotResolver().resolve(
+                tournament,
+                repository.observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId).first(),
+                match,
+            )
+        }.getOrElse {
+            return SaveMatchPlacementsResult.Invalid(globalError = PlacementGlobalError.INVALID_DATA)
+        }
 
         val errors = mutableMapOf<Int, PlacementValidationError>()
         val parsedPlacements = mutableMapOf<Int, Int>()
@@ -55,7 +66,7 @@ class SaveMatchPlacementsUseCase(
             if (trimmedValue.isBlank()) return@forEach
             val position = trimmedValue.toIntOrNull()
             if (
-                teamSlotNumber !in TeamSlot.SLOT_NUMBERS ||
+                teamSlotNumber !in eligibleTeamSlots ||
                 trimmedValue.any { it !in '0'..'9' } ||
                 position == null ||
                 position !in TeamSlot.SLOT_NUMBERS

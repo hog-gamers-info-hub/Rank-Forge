@@ -128,6 +128,24 @@ class CreateTournamentUseCaseTest {
         assertEquals((1..12).toList(), repository.slotsByTournamentId.getValue(created.id).map { it.slotNumber })
     }
 
+    @Test
+    fun groupRotationInputPersistsConfigurationAndEighteenSlots() = runTest {
+        val result = useCase(
+            validInput().copy(
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = defaultGroupPairings(3),
+            ),
+        )
+
+        val created = result.createdTournament()
+        assertEquals(TournamentFormat.GROUP_ROTATION, created.format)
+        assertEquals(3, created.groupCount)
+        assertEquals(defaultGroupPairings(3), created.selectedGroupPairings)
+        assertEquals(18, repository.slotsByTournamentId.getValue(created.id).size)
+        assertEquals(TournamentGroup.C, repository.slotsByTournamentId.getValue(created.id).single { it.slotNumber == 13 }.group)
+    }
+
     private fun validInput() = CreateTournamentInput(
         name = "Summer Cup",
         stageName = "Alex",
@@ -170,7 +188,7 @@ class CreateTournamentUseCaseTest {
 
         override suspend fun create(tournament: Tournament) {
             records += tournament
-            slotsByTournamentId[tournament.id] = TeamSlot.fixedSlotsForTournament(tournament.id)
+            slotsByTournamentId[tournament.id] = tournament.formatDerivedSlots()
             state.value = records.toList()
         }
 

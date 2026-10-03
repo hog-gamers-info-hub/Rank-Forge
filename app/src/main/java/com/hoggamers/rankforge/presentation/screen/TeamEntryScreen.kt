@@ -82,6 +82,8 @@ import androidx.compose.ui.graphics.toArgb
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.export.TeamListEntry
 import com.hoggamers.rankforge.data.export.TeamListFormatter
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.presentation.component.RankForgeLoadingState
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
@@ -447,57 +449,49 @@ private fun TeamEntryContent(
             Spacer(modifier = Modifier.height(14.dp))
         }
 
-        slots.forEach { slot ->
-            val isFocusedSlot = slot.slotNumber == focusSlotNumber
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (isFocusedSlot) {
-                            Modifier.bringIntoViewRequester(focusRequester)
-                        } else {
-                            Modifier
-                        },
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PointIqTeamNameField(
-                    slotNumber = slot.slotNumber,
-                    value = slot.teamName,
-                    placeholder = stringResource(R.string.team_entry_team_name_placeholder),
+        val isGroupRotation = slots.any { it.group != null }
+        if (isGroupRotation) {
+            TournamentGroup.entries
+                .filter { group -> slots.any { it.group == group } }
+                .forEach { group ->
+                    Text(
+                        text = stringResource(R.string.team_entry_group_title, groupLabel(group)),
+                        color = PointIqTeamsNavy,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
+                    )
+                    slots.filter { it.group == group }.forEachIndexed { index, slot ->
+                        TeamEntrySlotRow(
+                            slot = slot,
+                            visibleTeamNumber = index + 1,
+                            fieldDescription = stringResource(
+                                R.string.team_entry_group_team_label,
+                                groupLabel(group),
+                                index + 1,
+                            ),
+                            focusSlotNumber = focusSlotNumber,
+                            focusRequester = focusRequester,
+                            onTeamNameChanged = onTeamNameChanged,
+                            onEditRoster = onEditRoster,
+                        )
+                    }
+                }
+        } else {
+            slots.forEach { slot ->
+                TeamEntrySlotRow(
+                    slot = slot,
+                    visibleTeamNumber = slot.slotNumber,
                     fieldDescription = stringResource(
                         R.string.team_name_slot_label,
                         slot.slotNumber,
                     ),
-                    onValueChange = { teamName ->
-                        onTeamNameChanged(slot.slotNumber, teamName)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = PointIqTeamsFieldHorizontalInset)
-                        .testTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + slot.slotNumber),
+                    focusSlotNumber = focusSlotNumber,
+                    focusRequester = focusRequester,
+                    onTeamNameChanged = onTeamNameChanged,
+                    onEditRoster = onEditRoster,
                 )
-
-                if (SHOW_TEAM_ENTRY_ROSTER_ACTIONS) {
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Button(
-                        onClick = { onEditRoster(slot.slotNumber) },
-                        modifier = Modifier
-                            .height(44.dp)
-                            .testTag(
-                                TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber,
-                            ),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.enter_players_name_action),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
             }
-            Spacer(modifier = Modifier.height(10.dp))
         }
 
         if (SHOW_TEAM_ENTRY_OVERVIEW) {
@@ -537,6 +531,7 @@ private fun TeamEntryContent(
 
     if (isPasteTeamListDialogVisible) {
         PasteTeamListDialog(
+            maxTeamNames = slots.size,
             onDismissRequest = { isPasteTeamListDialogVisible = false },
             onApply = { teamNames ->
                 onBulkTeamNamesApplied(teamNames)
@@ -545,6 +540,70 @@ private fun TeamEntryContent(
         )
     }
 }
+
+@Composable
+private fun TeamEntrySlotRow(
+    slot: TeamEntrySlotUiState,
+    visibleTeamNumber: Int,
+    fieldDescription: String,
+    focusSlotNumber: Int?,
+    focusRequester: BringIntoViewRequester,
+    onTeamNameChanged: (Int, String) -> Unit,
+    onEditRoster: (Int) -> Unit,
+) {
+    val isFocusedSlot = slot.slotNumber == focusSlotNumber
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isFocusedSlot) {
+                    Modifier.bringIntoViewRequester(focusRequester)
+                } else {
+                    Modifier
+                },
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PointIqTeamNameField(
+            slotNumber = visibleTeamNumber,
+            value = slot.teamName,
+            placeholder = stringResource(R.string.team_entry_team_name_placeholder),
+            fieldDescription = fieldDescription,
+            onValueChange = { teamName -> onTeamNameChanged(slot.slotNumber, teamName) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = PointIqTeamsFieldHorizontalInset)
+                .testTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + slot.slotNumber),
+        )
+
+        if (SHOW_TEAM_ENTRY_ROSTER_ACTIONS) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Button(
+                onClick = { onEditRoster(slot.slotNumber) },
+                modifier = Modifier
+                    .height(44.dp)
+                    .testTag(TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX + slot.slotNumber),
+            ) {
+                Text(
+                    text = stringResource(R.string.enter_players_name_action),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(10.dp))
+}
+
+@Composable
+private fun groupLabel(group: TournamentGroup): String = stringResource(
+    when (group) {
+        TournamentGroup.A -> R.string.tournament_group_a
+        TournamentGroup.B -> R.string.tournament_group_b
+        TournamentGroup.C -> R.string.tournament_group_c
+        TournamentGroup.D -> R.string.tournament_group_d
+    },
+)
 
 @Composable
 private fun PointIqTeamNameField(
@@ -737,6 +796,7 @@ private fun PointIqSaveTeamsButton(
 
 @Composable
 private fun PasteTeamListDialog(
+    maxTeamNames: Int,
     onDismissRequest: () -> Unit,
     onApply: (List<String>) -> Unit,
 ) {
@@ -778,7 +838,14 @@ private fun PasteTeamListDialog(
         text = {
             Column {
                 Text(
-                    text = stringResource(R.string.team_entry_paste_list_description),
+                    text = if (maxTeamNames == TeamSlot.SLOT_NUMBERS.count()) {
+                        stringResource(R.string.team_entry_paste_list_description)
+                    } else {
+                        stringResource(
+                            R.string.team_entry_paste_list_description_group_rotation,
+                            maxTeamNames,
+                        )
+                    },
                     color = PointIqTeamsBody,
                     fontSize = 15.sp,
                     lineHeight = 22.sp,
@@ -801,7 +868,14 @@ private fun PasteTeamListDialog(
                 if (hasOverflow) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.team_entry_paste_list_overflow),
+                        text = if (maxTeamNames == TeamSlot.SLOT_NUMBERS.count()) {
+                            stringResource(R.string.team_entry_paste_list_overflow)
+                        } else {
+                            stringResource(
+                                R.string.team_entry_paste_list_overflow_group_rotation,
+                                maxTeamNames,
+                            )
+                        },
                         color = PointIqTeamsDialogError,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,

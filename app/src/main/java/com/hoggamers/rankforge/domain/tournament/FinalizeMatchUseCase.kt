@@ -55,9 +55,25 @@ class FinalizeMatchUseCase(
                 validation = MatchResultValidation(),
                 globalError = FinalizeMatchGlobalError.MATCH_NOT_FOUND,
             )
+        val tournament = repository.observeByIdAndOwner(match.tournamentId, ownerUserId).first()
+            ?: return FinalizeMatchResult.Invalid(
+                validation = MatchResultValidation(),
+                globalError = FinalizeMatchGlobalError.MATCH_NOT_FOUND,
+            )
+        val persistedSlots = repository
+            .observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId)
+            .first()
+        val eligibleSlotNumbers = runCatching {
+            MatchEligibleTeamSlotResolver().resolve(tournament, persistedSlots, match)
+        }.getOrElse {
+            return FinalizeMatchResult.Invalid(
+                validation = MatchResultValidation(),
+                globalError = FinalizeMatchGlobalError.INVALID_DATA,
+            )
+        }
         val participation = repository.observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId)
             .first()
-            .analyzeTeamSlotParticipation()
+            .analyzeTeamSlotParticipation(eligibleSlotNumbers)
         if (!participation.isReadyForMatchCreation) {
             return FinalizeMatchResult.Invalid(
                 validation = MatchResultValidation(),

@@ -5,7 +5,10 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
+import com.hoggamers.rankforge.domain.tournament.tournamentFormatFromCloudValue
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import java.util.UUID
 
@@ -54,26 +57,63 @@ object TournamentCloudRestorationMapper {
             return TournamentCloudRestorationMappingResult.Invalid
         }
 
+        val format = tournamentFormatFromCloudValue(payloads.tournament.format)
+            ?: return TournamentCloudRestorationMappingResult.Invalid
+        val selectedPairings = payloads.tournament.selectedGroupPairings.map { pairing ->
+            val firstGroup = pairing.firstGroup.toTournamentGroupOrNull()
+                ?: return TournamentCloudRestorationMappingResult.Invalid
+            val secondGroup = pairing.secondGroup.toTournamentGroupOrNull()
+                ?: return TournamentCloudRestorationMappingResult.Invalid
+            val localPairing = runCatching { com.hoggamers.rankforge.domain.tournament.GroupPairing(firstGroup, secondGroup) }
+                .getOrNull()
+                ?: return TournamentCloudRestorationMappingResult.Invalid
+            if (localPairing.canonicalKey != pairing.pairingKey) {
+                return TournamentCloudRestorationMappingResult.Invalid
+            }
+            localPairing
+        }
+        val tournament = runCatching {
+            Tournament(
+                id = payloads.tournament.id,
+                name = payloads.tournament.name,
+                stageName = payloads.tournament.stageName,
+                organizerContactNumber = payloads.tournament.organizerContact,
+                status = status,
+                ownerUserId = payloads.tournament.ownerId,
+                format = format,
+                groupCount = payloads.tournament.groupCount,
+                selectedGroupPairings = selectedPairings,
+            )
+        }.getOrNull() ?: return TournamentCloudRestorationMappingResult.Invalid
+        val expectedSlots = tournament.formatDerivedSlots()
+        val expectedSlotNumbers = expectedSlots.map { it.slotNumber }.toSet()
+
         val slotsByNumber = payloads.teamSlots.groupBy { it.slotNumber }
         if (
             slotsByNumber.values.any { it.size > 1 } ||
             payloads.teamSlots.any {
                 it.tournamentId != payloads.tournament.id ||
-                    it.slotNumber !in TeamSlot.SLOT_NUMBERS
+                    it.slotNumber !in expectedSlotNumbers
+            } ||
+            payloads.teamSlots.any { payload ->
+                val expected = expectedSlots.firstOrNull { it.slotNumber == payload.slotNumber }
+                expected == null || payload.group?.toTournamentGroupOrNull() != expected.group
             }
         ) {
             return TournamentCloudRestorationMappingResult.Invalid
         }
 
-        val slots = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+        val slots = expectedSlots.map { expectedSlot ->
+            val slotNumber = expectedSlot.slotNumber
             val payload = slotsByNumber[slotNumber]?.singleOrNull()
             TeamSlot.create(
                 tournamentId = payloads.tournament.id,
                 slotNumber = slotNumber,
                 teamName = payload?.teamName.orEmpty(),
+                group = expectedSlot.group,
             )
         }
-        val slotIds = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+        val slotIds = expectedSlotNumbers.associateWith { slotNumber ->
             TournamentCloudIdentity.teamSlotId(tournamentUuid, slotNumber)
         }
         if (payloads.players.map { it.id }.distinct().size != payloads.players.size) {
@@ -114,14 +154,7 @@ object TournamentCloudRestorationMapper {
 
         return TournamentCloudRestorationMappingResult.Success(
             TournamentCloudRestorationSnapshot(
-                tournament = Tournament(
-                    id = payloads.tournament.id,
-                    name = payloads.tournament.name,
-                    stageName = payloads.tournament.stageName,
-                    organizerContactNumber = payloads.tournament.organizerContact,
-                    status = status,
-                    ownerUserId = payloads.tournament.ownerId,
-                ),
+                tournament = tournament,
                 slots = slots,
                 players = players,
                 cloudRevision = cloudRevision,
@@ -130,6 +163,9 @@ object TournamentCloudRestorationMapper {
     }
 
     private fun String.toUuidOrNull(): UUID? = runCatching { UUID.fromString(this) }.getOrNull()
+
+    private fun String.toTournamentGroupOrNull(): TournamentGroup? =
+        runCatching { TournamentGroup.valueOf(this) }.getOrNull()
 
     private fun String.toLocalStatusOrNull(): TournamentStatus? = when (lowercase()) {
         "draft" -> TournamentStatus.DRAFT

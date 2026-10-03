@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -21,6 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 
 @RunWith(AndroidJUnit4::class)
 class TeamEntryScreenTest {
@@ -58,6 +60,51 @@ class TeamEntryScreenTest {
                 .performScrollTo()
                 .assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun groupRotationRendersSeparateGroupsWithLocalTeamLabelsAndPermanentTags() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TeamEntryScreen(
+                    uiState = TeamEntryUiState(
+                        isLoading = false,
+                        slots = (1..18).map { slotNumber ->
+                            TeamEntrySlotUiState(
+                                slotNumber = slotNumber,
+                                teamName = "",
+                                group = when {
+                                    slotNumber <= 6 -> TournamentGroup.A
+                                    slotNumber <= 12 -> TournamentGroup.B
+                                    else -> TournamentGroup.C
+                                },
+                            )
+                        },
+                    ),
+                    onTeamNameChanged = { _, _ -> },
+                    onBulkTeamNamesApplied = {},
+                    onSave = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.team_entry_group_title, context.getString(R.string.tournament_group_a)),
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.team_entry_group_title, context.getString(R.string.tournament_group_c)),
+        ).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + 13)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription(
+            context.getString(
+                R.string.team_entry_group_team_label,
+                context.getString(R.string.tournament_group_c),
+                1,
+            ),
+        ).assertIsDisplayed()
     }
 
     @Test

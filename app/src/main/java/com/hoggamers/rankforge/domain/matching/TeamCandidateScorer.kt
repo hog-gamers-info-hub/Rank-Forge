@@ -9,8 +9,8 @@ object TeamCandidateScorer {
         candidateTeamSlot: Int,
         rosterPlayerNames: List<String?>,
     ): TeamCandidateScore {
-        require(candidateTeamSlot in TeamSlot.SLOT_NUMBERS) {
-            "Team slot number must be between 1 and 12."
+        require(candidateTeamSlot in TeamSlot.TOURNAMENT_SLOT_NUMBERS) {
+            "Team slot number must be between 1 and 24."
         }
 
         val selectedMatches = selectedContributingMatches(

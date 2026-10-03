@@ -75,8 +75,8 @@ object ResultLobbySlotMatcher {
         }
 
         input.lobbyCandidates.forEach { candidate ->
-            require(candidate.teamSlotNumber in TeamSlot.SLOT_NUMBERS) {
-                "Lobby team slot number must be between 1 and 12."
+            require(candidate.teamSlotNumber in TeamSlot.TOURNAMENT_SLOT_NUMBERS) {
+                "Lobby candidate team slot number must be between 1 and 24."
             }
             require(candidate.playerNames.size == PLAYER_SLOTS_PER_ROW) {
                 "Lobby team slot must contain exactly four player slots."

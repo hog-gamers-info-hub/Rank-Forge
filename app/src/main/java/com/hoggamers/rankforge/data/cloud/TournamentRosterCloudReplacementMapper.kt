@@ -1,8 +1,8 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.tournament.RosterNameNormalizer
-import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacement
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -14,6 +14,7 @@ data class TournamentRosterTeamSlotPayload(
     @SerialName("slot_number") val slotNumber: Int,
     @SerialName("team_name") val teamName: String,
     val status: String,
+    @SerialName("group") val group: String? = null,
 )
 
 @Serializable
@@ -42,23 +43,28 @@ object TournamentRosterCloudReplacementMapper {
     ): TournamentRosterCloudReplacementMappingResult {
         val tournamentUuid = snapshot.tournament.id.toUuidOrNull() ?: return TournamentRosterCloudReplacementMappingResult.Invalid
         if (ownerId.isBlank()) return TournamentRosterCloudReplacementMappingResult.Invalid
-        if (snapshot.slots.size != TeamSlot.SLOT_NUMBERS.count()) return TournamentRosterCloudReplacementMappingResult.Invalid
         if (snapshot.slots.any { it.tournamentId != snapshot.tournament.id }) return TournamentRosterCloudReplacementMappingResult.Invalid
 
+        val expectedSlots = snapshot.tournament.formatDerivedSlots()
+        val expectedSlotNumbers = expectedSlots.map { it.slotNumber }.toSet()
+        if (snapshot.slots.size != expectedSlots.size) return TournamentRosterCloudReplacementMappingResult.Invalid
         val slotsByNumber = snapshot.slots.groupBy { it.slotNumber }
-        if (slotsByNumber.keys != TeamSlot.SLOT_NUMBERS.toSet() || slotsByNumber.values.any { it.size != 1 }) {
+        if (slotsByNumber.keys != expectedSlotNumbers || slotsByNumber.values.any { it.size != 1 }) {
             return TournamentRosterCloudReplacementMappingResult.Invalid
         }
-        if (snapshot.rosters.keys.any { it !in TeamSlot.SLOT_NUMBERS }) return TournamentRosterCloudReplacementMappingResult.Invalid
+        if (snapshot.rosters.keys.any { it !in expectedSlotNumbers }) return TournamentRosterCloudReplacementMappingResult.Invalid
 
-        val slotPayloads = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+        val slotPayloads = expectedSlots.map { expectedSlot ->
+            val slotNumber = expectedSlot.slotNumber
             val slot = slotsByNumber.getValue(slotNumber).single()
+            if (slot.group != expectedSlot.group) return TournamentRosterCloudReplacementMappingResult.Invalid
             TournamentRosterTeamSlotPayload(
                 id = TournamentCloudIdentity.teamSlotId(tournamentUuid, slotNumber),
                 tournamentId = snapshot.tournament.id,
                 slotNumber = slotNumber,
                 teamName = slot.teamName,
                 status = "draft",
+                group = slot.group?.name,
             )
         }
 

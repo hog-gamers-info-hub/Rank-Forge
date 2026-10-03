@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(27, cursor.getInt(0))
+                assertEquals(28, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -121,6 +121,12 @@ class RankForgeDatabaseMigrationTest {
             openedDatabase.query(
                 "SELECT name FROM sqlite_master " +
                     "WHERE type = 'table' AND name = 'point_table_logo_placements'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            openedDatabase.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type = 'table' AND name = 'tournament_group_pairings'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
             }
@@ -501,6 +507,98 @@ class RankForgeDatabaseMigrationTest {
         }
         assertTrue(migrated.hasTable("point_table_logo_placements"))
         assertTrue(migrated.hasIndex("index_point_table_logo_placements_tournament_id"))
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion27AddsGroupRotationFoundationWithoutDroppingExistingData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 27).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order) " +
+                    "VALUES ('migration-27', 'Migration Cup', 'Stage One', '123', 'CONFIRMED', 9)",
+            )
+            database.execSQL(
+                "INSERT INTO team_slots (tournament_id, slot_number, team_name) " +
+                    "VALUES ('migration-27', 1, 'Team One')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('migration-match-27', 'migration-27', 1, '2026-09-02', 'Bermuda', 'DRAFT')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            28,
+            true,
+            RankForgeDatabase.MIGRATION_27_28,
+        )
+
+        migrated.query(
+            "SELECT format, group_count FROM tournaments WHERE id = 'migration-27'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("STANDARD", cursor.getString(0))
+            assertTrue(cursor.isNull(1))
+        }
+        migrated.query(
+            "SELECT team_name, group_name FROM team_slots " +
+                "WHERE tournament_id = 'migration-27' AND slot_number = 1",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Team One", cursor.getString(0))
+            assertTrue(cursor.isNull(1))
+        }
+        migrated.query("SELECT id FROM matches WHERE id = 'migration-match-27'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+        }
+        assertTrue(migrated.hasTable("tournament_group_pairings"))
+        assertTrue(migrated.hasIndex("index_tournament_group_pairings_tournament_id"))
+
+        migrated.execSQL(
+            "INSERT INTO tournament_group_pairings " +
+                "(tournament_id, pairing_key, first_group, second_group) " +
+                "VALUES ('migration-27', 'A:B', 'A', 'B')",
+        )
+        migrated.execSQL("DELETE FROM tournaments WHERE id = 'migration-27'")
+        migrated.query(
+            "SELECT tournament_id FROM tournament_group_pairings WHERE tournament_id = 'migration-27'",
+        ).use { cursor ->
+            assertTrue(cursor.count == 0)
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion28AddsNullableMatchPairingWithoutDroppingExistingData() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 28).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order, format) " +
+                    "VALUES ('migration-28', 'Migration Rotation', 'Stage One', '123', 'CONFIRMED', 10, 'STANDARD')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('migration-match-28', 'migration-28', 1, '2026-09-03', 'Bermuda', 'DRAFT')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            29,
+            true,
+            RankForgeDatabase.MIGRATION_28_29,
+        )
+        migrated.query(
+            "SELECT group_pairing_key FROM matches WHERE id = 'migration-match-28'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue(cursor.isNull(0))
+        }
+        assertTrue(migrated.hasIndex("index_matches_tournament_id_group_pairing_key"))
         migrated.close()
     }
 

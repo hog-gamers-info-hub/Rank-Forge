@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.data.local.MatchPlacementEntity
 import com.hoggamers.rankforge.data.local.MatchResultAggregate
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
+import com.hoggamers.rankforge.data.local.TournamentGroupPairingEntity
 import com.hoggamers.rankforge.data.local.TournamentEntity
 import com.hoggamers.rankforge.data.local.TournamentSummaryProjection
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -22,6 +23,9 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
@@ -41,15 +45,22 @@ internal fun Tournament.toEntity(
     creationOrder = creationOrder,
     lastUpdatedEpochMillis = lastUpdatedEpochMillis,
     ownerUserId = ownerUserId,
+    format = format.name,
+    groupCount = groupCount,
 )
 
-internal fun TournamentEntity.toDomain(): Tournament = Tournament(
+internal fun TournamentEntity.toDomain(
+    selectedGroupPairings: List<GroupPairing> = emptyList(),
+): Tournament = Tournament(
     id = id,
     name = name,
     stageName = stageName,
     organizerContactNumber = organizerContactNumber,
     status = TournamentStatus.valueOf(status),
     ownerUserId = ownerUserId,
+    format = TournamentFormat.valueOf(format),
+    groupCount = groupCount,
+    selectedGroupPairings = selectedGroupPairings,
 )
 
 internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = TournamentSummary(
@@ -60,6 +71,8 @@ internal fun TournamentSummaryProjection.toDomain(): TournamentSummary = Tournam
         organizerContactNumber = organizerContactNumber,
         status = TournamentStatus.valueOf(status),
         ownerUserId = ownerUserId,
+        format = TournamentFormat.valueOf(format),
+        groupCount = groupCount,
     ),
     totalTeams = totalTeams,
     totalMatches = totalMatches,
@@ -70,13 +83,26 @@ internal fun TeamSlot.toEntity(): TeamSlotEntity = TeamSlotEntity(
     tournamentId = tournamentId,
     slotNumber = slotNumber,
     teamName = teamName,
+    group = group?.name,
 )
 
 internal fun TeamSlotEntity.toDomain(): TeamSlot = TeamSlot(
     tournamentId = tournamentId,
     slotNumber = slotNumber,
     teamName = teamName,
+    group = group?.let(TournamentGroup::valueOf),
 )
+
+internal fun GroupPairing.toEntity(tournamentId: String): TournamentGroupPairingEntity =
+    TournamentGroupPairingEntity(
+        tournamentId = tournamentId,
+        pairingKey = canonicalKey,
+        firstGroup = firstGroup.name,
+        secondGroup = secondGroup.name,
+    )
+
+internal fun TournamentGroupPairingEntity.toDomain(): GroupPairing =
+    GroupPairing.fromCanonicalKey(pairingKey)
 
 internal fun RosterPlayer.toEntity(rosterPosition: Int): RosterPlayerEntity = RosterPlayerEntity(
     tournamentId = tournamentId,
@@ -109,6 +135,7 @@ internal fun Match.toEntity(): MatchEntity = MatchEntity(
     date = date.toString(),
     mapName = mapName,
     status = status.name,
+    groupPairingKey = groupPairing?.canonicalKey,
 )
 
 internal fun MatchEntity.toDomain(
@@ -127,6 +154,7 @@ internal fun MatchEntity.toDomain(
     kills = kills,
     correctionHistory = correctionHistory,
     participantResults = participantResults,
+    groupPairing = groupPairingKey?.let(GroupPairing::fromCanonicalKey),
 )
 
 internal sealed interface MatchResultAggregateMapping {

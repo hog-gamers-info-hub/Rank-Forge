@@ -10,6 +10,10 @@ import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import java.util.UUID
@@ -95,6 +99,46 @@ class FinalizedMatchCloudSyncMapperTest {
         })
         assertEquals(listOf("PARTICIPATED", "PARTICIPATED", "NO_SHOW"), result.payloads.matchResults.map { it.participationStatus })
         assertEquals(null, result.payloads.matchResults.last().placement)
+    }
+
+    @Test
+    fun mapsGroupRotationFinalizedPairingAndRestingGroupsAreAbsent() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val groupTournament = snapshot().tournament.copy(
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 4,
+            selectedGroupPairings = listOf(pairing),
+        )
+        val eligibleSlots = (1..6).toList() + (13..18).toList()
+        val groupMatch = Match(
+            id = "finalized-group-match",
+            tournamentId = TOURNAMENT_ID,
+            matchNumber = 1,
+            date = LocalDate.of(2026, 7, 24),
+            mapName = "Bermuda",
+            status = MatchStatus.FINALIZED,
+            groupPairing = pairing,
+            placements = eligibleSlots.mapIndexed { index, slot -> MatchPlacement(slot, index + 1) },
+            kills = eligibleSlots.map { slot -> MatchKill(slot, slot % 3) },
+        )
+
+        val result = FinalizedMatchCloudSyncMapper.map(
+            FinalizedMatchCloudSyncSnapshot(
+                tournament = groupTournament,
+                teamSlots = groupTournament.formatDerivedSlots()
+                    .map { slot -> slot.copy(teamName = "Team ${slot.slotNumber}") },
+                matches = listOf(groupMatch),
+            ),
+        ) as FinalizedMatchCloudSyncMappingResult.Success
+
+        assertEquals("A:C", result.payloads.matches.single().groupPairingKey)
+        assertEquals(12, result.payloads.matchResults.size)
+        assertTrue(result.payloads.matchResults.any {
+            it.teamSlotId == teamSlotId(13)
+        })
+        assertTrue(result.payloads.matchResults.none {
+            it.teamSlotId == teamSlotId(7) || it.teamSlotId == teamSlotId(19)
+        })
     }
 
     @Test

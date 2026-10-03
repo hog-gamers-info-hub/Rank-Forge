@@ -38,7 +38,10 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCas
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.PreservedMatchOcrEvidence
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -267,7 +270,8 @@ class MatchOcrReviewViewModel @Inject constructor(
         _uiState.value = ready.copy(correctionDraft = seededDraft)
 
         cacheLoadJob = viewModelScope.launch {
-            val teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot
+            val teamContext = loadTeamContext(tournamentId, matchId)
+            val teamNamesBySlot = teamContext.teamNamesBySlot
             if (loadedMatchKey != manualKey) return@launch
             _uiState.update { state ->
                 if (
@@ -275,7 +279,15 @@ class MatchOcrReviewViewModel @Inject constructor(
                     state.tournamentId == tournamentId &&
                     state.matchId == matchId
                 ) {
-                    state.copy(teamNamesBySlot = teamNamesBySlot)
+                    state.copy(
+                        teamNamesBySlot = teamNamesBySlot,
+                        eligibleTeamSlots = teamContext.eligibleTeamSlots,
+                        correctionDraft = state.correctionDraft?.let { draft ->
+                            MatchOcrReviewCorrectionDraftReducer.validate(
+                                draft.copy(eligibleTeamSlots = teamContext.eligibleTeamSlots),
+                            )
+                        },
+                    )
                 } else {
                     state
                 }
@@ -333,7 +345,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                 resultOcr.await() to lobbyOcr.await()
             }
             val preview = mapPreviewResults(roleResults)
-            val teamContext = loadTeamContext(tournamentId)
+            val teamContext = loadTeamContext(tournamentId, matchId)
             val slotNumberResult = (lobbyOutcome as? SlotNumberOnlyLobbyOutcome)?.result
             val playerLobbyResult = (lobbyOutcome as? PlayerLobbyOutcome)?.result
             val lobbyResultForMatching = playerLobbyResult
@@ -343,6 +355,9 @@ class MatchOcrReviewViewModel @Inject constructor(
                     preview = preview,
                     resultRows = roleResults.processedResultRows(),
                     lobbyOcrResult = lobbyResult,
+                    eligibleTeamSlots = teamContext.eligibleTeamSlots,
+                    permanentTeamCandidates = teamContext.permanentTeamCandidates,
+                    allRosterTeamCandidates = teamContext.allRosterTeamCandidates,
                 )
             }
             val lobbyPlayers = playerLobbyResult
@@ -369,6 +384,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         teamNamesBySlot = teamContext.teamNamesBySlot,
                         lobbyPlayers = lobbyPlayers,
                         phase1LobbySlotNumberOcr = slotNumberResult,
+                        eligibleTeamSlots = teamContext.eligibleTeamSlots,
                     )
                 } else {
                     null
@@ -381,6 +397,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         lobbyPlayers = lobbyPlayers,
                         phase1LobbySlotNumberOcr = slotNumberResult,
                         calculationOrigin = MatchCalculatedEvidenceOrigin.AUTOMATIC,
+                        eligibleTeamSlots = teamContext.eligibleTeamSlots,
                     )
                 } else {
                     null
@@ -391,6 +408,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         matchId = matchId,
                         matchResultOcrPreview = preview,
                         teamNamesBySlot = teamContext.teamNamesBySlot,
+                        eligibleTeamSlots = teamContext.eligibleTeamSlots,
                         lobbyPlayers = lobbyPlayers,
                     )
                     is MatchOcrReviewUiState.Empty -> {
@@ -473,17 +491,21 @@ class MatchOcrReviewViewModel @Inject constructor(
                 _cacheAvailability.value = MatchOcrCacheAvailability.STALE_OR_INCOMPLETE
                 return@launch
             }
+            val teamContext = loadTeamContext(tournamentId, matchId)
             val hasCompleteCombinedCache = availability == MatchOcrCacheAvailability.READY
             val matchedRows = if (hasCompleteCombinedCache) {
                 MatchResultOcrPreviewTeamSuggestionMapper.map(
                     preview = preview,
                     resultRows = cached.resultRoleResults.processedResultRows(),
                     lobbyOcrResult = cached.lobbyResult,
+                    eligibleTeamSlots = teamContext.eligibleTeamSlots,
+                    permanentTeamCandidates = teamContext.permanentTeamCandidates,
+                    allRosterTeamCandidates = teamContext.allRosterTeamCandidates,
                 )
             } else {
                 null
             }
-            val teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot
+            val teamNamesBySlot = teamContext.teamNamesBySlot
             val lobbyPlayers = if (hasCompleteCombinedCache) {
                 cached.lobbyResult.toUiState()
                     .takeIf {
@@ -509,6 +531,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                                 reviewRows = matchedRows,
                                 teamNamesBySlot = teamNamesBySlot,
                                 lobbyPlayers = lobbyPlayers,
+                                eligibleTeamSlots = teamContext.eligibleTeamSlots,
                             ) ?: state
                         } else {
                             state
@@ -524,6 +547,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         reviewRows = matchedRows,
                         teamNamesBySlot = teamNamesBySlot,
                         lobbyPlayers = lobbyPlayers,
+                        eligibleTeamSlots = teamContext.eligibleTeamSlots,
                     ) ?: state
                 }
             }
@@ -543,10 +567,12 @@ class MatchOcrReviewViewModel @Inject constructor(
         previewJob?.cancel()
         _cacheAvailability.value = MatchOcrCacheAvailability.NOT_AVAILABLE
         cacheLoadJob = viewModelScope.launch {
+            val teamContext = loadTeamContext(tournamentId, matchId)
             _uiState.value = evidence.toRestoredOcrReviewUiState(
                 tournamentId = tournamentId,
                 matchId = matchId,
-                teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot,
+                teamNamesBySlot = teamContext.teamNamesBySlot,
+                eligibleTeamSlots = teamContext.eligibleTeamSlots,
             )
         }
     }
@@ -575,6 +601,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         previewJob?.cancel()
         _uiState.value = MatchOcrReviewUiState.Loading
         viewModelScope.launch {
+            val teamContext = loadTeamContext(tournamentId, matchId)
             val evidence = try {
                 tournamentRepository.readPreservedMatchOcrEvidenceByOwner(
                     tournamentId,
@@ -594,7 +621,8 @@ class MatchOcrReviewViewModel @Inject constructor(
                 return@launch
             }
             _uiState.value = evidence.toHistoricalUiState(
-                teamNamesBySlot = loadTeamContext(tournamentId).teamNamesBySlot,
+                teamNamesBySlot = teamContext.teamNamesBySlot,
+                eligibleTeamSlots = teamContext.eligibleTeamSlots,
             )
         }
     }
@@ -980,11 +1008,13 @@ class MatchOcrReviewViewModel @Inject constructor(
         teamNamesBySlot: Map<Int, String>,
         lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
         phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
+        eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
     ): MatchOcrReviewUiState.Ready? {
         val rows = reviewRows ?: MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
         val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
             rows = rows,
             assignmentRequired = true,
+            eligibleTeamSlots = eligibleTeamSlots,
         )
         val ready = MatchOcrReviewUiState.Ready(
             tournamentId = tournamentId,
@@ -1020,6 +1050,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             correctionDraft = correctionDraft,
             matchResultOcrPreview = preview,
             teamNamesBySlot = teamNamesBySlot,
+            eligibleTeamSlots = eligibleTeamSlots,
             lobbyPlayers = lobbyPlayers,
             phase1LobbySlotNumberOcr = phase1LobbySlotNumberOcr,
         )
@@ -1034,11 +1065,13 @@ class MatchOcrReviewViewModel @Inject constructor(
         lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
         phase1LobbySlotNumberOcr: MatchLobbySlotNumberOcrResult? = null,
         calculationOrigin: MatchCalculatedEvidenceOrigin,
+        eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
     ): MatchOcrReviewUiState.Ready {
         val rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows()
         val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
             rows = rows,
             assignmentRequired = true,
+            eligibleTeamSlots = eligibleTeamSlots,
         )
         return MatchOcrReviewUiState.Ready(
             tournamentId = tournamentId,
@@ -1055,15 +1088,57 @@ class MatchOcrReviewViewModel @Inject constructor(
             correctionDraft = correctionDraft,
             matchResultOcrPreview = preview,
             teamNamesBySlot = teamNamesBySlot,
+            eligibleTeamSlots = eligibleTeamSlots,
             lobbyPlayers = lobbyPlayers,
             phase1LobbySlotNumberOcr = phase1LobbySlotNumberOcr,
             calculatedEvidenceOrigin = calculationOrigin,
         )
     }
 
-    private suspend fun loadTeamContext(tournamentId: String): OcrReviewTeamContext = try {
+    private suspend fun loadTeamContext(tournamentId: String, matchId: String): OcrReviewTeamContext = try {
         val persistedSlots = observeTournamentSlots(tournamentId).first()
-        OcrReviewTeamContext(persistedSlots.associate { it.slotNumber to it.teamName })
+        val match = tournamentRepository.observeMatchById(matchId).first()
+        val tournament = tournamentRepository.observeById(tournamentId).first()
+        val isGroupRotation = tournament?.format == TournamentFormat.GROUP_ROTATION
+        val resolvedEligibleTeamSlots = if (match != null && tournament != null) {
+            runCatching {
+                MatchEligibleTeamSlotResolver().resolve(tournament, persistedSlots, match)
+            }.getOrNull()
+        } else {
+            null
+        }
+        val eligibleTeamSlots = resolvedEligibleTeamSlots ?: if (isGroupRotation) {
+            emptySet()
+        } else {
+            TeamSlot.SLOT_NUMBERS.toSet()
+        }
+        val rosterBySlot = runCatching { observeRoster(tournamentId).first() }.getOrElse { emptyMap() }
+        val allRosterTeamCandidates = rosterBySlot
+            .toSortedMap()
+            .map { (slotNumber, players) ->
+                TeamCandidateRosterInput(
+                    teamSlot = slotNumber,
+                    rosterPlayerNames = players.map { player -> player.displayName },
+                )
+            }
+        val permanentTeamCandidates = if (
+            tournament?.format == TournamentFormat.GROUP_ROTATION
+        ) {
+            eligibleTeamSlots.sorted().map { slotNumber ->
+                allRosterTeamCandidates.firstOrNull { candidate -> candidate.teamSlot == slotNumber }
+                    ?: TeamCandidateRosterInput(slotNumber, emptyList())
+            }
+        } else {
+            null
+        }
+        OcrReviewTeamContext(
+            teamNamesBySlot = persistedSlots
+                .filter { it.slotNumber in eligibleTeamSlots }
+                .associate { it.slotNumber to it.teamName },
+            eligibleTeamSlots = eligibleTeamSlots,
+            permanentTeamCandidates = permanentTeamCandidates,
+            allRosterTeamCandidates = allRosterTeamCandidates,
+        )
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {
@@ -1072,16 +1147,21 @@ class MatchOcrReviewViewModel @Inject constructor(
 
     private data class OcrReviewTeamContext(
         val teamNamesBySlot: Map<Int, String>,
+        val eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
+        val permanentTeamCandidates: List<TeamCandidateRosterInput>? = null,
+        val allRosterTeamCandidates: List<TeamCandidateRosterInput> = emptyList(),
     )
 
     private fun PreservedMatchOcrEvidence.toHistoricalUiState(
         teamNamesBySlot: Map<Int, String>,
+        eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
     ): MatchOcrReviewUiState {
         if (rows.isEmpty()) {
             return MatchOcrReviewUiState.Empty(
                 tournamentId = tournamentId,
                 matchId = matchId,
                 teamNamesBySlot = teamNamesBySlot,
+                eligibleTeamSlots = eligibleTeamSlots,
             )
         }
 
@@ -1126,6 +1206,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
             rows = reviewRows,
             assignmentRequired = true,
+            eligibleTeamSlots = eligibleTeamSlots,
         )
         val finalizedDraft = MatchOcrReviewCorrectionDraftReducer.validate(
             initialDraft.copy(
@@ -1163,6 +1244,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
             matchResultOcrPreview = MatchResultOcrPreviewUiState.NotRequested,
             teamNamesBySlot = teamNamesBySlot,
+            eligibleTeamSlots = eligibleTeamSlots,
         )
     }
 }

@@ -1,6 +1,9 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -90,6 +93,45 @@ class TournamentCloudRestorationMapperTest {
             result.value.players.sortedBy { it.rosterPosition }.map { it.displayName },
         )
         assertEquals(listOf(1, 2), result.value.players.map { it.rosterPosition })
+    }
+
+    @Test
+    fun restoresThreeGroupConfigurationAndGroupMembership() {
+        val base = payloads()
+        val result = TournamentCloudRestorationMapper.mapSnapshot(
+            base.copy(
+                tournament = base.tournament.copy(
+                    format = "group_rotation",
+                    groupCount = 3,
+                    selectedGroupPairings = defaultGroupPairings(3).map { pairing ->
+                        GroupPairingUploadPayload(
+                            firstGroup = pairing.firstGroup.name,
+                            secondGroup = pairing.secondGroup.name,
+                            pairingKey = pairing.canonicalKey,
+                        )
+                    },
+                ),
+                teamSlots = listOf(
+                    base.teamSlots.single().copy(group = "A"),
+                    TeamSlotUploadPayload(
+                        id = TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), 13),
+                        tournamentId = TOURNAMENT_ID,
+                        slotNumber = 13,
+                        teamName = "Charlie",
+                        status = "draft",
+                        group = "C",
+                    ),
+                ),
+                players = emptyList(),
+            ),
+        ) as TournamentCloudRestorationMappingResult.Success
+
+        assertEquals(TournamentFormat.GROUP_ROTATION, result.value.tournament.format)
+        assertEquals(3, result.value.tournament.groupCount)
+        assertEquals(3, result.value.tournament.selectedGroupPairings.size)
+        assertEquals(18, result.value.slots.size)
+        assertEquals("Charlie", result.value.slots.single { it.slotNumber == 13 }.teamName)
+        assertEquals(TournamentGroup.C, result.value.slots.single { it.slotNumber == 13 }.group)
     }
 
     private fun payloads() = TournamentCloudRestorationPayloads(

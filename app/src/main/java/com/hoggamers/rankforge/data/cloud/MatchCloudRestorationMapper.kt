@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import java.time.LocalDate
@@ -36,6 +37,10 @@ object MatchCloudRestorationMapper {
             if (payload.id.toUuidOrNull() == null || payload.tournamentId != payloads.tournamentId ||
                 payload.matchNumber !in 1..MAX_MATCHES_PER_TOURNAMENT) return MatchCloudRestorationMappingResult.Invalid
             val date = runCatching { LocalDate.parse(payload.matchDate) }.getOrNull() ?: return MatchCloudRestorationMappingResult.Invalid
+            val groupPairing = payload.groupPairingKey?.let { key ->
+                runCatching { GroupPairing.fromCanonicalKey(key) }.getOrNull()
+                    ?: return MatchCloudRestorationMappingResult.Invalid
+            }
             val rows = payloads.results.filter { it.matchId == payload.id }
             if (rows.map { it.id }.distinct().size != rows.size ||
                 rows.map { it.teamSlotId }.distinct().size != rows.size || rows.any { row ->
@@ -74,6 +79,7 @@ object MatchCloudRestorationMapper {
                     .filter { it.placement != null }
                     .map { MatchKill(it.teamSlotNumber, it.kills) }).sortedBy { it.teamSlotNumber },
                 participantResults = participantResults.sortedBy { it.teamSlotNumber },
+                groupPairing = groupPairing,
             )
         }
         if (payloads.results.any { it.matchId !in payloads.matches.map { match -> match.id }.toSet() }) return MatchCloudRestorationMappingResult.Invalid
@@ -82,7 +88,7 @@ object MatchCloudRestorationMapper {
         return MatchCloudRestorationMappingResult.Success(MatchCloudRestorationSnapshot(payloads.tournamentId, matches.sortedBy { it.matchNumber }, cloudRevision))
     }
 
-    private fun teamSlotNumber(tournamentId: UUID, teamSlotId: String): Int? = TeamSlot.SLOT_NUMBERS.firstOrNull {
+    private fun teamSlotNumber(tournamentId: UUID, teamSlotId: String): Int? = TeamSlot.TOURNAMENT_SLOT_NUMBERS.firstOrNull {
         TournamentCloudIdentity.teamSlotId(tournamentId, it) == teamSlotId
     }
     private fun String.toUuidOrNull(): UUID? = runCatching { UUID.fromString(this) }.getOrNull()

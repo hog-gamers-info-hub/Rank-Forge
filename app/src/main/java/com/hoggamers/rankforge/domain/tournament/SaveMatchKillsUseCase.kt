@@ -44,6 +44,17 @@ class SaveMatchKillsUseCase(
         if (match.status != MatchStatus.DRAFT) {
             return SaveMatchKillsResult.Invalid(globalError = KillGlobalError.MATCH_NOT_DRAFT)
         }
+        val tournament = repository.observeByIdAndOwner(match.tournamentId, ownerUserId).first()
+            ?: return SaveMatchKillsResult.Invalid(globalError = KillGlobalError.MATCH_NOT_FOUND)
+        val eligibleTeamSlots = runCatching {
+            MatchEligibleTeamSlotResolver().resolve(
+                tournament,
+                repository.observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId).first(),
+                match,
+            )
+        }.getOrElse {
+            return SaveMatchKillsResult.Invalid(globalError = KillGlobalError.INVALID_DATA)
+        }
 
         val errors = mutableMapOf<Int, KillValidationError>()
         val parsedKills = mutableMapOf<Int, Int>()
@@ -52,7 +63,7 @@ class SaveMatchKillsUseCase(
             if (trimmedValue.isBlank()) return@forEach
             val kills = trimmedValue.toIntOrNull()
             if (
-                teamSlotNumber !in TeamSlot.SLOT_NUMBERS ||
+                teamSlotNumber !in eligibleTeamSlots ||
                 trimmedValue.any { it !in '0'..'9' } ||
                 kills == null ||
                 kills < 0

@@ -31,6 +31,9 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentField
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
@@ -87,6 +90,50 @@ class TournamentCreationViewModelTest {
         assertEquals("Summer Cup", viewModel.uiState.value.tournamentName)
         assertEquals("Alex", viewModel.uiState.value.stageName)
         assertEquals("123", viewModel.uiState.value.organizerContactNumber)
+    }
+
+    @Test
+    fun enablingGroupRotationUsesThreeGroupDefaults() {
+        viewModel.onGroupRotationChanged(true)
+
+        assertEquals(TournamentFormat.GROUP_ROTATION, viewModel.uiState.value.format)
+        assertEquals(3, viewModel.uiState.value.groupCount)
+        assertEquals(defaultGroupPairings(3), viewModel.uiState.value.selectedGroupPairings)
+        assertTrue(viewModel.uiState.value.isDirty)
+    }
+
+    @Test
+    fun switchingGroupCountResetsPairingsAndRemovesGroupDWhenReturningToThree() {
+        viewModel.onGroupRotationChanged(true)
+        viewModel.onGroupCountChanged(4)
+
+        assertEquals(4, viewModel.uiState.value.groupCount)
+        assertEquals(defaultGroupPairings(4), viewModel.uiState.value.selectedGroupPairings)
+        assertTrue(viewModel.uiState.value.selectedGroupPairings.any { it.firstGroup == TournamentGroup.A && it.secondGroup == TournamentGroup.D })
+
+        viewModel.onGroupCountChanged(3)
+
+        assertEquals(3, viewModel.uiState.value.groupCount)
+        assertEquals(defaultGroupPairings(3), viewModel.uiState.value.selectedGroupPairings)
+        assertTrue(viewModel.uiState.value.selectedGroupPairings.none { TournamentGroup.D in listOf(it.firstGroup, it.secondGroup) })
+    }
+
+    @Test
+    fun submittingWithNoGroupPairingsShowsConfigurationValidation() = runTest {
+        viewModel.onTournamentNameChanged("Group Cup")
+        viewModel.onGroupRotationChanged(true)
+        viewModel.uiState.value.selectedGroupPairings.forEach { pairing ->
+            viewModel.onGroupPairingToggled(pairing)
+        }
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(
+            com.hoggamers.rankforge.domain.tournament.TournamentValidationError.INVALID_GROUP_CONFIGURATION,
+            viewModel.uiState.value.validationErrors[TournamentField.GROUP_CONFIGURATION],
+        )
+        assertTrue(repository.records.isEmpty())
     }
 
     @Test

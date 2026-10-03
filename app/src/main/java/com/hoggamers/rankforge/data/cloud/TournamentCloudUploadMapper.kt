@@ -1,8 +1,9 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.tournament.RosterNameNormalizer
-import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
+import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
+import com.hoggamers.rankforge.domain.tournament.toCloudValue
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.SerialName
@@ -17,6 +18,16 @@ data class TournamentUploadPayload(
     @SerialName("organizer_contact") val organizerContact: String,
     val status: String,
     val revision: Int? = null,
+    val format: String = "standard",
+    @SerialName("group_count") val groupCount: Int? = null,
+    @SerialName("selected_group_pairings") val selectedGroupPairings: List<GroupPairingUploadPayload> = emptyList(),
+)
+
+@Serializable
+data class GroupPairingUploadPayload(
+    @SerialName("first_group") val firstGroup: String,
+    @SerialName("second_group") val secondGroup: String,
+    @SerialName("pairing_key") val pairingKey: String,
 )
 
 @Serializable
@@ -26,6 +37,7 @@ data class TeamSlotUploadPayload(
     @SerialName("slot_number") val slotNumber: Int,
     @SerialName("team_name") val teamName: String,
     val status: String,
+    @SerialName("group") val group: String? = null,
 )
 
 @Serializable
@@ -60,19 +72,28 @@ object TournamentCloudUploadMapper {
         if (snapshot.slots.any { it.tournamentId != snapshot.tournament.id }) {
             return TournamentCloudUploadMappingResult.Invalid
         }
-        if (snapshot.rosters.keys.any { it !in TeamSlot.SLOT_NUMBERS }) {
+        val expectedSlots = snapshot.tournament.formatDerivedSlots()
+        val expectedSlotNumbers = expectedSlots.map { it.slotNumber }.toSet()
+        if (snapshot.slots.any { it.slotNumber !in expectedSlotNumbers } ||
+            snapshot.rosters.keys.any { it !in expectedSlotNumbers }
+        ) {
             return TournamentCloudUploadMappingResult.Invalid
         }
 
-        val slotPayloads = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+        val slotPayloads = expectedSlots.map { expectedSlot ->
+            val slotNumber = expectedSlot.slotNumber
             val localSlot = slotsByNumber[slotNumber]?.singleOrNull()
-                ?: TeamSlot.create(snapshot.tournament.id, slotNumber)
+                ?: expectedSlot
+            if (localSlot.group != expectedSlot.group) {
+                return TournamentCloudUploadMappingResult.Invalid
+            }
             TeamSlotUploadPayload(
                 id = TournamentCloudIdentity.teamSlotId(tournamentUuid, slotNumber),
                 tournamentId = snapshot.tournament.id,
                 slotNumber = slotNumber,
                 teamName = localSlot.teamName,
                 status = "draft",
+                group = localSlot.group?.name,
             )
         }
 
@@ -102,6 +123,15 @@ object TournamentCloudUploadMapper {
                     stageName = snapshot.tournament.stageName,
                     organizerContact = snapshot.tournament.organizerContactNumber,
                     status = "draft",
+                    format = snapshot.tournament.format.toCloudValue(),
+                    groupCount = snapshot.tournament.groupCount,
+                    selectedGroupPairings = snapshot.tournament.selectedGroupPairings.map { pairing ->
+                        GroupPairingUploadPayload(
+                            firstGroup = pairing.firstGroup.name,
+                            secondGroup = pairing.secondGroup.name,
+                            pairingKey = pairing.canonicalKey,
+                        )
+                    },
                 ),
                 teamSlots = slotPayloads,
                 players = playerPayloads,
