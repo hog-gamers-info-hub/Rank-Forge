@@ -89,6 +89,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import kotlinx.coroutines.launch
 
 private val detailsDateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
@@ -1153,7 +1154,11 @@ private fun TournamentDetailsContent(
                 confirmModifier = Modifier.testTag(TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG),
             )
         }
-        if (showLegacyControls && tournament.canPrepareStandingsCsvExport) {
+        if (
+            showLegacyControls &&
+            tournament.format == TournamentFormat.STANDARD &&
+            tournament.canPrepareStandingsCsvExport
+        ) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             Button(
                 onClick = { onPrepareStandingsCsvExport(tournament.id) },

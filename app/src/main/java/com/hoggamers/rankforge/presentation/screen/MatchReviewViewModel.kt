@@ -77,6 +77,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
@@ -293,6 +294,7 @@ class MatchReviewViewModel @Inject constructor(
             )
         }
         loadJob = viewModelScope.launch {
+            val tournamentFormat = getTournamentById(tournamentId).first()?.format
             val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
             val baseInputs = combine(
                 observeMatches(tournamentId),
@@ -326,6 +328,7 @@ class MatchReviewViewModel @Inject constructor(
                         isLoading = false,
                         isAvailable = false,
                         tournamentId = tournamentId,
+                        tournamentFormat = tournamentFormat,
                         matchId = matchId,
                     )
                 } else {
@@ -373,6 +376,7 @@ class MatchReviewViewModel @Inject constructor(
                         isLoading = false,
                         isAvailable = true,
                         tournamentId = tournamentId,
+                        tournamentFormat = tournamentFormat,
                         matchId = matchId,
                         activeTeamCount = slots.analyzeTeamSlotParticipation().activeCount,
                         finalizedParticipantSlotNumbers = finalizedParticipantSlotNumbers,
@@ -1131,6 +1135,10 @@ class MatchReviewViewModel @Inject constructor(
                         ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
                     validateMatchForReview(currentMatch).errorsByTeamSlot.isNotEmpty() ->
                         ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
+                    tournament.format == TournamentFormat.GROUP_ROTATION &&
+                        scope == ResultDownloadScope.WHOLE_TOURNAMENT &&
+                        format != ResultExportFileFormat.PNG ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_CONTEXT)
                     else -> {
                         val inputSlots = observeTournamentSlots(tournamentId).first()
                         val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
@@ -1252,6 +1260,9 @@ class MatchReviewViewModel @Inject constructor(
                         ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
                     validateMatchForReview(currentMatch).errorsByTeamSlot.isNotEmpty() ->
                         ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_MATCH)
+                    tournament.format == TournamentFormat.GROUP_ROTATION &&
+                        scope == ResultDownloadScope.WHOLE_TOURNAMENT ->
+                        ResultDownloadExecutionResult.Failure(ResultDownloadFailure.INVALID_CONTEXT)
                     else -> {
                         val inputSlots = observeTournamentSlots(tournamentId).first()
                         val rosterPlayers = observeRoster(tournamentId).first().values.flatten()

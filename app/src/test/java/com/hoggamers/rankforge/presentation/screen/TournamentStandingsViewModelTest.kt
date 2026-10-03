@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.data.cloud.TournamentStandingsSharePublicationRes
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareRemoteDataSource
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
@@ -13,7 +14,10 @@ import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -85,7 +89,7 @@ class TournamentStandingsViewModelTest {
     }
 
     @Test
-    fun tenTeamFinalizedMatchProducesTenRowsWithoutInactivePlaceholders() = runTest {
+    fun standardStandingsIncludeAllTwelvePersistedSlotsWhenOnlyTenParticipate() = runTest {
         repository.create(tournament())
         repository.saveTeamNames(
             "tournament-id",
@@ -104,13 +108,47 @@ class TournamentStandingsViewModelTest {
         advanceUntilIdle()
 
         val rows = viewModel.uiState.value.rows
-        assertEquals(10, rows.size)
-        assertEquals((1..10).toSet(), rows.map { it.teamSlotNumber }.toSet())
-        assertTrue(rows.none { it.teamSlotNumber > 10 })
+        assertEquals(12, rows.size)
+        assertEquals((1..12).toSet(), rows.map { it.teamSlotNumber }.toSet())
+        assertEquals(0, rows.first { it.teamSlotNumber == 11 }.matchesIncluded)
+        assertEquals(0, rows.first { it.teamSlotNumber == 12 }.matchesIncluded)
         assertEquals(14, rows.first { it.teamSlotNumber == 2 }.totalPoints)
         assertEquals("Team 2", rows.first().teamName)
         assertEquals("Team 1", rows.first { it.teamSlotNumber == 1 }.teamName)
-        assertTrue(rows.all { it.matchesIncluded == 1 })
+        assertTrue(rows.filter { it.teamSlotNumber <= 10 }.all { it.matchesIncluded == 1 })
+    }
+
+    @Test
+    fun groupRotationStandingsIncludeAllEighteenPermanentSlots() = runTest {
+        repository.create(groupTournament(3))
+        repository.saveTeamNames(
+            "tournament-id",
+            (1..18).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        repository.createDraftMatch(
+            match(
+                id = "group-finalized",
+                matchNumber = 1,
+                groupPairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+            ),
+        )
+        repository.finalizeDraftMatch(
+            matchId = "group-finalized",
+            placements = (listOf(1, 2, 3, 4, 5, 6) + (13..18).toList())
+                .mapIndexed { index, slot -> MatchPlacement(slot, index + 1) },
+            kills = (listOf(1, 2, 3, 4, 5, 6) + (13..18).toList())
+                .map { slot -> MatchKill(slot, 0) },
+        )
+
+        val viewModel = standingsViewModel()
+        viewModel.load("tournament-id")
+        advanceUntilIdle()
+
+        val rows = viewModel.uiState.value.rows
+        assertEquals(18, rows.size)
+        assertEquals((1..18).toSet(), rows.map { it.teamSlotNumber }.toSet())
+        assertEquals(0, rows.first { it.teamSlotNumber == 12 }.matchesIncluded)
+        assertEquals(0, rows.first { it.teamSlotNumber == 12 }.totalPoints)
     }
 
     @Test
@@ -392,13 +430,29 @@ class TournamentStandingsViewModelTest {
         status = TournamentStatus.CONFIRMED,
     )
 
-    private fun match(id: String, matchNumber: Int) = Match(
+    private fun match(
+        id: String,
+        matchNumber: Int,
+        groupPairing: GroupPairing? = null,
+    ) = Match(
         id = id,
         tournamentId = "tournament-id",
         matchNumber = matchNumber,
         date = LocalDate.of(2026, 7, 24),
         mapName = "Bermuda",
         status = MatchStatus.DRAFT,
+        groupPairing = groupPairing,
+    )
+
+    private fun groupTournament(groupCount: Int) = Tournament(
+        id = "tournament-id",
+        name = "Rotation Cup",
+        stageName = "Organizer",
+        organizerContactNumber = "123",
+        status = TournamentStatus.CONFIRMED,
+        format = TournamentFormat.GROUP_ROTATION,
+        groupCount = groupCount,
+        selectedGroupPairings = defaultGroupPairings(groupCount),
     )
 }
 

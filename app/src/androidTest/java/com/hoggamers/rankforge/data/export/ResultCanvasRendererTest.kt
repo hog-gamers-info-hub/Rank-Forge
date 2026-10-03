@@ -53,6 +53,35 @@ class ResultCanvasRendererTest {
     }
 
     @Test
+    fun overallImageRendererSupportsOnlyFullThreeAndFourGroupLayouts() {
+        listOf(
+            18 to 755f,
+            24 to 935f,
+        ).forEach { (rowCount, expectedFooterBaseline) ->
+            val canvas = RecordingCanvas()
+            try {
+                assertEquals(
+                    ResultCanvasRenderResult.Success,
+                    renderer.renderForOverallImage(canvas, tournamentModel(rowCount = rowCount), null),
+                )
+                assertEquals(expectedFooterBaseline, canvas.texts.takeLast(2).first().baseline, 0f)
+            } finally {
+                canvas.recycle()
+            }
+        }
+        val unsupported = RecordingCanvas()
+        try {
+            assertEquals(
+                ResultRenderFailure.INVALID_ROW_COUNT,
+                (renderer.renderForOverallImage(unsupported, tournamentModel(rowCount = 13), null)
+                    as ResultCanvasRenderResult.Failure).reason,
+            )
+        } finally {
+            unsupported.recycle()
+        }
+    }
+
+    @Test
     fun explicitDisplayDateReplacesTournamentAndMatchDatesForBothScopes() {
         val displayDate = LocalDate.of(2026, 9, 28)
         val matchCanvas = RecordingCanvas()
@@ -223,14 +252,15 @@ class ResultCanvasRendererTest {
 
     private fun tournamentModel(
         stageName: String = "HOG Gamers",
+        rowCount: Int = 12,
     ) = TournamentResultExportModel(
         tournamentName = "Champions Cup 2026",
         stageName = stageName,
         finalizedMatchCount = 2,
-        rows = rows(),
+        rows = rows(rowCount),
     )
 
-    private fun rows(): List<ResultExportRow> = (1..12).map { rank ->
+    private fun rows(rowCount: Int = 12): List<ResultExportRow> = (1..rowCount).map { rank ->
         ResultExportRow(
             rank = rank,
             teamName = "Team $rank",

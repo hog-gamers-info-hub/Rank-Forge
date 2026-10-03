@@ -17,6 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ACCOUNT_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_ALL_TOURNAMENTS_ITEM_TEST_TAG
 import com.hoggamers.rankforge.presentation.component.LOGGED_IN_HOME_BACK_ITEM_TEST_TAG
@@ -890,6 +891,38 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun groupRotationDetailsHidesLegacyStandingsCsvAction() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            format = TournamentFormat.GROUP_ROTATION,
+                            status = TournamentStatus.CONFIRMED,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    showLegacyControls = true,
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(TOURNAMENT_STANDINGS_CSV_EXPORT_ACTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
     fun detailsNotFoundStateRendersSafeMessageAndAction() {
         var backCount = 0
 
@@ -945,12 +978,14 @@ class TournamentListAndDetailsScreenTest {
         },
         matches: List<MatchUiState> = emptyList(),
         status: TournamentStatus = TournamentStatus.DRAFT,
+        format: TournamentFormat = TournamentFormat.STANDARD,
     ) = TournamentDetailsItemUiState(
         id = "stable-id",
         name = "Summer Cup",
         stageName = "Alex",
         organizerContactNumber = "123",
         status = status,
+        format = format,
         slots = slots,
         matches = matches,
     )

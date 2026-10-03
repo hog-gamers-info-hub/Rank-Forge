@@ -214,19 +214,12 @@ class DefaultResultDownloadCoordinator @Inject constructor(
             }
         }
         is ResultDownloadRequest.WholeTournament -> {
-            when (val buildResult = modelBuilder.buildTournament(request.input)) {
+            if (format == ResultExportFileFormat.PNG) {
+                renderTournamentImage(request.input, displayDate, logoRenderData)
+            } else when (val buildResult = modelBuilder.buildTournament(request.input)) {
                 is TournamentResultExportModelBuildResult.Success -> {
                     val model = buildResult.model
-                    val bytes = when (format) {
-                        ResultExportFileFormat.PDF ->
-                            (pdfRenderer.render(model) as? ResultPdfRenderResult.Success)?.bytes
-                        ResultExportFileFormat.PNG ->
-                            (pngRenderer.render(
-                                model,
-                                displayDate,
-                                logoRenderData,
-                            ) as? ResultPngRenderResult.Success)?.pngBytes
-                    }
+                    val bytes = (pdfRenderer.render(model) as? ResultPdfRenderResult.Success)?.bytes
                     bytes?.let {
                         RenderedResult(
                             bytes = it,
@@ -237,6 +230,27 @@ class DefaultResultDownloadCoordinator @Inject constructor(
                 is TournamentResultExportModelBuildResult.Failure -> null
             }
         }
+    }
+
+    private fun renderTournamentImage(
+        input: TournamentCsvExportInput,
+        displayDate: LocalDate?,
+        logoRenderData: PointTableLogoRenderData?,
+    ): RenderedResult? = when (val buildResult = modelBuilder.buildTournamentImage(input)) {
+        is com.hoggamers.rankforge.domain.export.TournamentResultImageModelBuildResult.Success -> {
+            val model = buildResult.model
+            (pngRenderer.render(
+                model,
+                displayDate,
+                logoRenderData,
+            ) as? ResultPngRenderResult.Success)?.pngBytes?.let { bytes ->
+                RenderedResult(
+                    bytes = bytes,
+                    displayName = ResultExportFileName.forTournament(model, ResultExportFileFormat.PNG),
+                )
+            }
+        }
+        is com.hoggamers.rankforge.domain.export.TournamentResultImageModelBuildResult.Failure -> null
     }
 
     private data class RenderedResult(

@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
@@ -174,6 +175,7 @@ data class MatchReviewUiState(
     val isLoading: Boolean = true,
     val isAvailable: Boolean = false,
     val tournamentId: String? = null,
+    val tournamentFormat: TournamentFormat? = null,
     val matchId: String? = null,
     val activeTeamCount: Int? = null,
     val finalizedParticipantSlotNumbers: Set<Int> = emptySet(),

@@ -132,6 +132,7 @@ import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.presentation.component.PointIqHomeSystemBars
 import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
@@ -153,6 +154,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -199,6 +201,7 @@ data class DownloadResultFreeDesignOption(
 
 data class DownloadResultUiState(
     val matches: List<DownloadResultMatchOption> = emptyList(),
+    val tournamentFormat: TournamentFormat? = null,
     val freeDesignOptions: List<DownloadResultFreeDesignOption> =
         FreeDesignTemplateRegistry.all.map { template ->
             DownloadResultFreeDesignOption(
@@ -364,6 +367,23 @@ class DownloadResultViewModel @Inject constructor(
                         )
                 ) {
                     select(tournamentId, selectedResult, selectedDesign)
+                }
+            }
+        }
+        viewModelScope.launch {
+            val tournamentFormat = getTournamentById(tournamentId).first()?.format
+            if (loadedTournamentId == tournamentId) {
+                val shouldNormalizeOverallDesign =
+                    tournamentFormat == TournamentFormat.GROUP_ROTATION &&
+                        selectedResult == DownloadResultSelection.Overall &&
+                        selectedDesign != DownloadResultDesignType.IMAGE
+                _uiState.update { it.copy(tournamentFormat = tournamentFormat) }
+                if (shouldNormalizeOverallDesign) {
+                    select(
+                        tournamentId = tournamentId,
+                        result = DownloadResultSelection.Overall,
+                        design = DownloadResultDesignType.IMAGE,
+                    )
                 }
             }
         }
@@ -582,10 +602,18 @@ class DownloadResultViewModel @Inject constructor(
         result: DownloadResultSelection,
         design: DownloadResultDesignType,
     ) {
+        val effectiveDesign = if (
+            result == DownloadResultSelection.Overall &&
+            _uiState.value.tournamentFormat == TournamentFormat.GROUP_ROTATION
+        ) {
+            DownloadResultDesignType.IMAGE
+        } else {
+            design
+        }
         _selectionContext.value = _selectionContext.value.copy(
             tournamentId = tournamentId,
             result = result,
-            design = design,
+            design = effectiveDesign,
         )
         previewJob?.cancel()
         customDesignId = null
@@ -598,14 +626,14 @@ class DownloadResultViewModel @Inject constructor(
                     _previewState.value = DownloadResultPreviewState.Unavailable
                     return@launch
                 }
-                val bytes = when (design) {
+                val bytes = when (effectiveDesign) {
                     DownloadResultDesignType.IMAGE -> renderImagePreview(tournamentId, request)
                     DownloadResultDesignType.FREE_DESIGN ->
                         renderFreeDesignPreview(tournamentId, request)
                     DownloadResultDesignType.MY_DESIGN -> renderCustomDesignPreview(request)
                 }
                 if (bytes == null) {
-                    if (design == DownloadResultDesignType.MY_DESIGN && customDesignId == null) {
+                    if (effectiveDesign == DownloadResultDesignType.MY_DESIGN && customDesignId == null) {
                         _previewState.value = DownloadResultPreviewState.ImportYourDesign
                     } else {
                         _previewState.value = DownloadResultPreviewState.Unavailable
@@ -684,6 +712,16 @@ class DownloadResultViewModel @Inject constructor(
                         com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
                     )
                 } else {
+                    val tournament = getTournamentById(tournamentId).first()
+                    if (
+                        tournament?.format == TournamentFormat.GROUP_ROTATION &&
+                        result == DownloadResultSelection.Overall &&
+                        design != DownloadResultDesignType.IMAGE
+                    ) {
+                        ResultDownloadExecutionResult.Failure(
+                            com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
+                        )
+                    } else {
                     val logoRenderData = when (design) {
                         DownloadResultDesignType.IMAGE -> resolveLogoRenderData(
                             tournamentId = tournamentId,
@@ -734,6 +772,7 @@ class DownloadResultViewModel @Inject constructor(
                         logoRenderData?.bitmap?.let { bitmap ->
                             if (!bitmap.isRecycled) bitmap.recycle()
                         }
+                    }
                     }
                 }
             } catch (cancellation: CancellationException) {
@@ -855,14 +894,14 @@ class DownloadResultViewModel @Inject constructor(
                         is MatchResultExportModelBuildResult.Failure -> null
                     }
                 is ResultDownloadRequest.WholeTournament ->
-                    when (val result = builder.buildTournament(request.input)) {
-                        is TournamentResultExportModelBuildResult.Success ->
+                    when (val result = builder.buildTournamentImage(request.input)) {
+                        is com.hoggamers.rankforge.domain.export.TournamentResultImageModelBuildResult.Success ->
                             (renderer.render(
                                 result.model,
                                 pointTableDetails.value.date,
                                 logoRenderData,
                             ) as? ResultPngRenderResult.Success)?.pngBytes
-                        is TournamentResultExportModelBuildResult.Failure -> null
+                        is com.hoggamers.rankforge.domain.export.TournamentResultImageModelBuildResult.Failure -> null
                     }
             }
             }
@@ -1099,6 +1138,7 @@ fun DownloadResultRoute(
 
     DownloadResultScreen(
         matches = uiState.matches,
+        tournamentFormat = uiState.tournamentFormat,
         freeDesignOptions = uiState.freeDesignOptions,
         onBack = onBack,
         initialDesign = initialDesign,
@@ -1160,6 +1200,7 @@ fun DownloadResultRoute(
 @Composable
 fun DownloadResultScreen(
     matches: List<DownloadResultMatchOption>,
+    tournamentFormat: TournamentFormat? = TournamentFormat.STANDARD,
     onBack: () -> Unit,
     freeDesignOptions: List<DownloadResultFreeDesignOption> =
         FreeDesignTemplateRegistry.all.map { template ->
@@ -1197,12 +1238,33 @@ fun DownloadResultScreen(
     var localSelectedResult by remember {
         mutableStateOf(initialResult)
     }
-    var localSelectedDesign by remember { mutableStateOf(initialDesign) }
+    var localSelectedDesign by remember {
+        mutableStateOf(
+            if (tournamentFormat == TournamentFormat.GROUP_ROTATION &&
+                initialResult == DownloadResultSelection.Overall
+            ) {
+                DownloadResultDesignType.IMAGE
+            } else {
+                initialDesign
+            },
+        )
+    }
     var localSelectedTemplateId by remember(selectedFreeDesignTemplateId) {
         mutableStateOf(selectedFreeDesignTemplateId)
     }
     val selectedResult = selectionContext?.result ?: localSelectedResult
-    val selectedDesign = selectionContext?.design ?: localSelectedDesign
+    val requestedDesign = selectionContext?.design ?: localSelectedDesign
+    val selectedDesign = if (
+        tournamentFormat == TournamentFormat.GROUP_ROTATION &&
+        selectedResult == DownloadResultSelection.Overall
+    ) {
+        DownloadResultDesignType.IMAGE
+    } else {
+        requestedDesign
+    }
+    val groupRotationOverallImageOnly =
+        tournamentFormat == TournamentFormat.GROUP_ROTATION &&
+            selectedResult == DownloadResultSelection.Overall
     val selectedTemplateId = selectionContext?.freeDesignTemplateId ?: localSelectedTemplateId
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showPointTableDetailsDialog by remember { mutableStateOf(false) }
@@ -1222,8 +1284,8 @@ fun DownloadResultScreen(
 
     LaunchedEffect(initialResult, initialDesign) {
         if (selectionContext == null) {
-            onResultSelected(initialResult, initialDesign)
-            onDesignSelected(initialResult, initialDesign)
+            onResultSelected(initialResult, selectedDesign)
+            onDesignSelected(initialResult, selectedDesign)
         }
     }
 
@@ -1336,26 +1398,28 @@ fun DownloadResultScreen(
                     },
                     testTag = DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG,
                 )
-                PointIqSelectionChip(
-                    label = "Free Design",
-                    selected = selectedDesign == DownloadResultDesignType.FREE_DESIGN,
-                    onClick = {
-                        val design = DownloadResultDesignType.FREE_DESIGN
-                        if (selectionContext == null) localSelectedDesign = design
-                        onDesignSelected(selectedResult, design)
-                    },
-                    testTag = DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG,
-                )
-                PointIqSelectionChip(
-                    label = "My Design",
-                    selected = selectedDesign == DownloadResultDesignType.MY_DESIGN,
-                    onClick = {
-                        val design = DownloadResultDesignType.MY_DESIGN
-                        if (selectionContext == null) localSelectedDesign = design
-                        onDesignSelected(selectedResult, design)
-                    },
-                    testTag = DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG,
-                )
+                if (!groupRotationOverallImageOnly) {
+                    PointIqSelectionChip(
+                        label = "Free Design",
+                        selected = selectedDesign == DownloadResultDesignType.FREE_DESIGN,
+                        onClick = {
+                            val design = DownloadResultDesignType.FREE_DESIGN
+                            if (selectionContext == null) localSelectedDesign = design
+                            onDesignSelected(selectedResult, design)
+                        },
+                        testTag = DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG,
+                    )
+                    PointIqSelectionChip(
+                        label = "My Design",
+                        selected = selectedDesign == DownloadResultDesignType.MY_DESIGN,
+                        onClick = {
+                            val design = DownloadResultDesignType.MY_DESIGN
+                            if (selectionContext == null) localSelectedDesign = design
+                            onDesignSelected(selectedResult, design)
+                        },
+                        testTag = DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG,
+                    )
+                }
             }
         }
 

@@ -28,6 +28,7 @@ class ResultPngRenderer(
         model: MatchResultExportModel,
         displayDate: LocalDate?,
     ): ResultPngRenderResult = renderBitmap(
+        layout = ResultLayoutSpec.legacyLayoutForRowCount(model.rows.size),
         draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
     )
 
@@ -36,6 +37,7 @@ class ResultPngRenderer(
         displayDate: LocalDate?,
         logoRenderData: PointTableLogoRenderData?,
     ): ResultPngRenderResult = renderBitmap(
+        layout = ResultLayoutSpec.legacyLayoutForRowCount(model.rows.size),
         draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
         logoRenderData = logoRenderData,
     )
@@ -47,7 +49,8 @@ class ResultPngRenderer(
         model: TournamentResultExportModel,
         displayDate: LocalDate?,
     ): ResultPngRenderResult = renderBitmap(
-        draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
+        layout = ResultLayoutSpec.overallImageLayoutForRowCount(model.rows.size),
+        draw = { canvas -> canvasRenderer.renderForOverallImage(canvas, model, displayDate) },
     )
 
     fun render(
@@ -55,18 +58,23 @@ class ResultPngRenderer(
         displayDate: LocalDate?,
         logoRenderData: PointTableLogoRenderData?,
     ): ResultPngRenderResult = renderBitmap(
-        draw = { canvas -> canvasRenderer.render(canvas, model, displayDate) },
+        layout = ResultLayoutSpec.overallImageLayoutForRowCount(model.rows.size),
+        draw = { canvas -> canvasRenderer.renderForOverallImage(canvas, model, displayDate) },
         logoRenderData = logoRenderData,
     )
 
     private fun renderBitmap(
+        layout: ResultRenderLayout?,
         draw: (Canvas) -> ResultCanvasRenderResult,
         logoRenderData: PointTableLogoRenderData? = null,
     ): ResultPngRenderResult {
+        if (layout == null) {
+            return ResultPngRenderResult.Failure(ResultRenderFailure.INVALID_ROW_COUNT)
+        }
         val bitmap = try {
             Bitmap.createBitmap(
                 ResultLayoutSpec.PNG_WIDTH,
-                ResultLayoutSpec.PNG_HEIGHT,
+                layout.pngHeight,
                 Bitmap.Config.ARGB_8888,
             )
         } catch (_: RuntimeException) {
@@ -83,7 +91,7 @@ class ResultPngRenderer(
                     logoCanvasRenderer.draw(
                         canvas = Canvas(bitmap),
                         targetWidth = ResultLayoutSpec.PNG_WIDTH,
-                        targetHeight = ResultLayoutSpec.PNG_HEIGHT,
+                        targetHeight = layout.pngHeight,
                         renderData = logoRenderData,
                     )
                     encode(bitmap)

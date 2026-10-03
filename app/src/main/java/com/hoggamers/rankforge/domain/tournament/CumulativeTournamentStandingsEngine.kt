@@ -16,14 +16,17 @@ data class CumulativeTournamentStanding(
 /**
  * Calculates finalized-match standings in stable team-slot order.
  *
- * Team slots are inferred from the persisted finalized participant snapshots because this
- * calculation accepts matches, not a separate tournament roster.
+ * Callers may provide the persisted tournament roster so zero-total and resting teams remain
+ * visible. When omitted, the legacy participant-snapshot behavior is retained.
  */
 class CumulativeTournamentStandingsEngine(
     private val positionPointsEngine: PositionPointsEngine = PositionPointsEngine(),
     private val killPointsEngine: KillPointsEngine = KillPointsEngine(),
 ) {
-    operator fun invoke(matches: List<Match>): List<CumulativeTournamentStanding> {
+    operator fun invoke(
+        matches: List<Match>,
+        expectedTeamSlots: Collection<TeamSlot>? = null,
+    ): List<CumulativeTournamentStanding> {
         val finalizedMatches = matches
             .asSequence()
             .filter { it.status == MatchStatus.FINALIZED }
@@ -35,7 +38,21 @@ class CumulativeTournamentStandingsEngine(
             "A tournament can include at most $MAX_MATCHES_PER_TOURNAMENT finalized matches."
         }
 
-        val totalsByTeamSlot = mutableMapOf<Int, MutableStandingTotals>()
+        val expectedSlotNumbers = expectedTeamSlots?.map { slot ->
+            require(slot.slotNumber in TeamSlot.TOURNAMENT_SLOT_NUMBERS) {
+                "Expected team slot number must be between 1 and 24."
+            }
+            slot.slotNumber
+        }?.also { slotNumbers ->
+            require(slotNumbers.size == slotNumbers.toSet().size) {
+                "Expected team slots must not contain duplicates."
+            }
+        }?.toSet()
+
+        val totalsByTeamSlot = expectedSlotNumbers
+            ?.associateWith { MutableStandingTotals() }
+            ?.toMutableMap()
+            ?: mutableMapOf()
         finalizedMatches.forEach { match ->
             val participantResults = match.finalizedParticipantResultsOrNull()
                 ?: run {
@@ -48,7 +65,13 @@ class CumulativeTournamentStandingsEngine(
                     }
                     error("A finalized match must have a valid participant snapshot.")
                 }
+            require(participantResults.size <= TeamSlot.MAX_SLOT_NUMBER) {
+                "A finalized match can contain at most ${TeamSlot.MAX_SLOT_NUMBER} participant rows."
+            }
             participantResults.forEach { result ->
+                require(expectedSlotNumbers == null || result.teamSlotNumber in expectedSlotNumbers) {
+                    "A finalized participant must belong to the expected tournament roster."
+                }
                 val totals = totalsByTeamSlot.getOrPut(result.teamSlotNumber) {
                     MutableStandingTotals()
                 }

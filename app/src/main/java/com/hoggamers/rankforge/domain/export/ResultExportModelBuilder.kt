@@ -5,6 +5,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 class ResultExportModelBuilder(
     private val matchCsvExporter: MatchCsvExporter = MatchCsvExporter(),
     private val tournamentCsvExporter: TournamentCsvExporter = TournamentCsvExporter(),
+    private val tournamentResultImageModelBuilder: TournamentResultImageModelBuilder =
+        TournamentResultImageModelBuilder(),
 ) {
     fun buildMatch(
         input: MatchCsvExportInput,
@@ -43,6 +45,11 @@ class ResultExportModelBuilder(
                     failures = result.failures,
                 )
         }
+
+    fun buildTournamentImage(
+        input: TournamentCsvExportInput,
+    ): TournamentResultImageModelBuildResult =
+        tournamentResultImageModelBuilder.build(input)
 
     private fun MatchExportRow.toResultExportRow(): ResultExportRow =
         ResultExportRow(

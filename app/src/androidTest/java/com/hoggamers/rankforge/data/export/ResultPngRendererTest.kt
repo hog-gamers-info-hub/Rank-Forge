@@ -58,6 +58,33 @@ class ResultPngRendererTest {
     }
 
     @Test
+    fun groupRotationOverallImageUsesFullHeightForEighteenAndTwentyFourRows() {
+        listOf(
+            18 to 1550,
+            24 to 1910,
+        ).forEach { (rowCount, expectedHeight) ->
+            val bytes = pngSuccess(renderer.render(tournamentModel(rowCount = rowCount)))
+
+            assertPngHeader(bytes)
+            assertDecodedDimensions(
+                bytes = bytes,
+                expectedWidth = ResultLayoutSpec.PNG_WIDTH,
+                expectedHeight = expectedHeight,
+            )
+        }
+    }
+
+    @Test
+    fun unsupportedOverallRowCountFailsClosedWithoutTruncation() {
+        val result = renderer.render(tournamentModel(rowCount = 13))
+
+        assertEquals(
+            ResultRenderFailure.INVALID_ROW_COUNT,
+            (result as ResultPngRenderResult.Failure).reason,
+        )
+    }
+
+    @Test
     fun optionalDisplayDateChangesPngWithoutChangingDimensions() {
         val explicitDateBytes = pngSuccess(
             renderer.render(matchModel(), LocalDate.of(2026, 9, 28)),
@@ -214,10 +241,22 @@ class ResultPngRendererTest {
     }
 
     private fun assertDecodedDimensions(bytes: ByteArray) {
+        assertDecodedDimensions(
+            bytes = bytes,
+            expectedWidth = ResultLayoutSpec.PNG_WIDTH,
+            expectedHeight = ResultLayoutSpec.PNG_HEIGHT,
+        )
+    }
+
+    private fun assertDecodedDimensions(
+        bytes: ByteArray,
+        expectedWidth: Int,
+        expectedHeight: Int,
+    ) {
         val bitmap = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
         assertNotNull(bitmap)
-        assertEquals(ResultLayoutSpec.PNG_WIDTH, bitmap.width)
-        assertEquals(ResultLayoutSpec.PNG_HEIGHT, bitmap.height)
+        assertEquals(expectedWidth, bitmap.width)
+        assertEquals(expectedHeight, bitmap.height)
         bitmap.recycle()
     }
 
