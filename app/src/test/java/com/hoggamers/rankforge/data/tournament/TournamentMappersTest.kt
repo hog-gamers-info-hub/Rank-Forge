@@ -91,9 +91,38 @@ class TournamentMappersTest {
             totalMatches = 3,
             lastUpdatedEpochMillis = 1_800_000_000_000L,
             ownerUserId = "user-a",
-        ).toDomain()
+        ).toDomain(emptyList())
 
         assertEquals("user-a", summary.tournament.ownerUserId)
+        assertEquals(TournamentFormat.STANDARD, summary.tournament.format)
+        assertNull(summary.tournament.groupCount)
+        assertTrue(summary.tournament.selectedGroupPairings.isEmpty())
+    }
+
+    @Test
+    fun groupRotationSummaryMappingUsesPersistedPairings() {
+        val pairings = listOf(
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+            GroupPairing.of(TournamentGroup.B, TournamentGroup.C),
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.C),
+        )
+        val summary = TournamentSummaryProjection(
+            id = "tournament-1",
+            name = "Summer Cup",
+            stageName = "Organizer",
+            organizerContactNumber = "123",
+            status = "DRAFT",
+            totalTeams = 18,
+            totalMatches = 1,
+            lastUpdatedEpochMillis = 1_800_000_000_000L,
+            ownerUserId = "user-a",
+            format = TournamentFormat.GROUP_ROTATION.name,
+            groupCount = 3,
+        ).toDomain(pairings)
+
+        assertEquals(TournamentFormat.GROUP_ROTATION, summary.tournament.format)
+        assertEquals(3, summary.tournament.groupCount)
+        assertEquals(pairings, summary.tournament.selectedGroupPairings)
     }
 
     @Test
