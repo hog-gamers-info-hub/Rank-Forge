@@ -99,6 +99,10 @@
     <string name="tournament_group_count_four">4 Groups</string>
     <string name="tournament_group_pairings_label">Group pairings</string>
     <string name="tournament_group_pairing_required_error">Select at least one group pairing.</string>
+    <string name="tournament_group_pairing_participation_label">Selected pairings per group</string>
+    <string name="tournament_group_pairing_participation_count">%1$s: %2$d</string>
+    <string name="tournament_group_pairing_zero_participation_warning">At least one configured group has no selected pairings.</string>
+    <string name="tournament_group_pairing_uneven_participation_warning">Configured groups have unequal pairing participation.</string>
     <string name="tournament_group_a">A</string>
     <string name="tournament_group_b">B</string>
     <string name="tournament_group_c">C</string>

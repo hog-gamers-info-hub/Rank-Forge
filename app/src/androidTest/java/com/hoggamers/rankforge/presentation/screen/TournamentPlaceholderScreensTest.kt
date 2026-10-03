@@ -22,6 +22,8 @@ import org.junit.runner.RunWith
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.tournament.TournamentField
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentValidationError
 import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
@@ -120,6 +122,68 @@ class TournamentCreationScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(TOURNAMENT_GROUP_PAIRING_TEST_TAG_PREFIX + "A:C")
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun groupRotationConfigurationShowsParticipationCountsAndInformationalWarning() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentCreationScreen(
+                    uiState = TournamentCreationUiState(
+                        format = TournamentFormat.GROUP_ROTATION,
+                        groupCount = 3,
+                        selectedGroupPairings = listOf(
+                            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+                            GroupPairing.of(TournamentGroup.A, TournamentGroup.C),
+                        ),
+                    ),
+                    onTournamentNameChanged = {},
+                    onStageNameChanged = {},
+                    onOrganizerContactNumberChanged = {},
+                    onSubmit = {},
+                    onBackPressed = {},
+                    onKeepEditing = {},
+                    onDiscardChanges = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("A: 2").assertIsDisplayed()
+        composeTestRule.onNodeWithText("B: 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("C: 1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(TOURNAMENT_GROUP_PARTICIPATION_WARNING_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.tournament_group_pairing_uneven_participation_warning),
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun groupRotationConfigurationWarnsForUncoveredGroup() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentCreationScreen(
+                    uiState = TournamentCreationUiState(
+                        format = TournamentFormat.GROUP_ROTATION,
+                        groupCount = 3,
+                        selectedGroupPairings = listOf(
+                            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+                        ),
+                    ),
+                    onTournamentNameChanged = {},
+                    onStageNameChanged = {},
+                    onOrganizerContactNumberChanged = {},
+                    onSubmit = {},
+                    onBackPressed = {},
+                    onKeepEditing = {},
+                    onDiscardChanges = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.tournament_group_pairing_zero_participation_warning),
+        ).assertIsDisplayed()
     }
 
     @Test

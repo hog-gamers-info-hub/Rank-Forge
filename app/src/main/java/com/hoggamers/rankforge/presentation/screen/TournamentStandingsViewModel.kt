@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsSharePublicationResult
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareRemoteDataSource
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
@@ -54,7 +55,17 @@ class TournamentStandingsViewModel @Inject constructor(
                             ?.let { slot.slotNumber to it }
                     }
                     .toMap()
-                tieBreakRules(cumulativeStandings(matches))
+                val standings = if (matches.none { match -> match.status == MatchStatus.FINALIZED }) {
+                    emptyList()
+                } else {
+                    runCatching {
+                        cumulativeStandings(
+                            matches = matches,
+                            expectedTeamSlots = slots,
+                        )
+                    }.getOrElse { emptyList() }
+                }
+                tieBreakRules(standings)
                     .toTournamentStandingsUiState(teamNamesBySlotNumber)
             }.collect { rows ->
                 _uiState.update { it.copy(isLoading = false, rows = rows) }

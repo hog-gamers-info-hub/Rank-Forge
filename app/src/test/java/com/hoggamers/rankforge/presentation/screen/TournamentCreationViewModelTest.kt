@@ -103,6 +103,51 @@ class TournamentCreationViewModelTest {
     }
 
     @Test
+    fun groupPairingParticipationCountsAreBalancedForTriangleSelection() {
+        viewModel.onGroupRotationChanged(true)
+
+        assertEquals(
+            mapOf(
+                TournamentGroup.A to 2,
+                TournamentGroup.B to 2,
+                TournamentGroup.C to 2,
+            ),
+            viewModel.uiState.value.groupParticipationCounts,
+        )
+        assertFalse(viewModel.uiState.value.hasZeroGroupParticipation)
+        assertFalse(viewModel.uiState.value.hasUnevenGroupParticipation)
+    }
+
+    @Test
+    fun groupPairingParticipationWarnsForUnevenAndUncoveredGroupsWithoutBlockingSelection() {
+        viewModel.onGroupRotationChanged(true)
+        viewModel.onGroupPairingToggled(com.hoggamers.rankforge.domain.tournament.GroupPairing.of(
+            TournamentGroup.B,
+            TournamentGroup.C,
+        ))
+
+        assertEquals(
+            mapOf(
+                TournamentGroup.A to 2,
+                TournamentGroup.B to 1,
+                TournamentGroup.C to 1,
+            ),
+            viewModel.uiState.value.groupParticipationCounts,
+        )
+        assertFalse(viewModel.uiState.value.hasZeroGroupParticipation)
+        assertTrue(viewModel.uiState.value.hasUnevenGroupParticipation)
+
+        viewModel.onGroupPairingToggled(com.hoggamers.rankforge.domain.tournament.GroupPairing.of(
+            TournamentGroup.A,
+            TournamentGroup.B,
+        ))
+
+        assertTrue(viewModel.uiState.value.hasZeroGroupParticipation)
+        assertTrue(viewModel.uiState.value.hasUnevenGroupParticipation)
+        assertEquals(1, viewModel.uiState.value.selectedGroupPairings.size)
+    }
+
+    @Test
     fun switchingGroupCountResetsPairingsAndRemovesGroupDWhenReturningToThree() {
         viewModel.onGroupRotationChanged(true)
         viewModel.onGroupCountChanged(4)

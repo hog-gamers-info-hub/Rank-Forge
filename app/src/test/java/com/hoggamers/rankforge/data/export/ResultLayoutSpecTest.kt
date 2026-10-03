@@ -65,4 +65,21 @@ class ResultLayoutSpecTest {
         )
         assertTrue(boundaries.all { boundary -> boundary in 0f..ResultLayoutSpec.LOGICAL_PAGE_WIDTH.toFloat() })
     }
+
+    @Test
+    fun overallImageLayoutsSupportOnlyStandardThreeGroupAndFourGroupRowCounts() {
+        assertEquals(1190, ResultLayoutSpec.overallImageLayoutForRowCount(12)?.pngHeight)
+        assertEquals(775, ResultLayoutSpec.overallImageLayoutForRowCount(18)?.logicalPageHeight)
+        assertEquals(1550, ResultLayoutSpec.overallImageLayoutForRowCount(18)?.pngHeight)
+        assertEquals(955, ResultLayoutSpec.overallImageLayoutForRowCount(24)?.logicalPageHeight)
+        assertEquals(1910, ResultLayoutSpec.overallImageLayoutForRowCount(24)?.pngHeight)
+        assertEquals(null, ResultLayoutSpec.overallImageLayoutForRowCount(13))
+    }
+
+    @Test
+    fun legacyLayoutRemainsAvailableForCurrentMatchAndPdfRowsThroughTwelve() {
+        assertEquals(595, ResultLayoutSpec.legacyLayoutForRowCount(8)?.logicalPageHeight)
+        assertEquals(1190, ResultLayoutSpec.legacyLayoutForRowCount(12)?.pngHeight)
+        assertEquals(null, ResultLayoutSpec.legacyLayoutForRowCount(13))
+    }
 }

@@ -45,6 +45,7 @@ class ResultCanvasRenderer {
             "Current match - Match ${model.matchNumber} -- ${displayDate.format(DATE_FORMATTER)}"
         },
         rows = model.rows,
+        layout = ResultLayoutSpec.legacyLayoutForRowCount(model.rows.size),
     )
 
     fun render(
@@ -66,6 +67,24 @@ class ResultCanvasRenderer {
             "Overall standings -- ${displayDate.format(DATE_FORMATTER)}"
         },
         rows = model.rows,
+        layout = ResultLayoutSpec.legacyLayoutForRowCount(model.rows.size),
+    )
+
+    fun renderForOverallImage(
+        canvas: Canvas,
+        model: TournamentResultExportModel,
+        displayDate: LocalDate?,
+    ): ResultCanvasRenderResult = render(
+        canvas = canvas,
+        tournamentName = model.tournamentName,
+        stageName = model.stageName,
+        subtitle = if (displayDate == null) {
+            "Overall standings"
+        } else {
+            "Overall standings -- ${displayDate.format(DATE_FORMATTER)}"
+        },
+        rows = model.rows,
+        layout = ResultLayoutSpec.overallImageLayoutForRowCount(model.rows.size),
     )
 
     private fun render(
@@ -74,8 +93,9 @@ class ResultCanvasRenderer {
         stageName: String,
         subtitle: String,
         rows: List<ResultExportRow>,
+        layout: ResultRenderLayout?,
     ): ResultCanvasRenderResult {
-        if (rows.isEmpty() || rows.size > ResultLayoutSpec.RESULT_ROW_COUNT) {
+        if (layout == null) {
             return ResultCanvasRenderResult.Failure(ResultRenderFailure.INVALID_ROW_COUNT)
         }
 
@@ -83,7 +103,7 @@ class ResultCanvasRenderer {
             canvas.drawColor(Color.WHITE)
             drawHeader(canvas, tournamentName, stageName, subtitle)
             drawTable(canvas, rows)
-            drawFooter(canvas)
+            drawFooter(canvas, layout.footerBaseline)
             ResultCanvasRenderResult.Success
         } catch (_: RuntimeException) {
             ResultCanvasRenderResult.Failure(ResultRenderFailure.RENDERING_FAILED)
@@ -127,7 +147,7 @@ class ResultCanvasRenderer {
         )
     }
 
-    private fun drawFooter(canvas: Canvas) {
+    private fun drawFooter(canvas: Canvas, baseline: Float) {
         val point = "Point"
         val iq = "IQ"
         val pointWidth = footerPointPaint.measureText(point)
@@ -137,13 +157,13 @@ class ResultCanvasRenderer {
         canvas.drawText(
             point,
             startX,
-            ResultLayoutSpec.FOOTER_BASELINE,
+            baseline,
             footerPointPaint,
         )
         canvas.drawText(
             iq,
             startX + pointWidth,
-            ResultLayoutSpec.FOOTER_BASELINE,
+            baseline,
             footerIqPaint,
         )
     }

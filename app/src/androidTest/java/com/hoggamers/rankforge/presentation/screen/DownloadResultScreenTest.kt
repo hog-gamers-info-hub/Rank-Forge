@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -52,6 +53,35 @@ class DownloadResultScreenTest {
         composeTestRule.onAllNodesWithText("Coming soon...").assertCountEquals(0)
         composeTestRule.onNodeWithText("Download").assertIsEnabled().performClick()
         composeTestRule.runOnIdle { assertEquals(1, downloadCalls) }
+    }
+
+    @Test
+    fun groupRotationOverallExposesOnlyStandardImageDesign() {
+        var downloadDesign: DownloadResultDesignType? = null
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(DownloadResultMatchOption("match-1", 1)),
+                    tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                    onBack = {},
+                    initialResult = DownloadResultSelection.Overall,
+                    initialDesign = DownloadResultDesignType.FREE_DESIGN,
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    onDownload = { _, design -> downloadDesign = design },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithText("Download").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(DownloadResultDesignType.IMAGE, downloadDesign)
+        }
     }
 
     @Test

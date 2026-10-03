@@ -2632,6 +2632,9 @@ private fun MatchReviewContent(
         ResultDownloadFormatDialog(
             selectedFormat = selectedResultFormat,
             availability = customDesignFormatAvailabilityUiState,
+            wholeTournamentImageOnly = uiState.tournamentFormat ==
+                com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION &&
+                selectedResultScope == ResultDownloadScope.WHOLE_TOURNAMENT,
             onFormatSelected = { selectedResultFormat = it },
             onBack = {
                 selectedResultFormat = null
@@ -3385,6 +3388,7 @@ private fun ResultDownloadScopeDialog(
 private fun ResultDownloadFormatDialog(
     selectedFormat: ResultDownloadFormatOption?,
     availability: CustomDesignFormatAvailabilityUiState,
+    wholeTournamentImageOnly: Boolean,
     onFormatSelected: (ResultDownloadFormatOption) -> Unit,
     onBack: () -> Unit,
     onDismiss: () -> Unit,
@@ -3400,19 +3404,21 @@ private fun ResultDownloadFormatDialog(
         title = { Text(stringResource(R.string.match_review_download_choose_format)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall)) {
-                ResultDownloadRadioRow(
-                    label = stringResource(R.string.match_review_download_pdf),
-                    selected = selectedFormat == ResultDownloadFormatOption.PDF,
-                    onClick = { onFormatSelected(ResultDownloadFormatOption.PDF) },
-                    testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG,
-                )
+                if (!wholeTournamentImageOnly) {
+                    ResultDownloadRadioRow(
+                        label = stringResource(R.string.match_review_download_pdf),
+                        selected = selectedFormat == ResultDownloadFormatOption.PDF,
+                        onClick = { onFormatSelected(ResultDownloadFormatOption.PDF) },
+                        testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG,
+                    )
+                }
                 ResultDownloadRadioRow(
                     label = stringResource(R.string.match_review_download_png),
                     selected = selectedFormat == ResultDownloadFormatOption.PNG,
                     onClick = { onFormatSelected(ResultDownloadFormatOption.PNG) },
                     testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG,
                 )
-                if (myCustomDesignAvailable) {
+                if (!wholeTournamentImageOnly && myCustomDesignAvailable) {
                     ResultDownloadRadioRow(
                         label = stringResource(R.string.match_review_download_my_custom_design),
                         selected = selectedFormat == ResultDownloadFormatOption.MY_CUSTOM_DESIGN,
@@ -3420,12 +3426,14 @@ private fun ResultDownloadFormatDialog(
                         testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_MY_CUSTOM_DESIGN_TEST_TAG,
                     )
                 }
-                ResultDownloadRadioRow(
-                    label = importYourDesignLabel,
-                    selected = selectedFormat == ResultDownloadFormatOption.IMPORT_YOUR_DESIGN,
-                    onClick = { onFormatSelected(ResultDownloadFormatOption.IMPORT_YOUR_DESIGN) },
-                    testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG,
-                )
+                if (!wholeTournamentImageOnly) {
+                    ResultDownloadRadioRow(
+                        label = importYourDesignLabel,
+                        selected = selectedFormat == ResultDownloadFormatOption.IMPORT_YOUR_DESIGN,
+                        onClick = { onFormatSelected(ResultDownloadFormatOption.IMPORT_YOUR_DESIGN) },
+                        testTag = MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG,
+                    )
+                }
             }
         },
         dismissButton = {

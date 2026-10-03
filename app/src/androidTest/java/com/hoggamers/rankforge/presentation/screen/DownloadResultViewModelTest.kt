@@ -41,7 +41,11 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCas
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
@@ -147,6 +151,27 @@ class DownloadResultViewModelTest {
         }
         assertTrue(clearedPreview is DownloadResultPreviewState.ResultImage)
         assertTrue(viewModel.pointTableDetails.value.date == null)
+    }
+
+    @Test
+    fun groupRotationOverallImagePreviewUsesFullEighteenRowCanvas() = runBlocking {
+        val viewModel = createViewModel(
+            tournament = groupTournament(),
+            matches = listOf(groupMatch()),
+            teamSlots = groupTeamSlots(),
+        )
+        viewModel.load("tournament-id")
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        val preview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { it is DownloadResultPreviewState.ResultImage }
+        } as DownloadResultPreviewState.ResultImage
+
+        assertEquals(1684 to 1550, pngDimensions(preview.pngBytes))
     }
 
     @Test
@@ -996,6 +1021,9 @@ class DownloadResultViewModelTest {
         resultCoordinator: ResultDownloadCoordinator = NoOpResultDownloadCoordinator,
         pointTableLogoImageStore: PointTableLogoImageStore = FakePointTableLogoImageStore(),
         pointTableLogoRenderResolver: PointTableLogoRenderResolver? = null,
+        tournament: Tournament = tournament(),
+        matches: List<Match> = listOf(match()),
+        teamSlots: List<TeamSlot> = teamSlots(),
     ): DownloadResultViewModel {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val logoResolver = pointTableLogoRenderResolver ?: PointTableLogoRenderResolver(
@@ -1003,9 +1031,9 @@ class DownloadResultViewModelTest {
             pointTableLogoImageStore = pointTableLogoImageStore,
         )
         return DownloadResultViewModel(
-            observeMatches = ObserveMatchesUseCase { flowOf(listOf(match())) },
-            getTournamentById = GetTournamentByIdUseCase { flowOf(tournament()) },
-            observeTournamentSlots = ObserveTournamentSlotsUseCase { flowOf(teamSlots()) },
+            observeMatches = ObserveMatchesUseCase { flowOf(matches) },
+            getTournamentById = GetTournamentByIdUseCase { flowOf(tournament) },
+            observeTournamentSlots = ObserveTournamentSlotsUseCase { flowOf(teamSlots) },
             observeRoster = ObserveRosterByTournamentUseCase { flowOf(emptyMap()) },
             customDesignSavedIdDiscovery = CustomDesignSavedIdDiscoveryAction {
                 CustomDesignSavedIdDiscoveryResult.None
@@ -1116,6 +1144,17 @@ class DownloadResultViewModelTest {
         status = TournamentStatus.CONFIRMED,
     )
 
+    private fun groupTournament() = Tournament(
+        id = "tournament-id",
+        name = "Rotation Tournament",
+        stageName = "Organizer",
+        organizerContactNumber = "123",
+        status = TournamentStatus.CONFIRMED,
+        format = TournamentFormat.GROUP_ROTATION,
+        groupCount = 3,
+        selectedGroupPairings = defaultGroupPairings(3),
+    )
+
     private fun match() = Match(
         id = "match-id",
         tournamentId = "tournament-id",
@@ -1133,7 +1172,39 @@ class DownloadResultViewModelTest {
         ),
     )
 
+    private fun groupMatch() = Match(
+        id = "group-match-id",
+        tournamentId = "tournament-id",
+        matchNumber = 1,
+        date = LocalDate.of(2026, 9, 5),
+        mapName = "Bermuda",
+        status = MatchStatus.FINALIZED,
+        groupPairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+        participantResults = (listOf(1, 2, 3, 4, 5, 6) + (13..18).toList())
+            .mapIndexed { index, slotNumber ->
+                MatchParticipantResult(
+                    teamSlotNumber = slotNumber,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = index + 1,
+                    kills = 0,
+                )
+            },
+    )
+
     private fun teamSlots(): List<TeamSlot> = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
         TeamSlot.create("tournament-id", slotNumber, "Team $slotNumber")
+    }
+
+    private fun groupTeamSlots(): List<TeamSlot> = (1..18).map { slotNumber ->
+        TeamSlot.create(
+            tournamentId = "tournament-id",
+            slotNumber = slotNumber,
+            teamName = "Team $slotNumber",
+            group = when (slotNumber) {
+                in 1..6 -> TournamentGroup.A
+                in 7..12 -> TournamentGroup.B
+                else -> TournamentGroup.C
+            },
+        )
     }
 }

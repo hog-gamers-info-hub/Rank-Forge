@@ -64,6 +64,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -4410,6 +4411,39 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
                 download,
             )
         }
+    }
+
+    @Test
+    fun groupRotationWholeTournamentFormatDialogExposesOnlyPng() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        finalizedParticipantSlotNumbers = (1..12).toSet(),
+                        tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)[0]
+            .performScrollTo()
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
+
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_MY_CUSTOM_DESIGN_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test

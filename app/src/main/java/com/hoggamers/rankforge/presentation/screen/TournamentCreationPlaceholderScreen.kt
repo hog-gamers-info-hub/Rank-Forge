@@ -107,6 +107,10 @@ const val TOURNAMENT_MODE_OPTION_SQUAD_TEST_TAG = "tournament_mode_option_squad"
 const val TOURNAMENT_GROUP_ROTATION_CHECKBOX_TEST_TAG = "tournament_group_rotation_checkbox"
 const val TOURNAMENT_GROUP_COUNT_OPTION_TEST_TAG_PREFIX = "tournament_group_count_option_"
 const val TOURNAMENT_GROUP_PAIRING_TEST_TAG_PREFIX = "tournament_group_pairing_"
+const val TOURNAMENT_GROUP_PARTICIPATION_COUNT_TEST_TAG_PREFIX =
+    "tournament_group_participation_count_"
+const val TOURNAMENT_GROUP_PARTICIPATION_WARNING_TEST_TAG =
+    "tournament_group_participation_warning"
 
 @Composable
 fun TournamentCreationRoute(
@@ -437,6 +441,55 @@ fun TournamentCreationScreen(
                         fontSize = 13.sp,
                     )
                 }
+                if (uiState.groupParticipationCounts.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.tournament_group_pairing_participation_label),
+                        color = PointIqCreateSubtitle,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    uiState.groupParticipationCounts.forEach { (group, count) ->
+                        Text(
+                            text = stringResource(
+                                R.string.tournament_group_pairing_participation_count,
+                                groupLabel(group),
+                                count,
+                            ),
+                            color = PointIqCreateSubtitle,
+                            fontSize = 13.sp,
+                            modifier = Modifier.testTag(
+                                TOURNAMENT_GROUP_PARTICIPATION_COUNT_TEST_TAG_PREFIX + group.name,
+                            ),
+                        )
+                    }
+                    if (uiState.hasZeroGroupParticipation || uiState.hasUnevenGroupParticipation) {
+                        Column(
+                            modifier = Modifier.testTag(
+                                TOURNAMENT_GROUP_PARTICIPATION_WARNING_TEST_TAG,
+                            ),
+                        ) {
+                            if (uiState.hasZeroGroupParticipation) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.tournament_group_pairing_zero_participation_warning,
+                                    ),
+                                    color = PointIqCreateSubtitle,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                            if (uiState.hasUnevenGroupParticipation) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.tournament_group_pairing_uneven_participation_warning,
+                                    ),
+                                    color = PointIqCreateSubtitle,
+                                    fontSize = 13.sp,
+                                )
+                            }
+                        }
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -516,6 +569,9 @@ private fun pairingLabel(pairing: GroupPairing): String =
     stringResource(groupStringRes(pairing.firstGroup)) +
         " × " +
         stringResource(groupStringRes(pairing.secondGroup))
+
+@Composable
+private fun groupLabel(group: TournamentGroup): String = stringResource(groupStringRes(group))
 
 private fun groupStringRes(group: TournamentGroup): Int = when (group) {
     TournamentGroup.A -> R.string.tournament_group_a
