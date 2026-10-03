@@ -39,6 +39,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
@@ -418,7 +419,7 @@ class TournamentCreationViewModelTest {
     }
 
     @Test
-    fun queuePersistenceFailureStillNavigatesAndRetainsLocalCreation() = runTest {
+    fun queuePersistenceFailureFailsClosedAndRetainsLocalCreation() = runTest {
         uploadAction.result = QueueAwareActionResult(
             primaryResult = TournamentCloudUploadResult.NetworkFailure,
             queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
@@ -429,12 +430,12 @@ class TournamentCreationViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.records.size)
-        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
-        assertNull(viewModel.uiState.value.submissionError)
+        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(TournamentCreationSubmissionError.UNKNOWN, viewModel.uiState.value.submissionError)
     }
 
     @Test
-    fun unexpectedCloudExceptionStillNavigatesAndRetainsLocalCreation() = runTest {
+    fun unexpectedCloudExceptionFailsClosedAndRetainsLocalCreation() = runTest {
         uploadAction.throwable = IllegalStateException("cloud unavailable")
         fillValidForm()
 
@@ -442,8 +443,56 @@ class TournamentCreationViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.records.size)
-        assertTrue(viewModel.uiState.value.navigation is TournamentCreationNavigation.Created)
-        assertNull(viewModel.uiState.value.submissionError)
+        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(TournamentCreationSubmissionError.UNKNOWN, viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun validationFailureDoesNotNavigateAfterLocalCreation() = runTest {
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.ValidationFailure,
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(TournamentCreationSubmissionError.UNKNOWN, viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun authorizationFailureDoesNotNavigateAfterLocalCreation() = runTest {
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.AuthorizationFailure,
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(TournamentCreationSubmissionError.UNKNOWN, viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun conflictDoesNotNavigateAfterLocalCreation() = runTest {
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.Conflict(RevisionConflict.MissingRevision),
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+        fillValidForm()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.records.size)
+        assertNull(viewModel.uiState.value.navigation)
+        assertEquals(TournamentCreationSubmissionError.UNKNOWN, viewModel.uiState.value.submissionError)
     }
 
     @Test

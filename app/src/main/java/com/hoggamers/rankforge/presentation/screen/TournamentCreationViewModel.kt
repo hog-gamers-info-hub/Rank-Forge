@@ -22,6 +22,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
 import com.hoggamers.rankforge.domain.tournament.validateCreateTournamentInput
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -209,9 +210,15 @@ class TournamentCreationViewModel @Inject constructor(
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {
-                    null
+                    _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            submissionError = TournamentCreationSubmissionError.UNKNOWN,
+                        )
+                    }
+                    return
                 }
-                if (uploadResult?.primaryResult == TournamentCloudUploadResult.TournamentLimitReached) {
+                if (uploadResult.primaryResult == TournamentCloudUploadResult.TournamentLimitReached) {
                     try {
                         result.tournament.ownerUserId
                             ?.takeIf { it.isNotBlank() }
@@ -250,11 +257,24 @@ class TournamentCreationViewModel @Inject constructor(
                             submissionError = TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED,
                         )
                     }
-                } else {
+                } else if (
+                    uploadResult.primaryResult is TournamentCloudUploadResult.Success ||
+                    (
+                        uploadResult.primaryResult == TournamentCloudUploadResult.NetworkFailure &&
+                            uploadResult.queueRecordingResult == QueueRecordingResult.RECORDED
+                        )
+                ) {
                     _uiState.update {
                         it.copy(
                             isSubmitting = false,
                             navigation = TournamentCreationNavigation.Created(result.tournament.id),
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            submissionError = uploadResult.primaryResult.toCreationSubmissionError(),
                         )
                     }
                 }
@@ -287,3 +307,18 @@ class TournamentCreationViewModel @Inject constructor(
         _uiState.update { it.copy(navigation = null) }
     }
 }
+
+private fun TournamentCloudUploadResult.toCreationSubmissionError(): TournamentCreationSubmissionError =
+    when (this) {
+        TournamentCloudUploadResult.AuthenticationRequired ->
+            TournamentCreationSubmissionError.AUTHENTICATION_REQUIRED
+        TournamentCloudUploadResult.TournamentLimitReached ->
+            TournamentCreationSubmissionError.TOURNAMENT_LIMIT_REACHED
+        TournamentCloudUploadResult.ValidationFailure,
+        TournamentCloudUploadResult.AuthorizationFailure,
+        TournamentCloudUploadResult.NetworkFailure,
+        is TournamentCloudUploadResult.Conflict,
+        is TournamentCloudUploadResult.PartialFailure,
+        is TournamentCloudUploadResult.Success,
+        -> TournamentCreationSubmissionError.UNKNOWN
+    }
