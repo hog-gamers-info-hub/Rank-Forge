@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentStandingsShareGateway
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentStandingsShareRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareGateway
@@ -22,6 +23,7 @@ import com.hoggamers.rankforge.data.cloud.SupabaseScreenshotMetadataCloudDataSou
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRepository
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentQuotaRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudUploadRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.TournamentSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.DraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRepository
@@ -89,6 +91,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class CloudUploadDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindTournamentSnapshotRpcInvoker(
+        invoker: SupabaseTournamentSnapshotRpcInvoker,
+    ): TournamentSnapshotRpcInvoker
+
     @Binds
     @Singleton
     abstract fun bindCustomDesignImagePreparer(

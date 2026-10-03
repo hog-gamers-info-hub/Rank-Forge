@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.map
 class SupabaseAuthRemoteDataSource @Inject constructor(
     private val config: SupabaseAuthConfig,
     private val clientProvider: SupabaseClientProvider,
+    private val sessionProbe: SupabaseAuthSessionProbe,
     private val signupEmailRegistrationStatusClient: SupabaseSignupEmailRegistrationStatusClient,
 ) : AuthRemoteDataSource {
     private val client get() = clientProvider.client
@@ -42,7 +43,13 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
 
         return flow {
             client.auth.awaitInitialization()
-            emitAll(client.auth.sessionStatus.map { sessionStatus -> sessionStatus.toAuthState() })
+            emitAll(
+                client.auth.sessionStatus.map { sessionStatus ->
+                    sessionStatus.toAuthState(
+                        hasUsableSession = sessionProbe.currentReadiness().allowsAuthenticatedState(),
+                    )
+                },
+            )
         }.catch { throwable ->
             if (throwable is CancellationException) {
                 throw throwable
@@ -73,12 +80,20 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
                 SessionStatus.Initializing -> AuthRestorationResult.Failure(
                     AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
                 )
-                is SessionStatus.Authenticated -> AuthRestorationResult.Restored(
-                    AuthUser(
-                        id = status.session.user?.id.orEmpty(),
-                        email = status.session.user?.email,
-                    ),
-                )
+                is SessionStatus.Authenticated -> if (
+                    sessionProbe.currentReadiness().allowsAuthenticatedState()
+                ) {
+                    AuthRestorationResult.Restored(
+                        AuthUser(
+                            id = status.session.user?.id.orEmpty(),
+                            email = status.session.user?.email,
+                        ),
+                    )
+                } else {
+                    AuthRestorationResult.Failure(
+                        AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+                    )
+                }
                 is SessionStatus.NotAuthenticated -> AuthRestorationResult.NoSavedSession
             }
         } catch (cancellation: CancellationException) {
@@ -168,14 +183,18 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
     }
 }
 
-private fun SessionStatus.toAuthState(): AuthState =
+private fun SessionStatus.toAuthState(hasUsableSession: Boolean = true): AuthState =
     when (this) {
-        is SessionStatus.Authenticated -> AuthState.SignedIn(
-            AuthUser(
-                id = session.user?.id.orEmpty(),
-                email = session.user?.email,
-            ),
-        )
+        is SessionStatus.Authenticated -> if (hasUsableSession) {
+            AuthState.SignedIn(
+                AuthUser(
+                    id = session.user?.id.orEmpty(),
+                    email = session.user?.email,
+                ),
+            )
+        } else {
+            AuthState.Loading
+        }
         SessionStatus.Initializing -> AuthState.Loading
         is SessionStatus.NotAuthenticated -> AuthState.SignedOut
         is SessionStatus.RefreshFailure -> refreshFailureCause().toAuthState()

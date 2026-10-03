@@ -8,6 +8,8 @@ import com.hoggamers.rankforge.data.auth.UrlConnectionAccountDeletionHttpTranspo
 import com.hoggamers.rankforge.data.auth.SupabaseAuthConfig
 import com.hoggamers.rankforge.data.auth.SupabaseAuthRemoteDataSource
 import com.hoggamers.rankforge.data.auth.SupabaseAuthRepository
+import com.hoggamers.rankforge.data.auth.SupabaseAuthSessionProbe
+import com.hoggamers.rankforge.data.auth.SupabaseClientAuthSessionProbe
 import com.hoggamers.rankforge.data.auth.SignupEmailRegistrationStatusHttpTransport
 import com.hoggamers.rankforge.data.auth.UrlConnectionSignupEmailRegistrationStatusHttpTransport
 import com.hoggamers.rankforge.domain.auth.AuthRepository
@@ -31,6 +33,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AuthDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindSupabaseAuthSessionProbe(
+        probe: SupabaseClientAuthSessionProbe,
+    ): SupabaseAuthSessionProbe
+
     @Binds
     @Singleton
     abstract fun bindAccountDeletionAccessTokenProvider(
