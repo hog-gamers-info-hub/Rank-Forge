@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(28, cursor.getInt(0))
+                assertEquals(30, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -127,6 +127,12 @@ class RankForgeDatabaseMigrationTest {
             openedDatabase.query(
                 "SELECT name FROM sqlite_master " +
                     "WHERE type = 'table' AND name = 'tournament_group_pairings'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            openedDatabase.query(
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type = 'table' AND name = 'tournament_group_pairing_lobby_slots'",
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
             }
@@ -599,6 +605,153 @@ class RankForgeDatabaseMigrationTest {
             assertTrue(cursor.isNull(0))
         }
         assertTrue(migrated.hasIndex("index_matches_tournament_id_group_pairing_key"))
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion29AddsEmptyPairingLobbySlotTableWithoutChangingExistingRows() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 29).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order, format) " +
+                    "VALUES ('standard-29', 'Standard Cup', 'Stage One', '123', 'CONFIRMED', 1, 'STANDARD')",
+            )
+            database.execSQL(
+                "INSERT INTO team_slots (tournament_id, slot_number, team_name) " +
+                    "VALUES ('standard-29', 1, 'Standard Team 1')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status, group_pairing_key) " +
+                    "VALUES ('standard-match-29', 'standard-29', 1, '2026-09-29', 'Bermuda', 'DRAFT', NULL)",
+            )
+
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order, format, group_count) " +
+                    "VALUES ('rotation-18-29', 'Rotation 18 Cup', 'Stage Two', '456', 'CONFIRMED', 2, 'GROUP_ROTATION', 3)",
+            )
+            (1..18).forEach { slotNumber ->
+                val group = when (slotNumber) {
+                    in 1..6 -> "A"
+                    in 7..12 -> "B"
+                    else -> "C"
+                }
+                database.execSQL(
+                    "INSERT INTO team_slots (tournament_id, slot_number, team_name, group_name) " +
+                        "VALUES (?, ?, ?, ?)",
+                    arrayOf<Any>(
+                        "rotation-18-29",
+                        slotNumber,
+                        "Rotation 18 Team $slotNumber",
+                        group,
+                    ),
+                )
+            }
+            database.execSQL(
+                "INSERT INTO tournament_group_pairings " +
+                    "(tournament_id, pairing_key, first_group, second_group) " +
+                    "VALUES ('rotation-18-29', 'A:C', 'A', 'C')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status, group_pairing_key) " +
+                    "VALUES ('rotation-match-18-29', 'rotation-18-29', 1, '2026-09-29', 'Alpine', 'DRAFT', 'A:C')",
+            )
+
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order, format, group_count) " +
+                    "VALUES ('rotation-24-29', 'Rotation 24 Cup', 'Stage Three', '789', 'DRAFT', 3, 'GROUP_ROTATION', 4)",
+            )
+            (1..24).forEach { slotNumber ->
+                val group = when (slotNumber) {
+                    in 1..6 -> "A"
+                    in 7..12 -> "B"
+                    in 13..18 -> "C"
+                    else -> "D"
+                }
+                database.execSQL(
+                    "INSERT INTO team_slots (tournament_id, slot_number, team_name, group_name) " +
+                        "VALUES (?, ?, ?, ?)",
+                    arrayOf<Any>(
+                        "rotation-24-29",
+                        slotNumber,
+                        "Rotation 24 Team $slotNumber",
+                        group,
+                    ),
+                )
+            }
+            database.execSQL(
+                "INSERT INTO tournament_group_pairings " +
+                    "(tournament_id, pairing_key, first_group, second_group) " +
+                    "VALUES ('rotation-24-29', 'A:B', 'A', 'B')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            30,
+            true,
+            RankForgeDatabase.MIGRATION_29_30,
+        )
+
+        migrated.query(
+            "SELECT name, format FROM tournaments ORDER BY creation_order",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Standard Cup", cursor.getString(0))
+            assertEquals("STANDARD", cursor.getString(1))
+            assertTrue(cursor.moveToNext())
+            assertEquals("Rotation 18 Cup", cursor.getString(0))
+            assertEquals("GROUP_ROTATION", cursor.getString(1))
+            assertTrue(cursor.moveToNext())
+            assertEquals("Rotation 24 Cup", cursor.getString(0))
+            assertEquals("GROUP_ROTATION", cursor.getString(1))
+            assertTrue(!cursor.moveToNext())
+        }
+        migrated.query(
+            "SELECT team_name, group_name FROM team_slots " +
+                "WHERE tournament_id = 'rotation-18-29' AND slot_number = 13",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Rotation 18 Team 13", cursor.getString(0))
+            assertEquals("C", cursor.getString(1))
+        }
+        migrated.query(
+            "SELECT COUNT(*) FROM team_slots WHERE tournament_id = 'rotation-24-29'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(24, cursor.getInt(0))
+        }
+        migrated.query(
+            "SELECT pairing_key FROM tournament_group_pairings " +
+                "WHERE tournament_id = 'rotation-18-29'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("A:C", cursor.getString(0))
+        }
+        migrated.query(
+            "SELECT group_pairing_key FROM matches WHERE id = 'rotation-match-18-29'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("A:C", cursor.getString(0))
+        }
+        migrated.query(
+            "SELECT COUNT(*) FROM tournament_group_pairing_lobby_slots",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        assertTrue(migrated.hasTable("tournament_group_pairing_lobby_slots"))
+        assertTrue(
+            migrated.hasIndex(
+                "index_tournament_group_pairing_lobby_slots_tournament_id_pairing_key_team_slot_number",
+            ),
+        )
+        migrated.query("PRAGMA foreign_key_check").use { cursor ->
+            assertEquals(0, cursor.count)
+        }
         migrated.close()
     }
 

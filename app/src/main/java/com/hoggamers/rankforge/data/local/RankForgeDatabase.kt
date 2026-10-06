@@ -31,6 +31,7 @@ interface RankForgeStateDao {
         TournamentEntity::class,
         TeamSlotEntity::class,
         TournamentGroupPairingEntity::class,
+        GroupRotationPairingLobbySlotEntity::class,
         RosterPlayerEntity::class,
         MatchEntity::class,
         MatchPlacementEntity::class,
@@ -56,7 +57,7 @@ interface RankForgeStateDao {
         PointTableDetailsEntity::class,
         PointTableLogoPlacementEntity::class,
     ],
-    version = 29,
+    version = 30,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -64,6 +65,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun tournamentDao(): TournamentDao
     abstract fun teamSlotDao(): TeamSlotDao
     abstract fun tournamentGroupPairingDao(): TournamentGroupPairingDao
+    abstract fun groupRotationPairingLobbySlotDao(): GroupRotationPairingLobbySlotDao
     abstract fun rosterPlayerDao(): RosterPlayerDao
     abstract fun matchDao(): MatchDao
     abstract fun matchPlacementDao(): MatchPlacementDao
@@ -920,6 +922,36 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id_group_pairing_key` " +
                         "ON `matches` (`tournament_id`, `group_pairing_key`)",
+                )
+            }
+        }
+
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `tournament_group_pairing_lobby_slots` (
+                        `tournament_id` TEXT NOT NULL,
+                        `pairing_key` TEXT NOT NULL,
+                        `lobby_slot_number` INTEGER NOT NULL,
+                        `team_slot_number` INTEGER NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `pairing_key`, `lobby_slot_number`),
+                        FOREIGN KEY(`tournament_id`, `pairing_key`) REFERENCES `tournament_group_pairings`(`tournament_id`, `pairing_key`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`, `team_slot_number`) REFERENCES `team_slots`(`tournament_id`, `slot_number`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournament_group_pairing_lobby_slots_tournament_id_pairing_key` " +
+                        "ON `tournament_group_pairing_lobby_slots` (`tournament_id`, `pairing_key`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournament_group_pairing_lobby_slots_tournament_id_team_slot_number` " +
+                        "ON `tournament_group_pairing_lobby_slots` (`tournament_id`, `team_slot_number`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_tournament_group_pairing_lobby_slots_tournament_id_pairing_key_team_slot_number` " +
+                        "ON `tournament_group_pairing_lobby_slots` (`tournament_id`, `pairing_key`, `team_slot_number`)",
                 )
             }
         }
