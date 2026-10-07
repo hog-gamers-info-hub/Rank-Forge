@@ -34,6 +34,8 @@ data class LobbyTeamCalculatedEvidence(
     val cropRight: Double,
     val cropBottom: Double,
     val playerNames: List<String?>,
+    /** Canonical tournament identity; absent in legacy payloads. */
+    val teamSlotNumber: Int? = null,
 ) {
     init {
         require(playerNames.size == 4) { "Lobby calculated evidence must contain four player names." }

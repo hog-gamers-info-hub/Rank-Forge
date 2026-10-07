@@ -132,6 +132,25 @@ class MatchCalculatedEvidenceMapperTest {
     }
 
     @Test
+    fun groupRotationPersistsLocalLobbySlotAndCanonicalTeamIdentitySeparately() {
+        val (reviewState, standardOcrState) = mapperInput()
+        val localToCanonical = listOf(14, 3, 18, 7, 16, 5, 6, 15, 2, 17, 4, 13)
+        val ocrState = standardOcrState.copy(
+            teamNamesBySlot = (1..24).associateWith { slot -> "Team $slot" },
+            eligibleTeamSlots = setOf(1, 2, 3, 4, 5, 6, 13, 14, 15, 16, 17, 18),
+            lobbySlotByTeamSlot = localToCanonical.mapIndexed { index, slot -> slot to index + 1 }.toMap(),
+            usesPairRelativeIdentity = true,
+        )
+
+        val evidence = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+        val lobbyTeam = evidence.lobby.teams.single()
+
+        assertEquals(12, lobbyTeam.slotNumber)
+        assertEquals(13, lobbyTeam.teamSlotNumber)
+        assertEquals("Team 13", lobbyTeam.teamName)
+    }
+
+    @Test
     fun absentCalculatedPositionDoesNotPersistScreenshotGeometry() {
         val (reviewState, sourceOcrState) = mapperInput()
         val ocrState = sourceOcrState.withUpperPosition11(
@@ -404,6 +423,37 @@ class MatchCalculatedEvidenceMapperTest {
             restored.correctionDraft!!.rows.single().playerKillDrafts.map { it.killsDraftValue },
         )
         assertEquals("10", restored.correctionDraft!!.rows.single().killsDraftValue)
+    }
+
+    @Test
+    fun restoredGroupRotationEvidenceUsesCanonicalIdentityInternallyAndLobbyLabelVisibly() {
+        val evidence = MatchCalculatedEvidence(
+            result = ResultCalculatedEvidence(
+                positions = listOf(
+                    ResultPositionCalculatedEvidence(
+                        position = 1,
+                        slotNumber = 18,
+                        teamName = "Phoenix",
+                        playerNames = List(4) { "P" },
+                        placement = 1,
+                    ),
+                ),
+            ),
+        )
+
+        val restored = evidence.toRestoredOcrReviewUiState(
+            tournamentId = "tournament-1",
+            matchId = "match-1",
+            teamNamesBySlot = mapOf(18 to "Phoenix"),
+            eligibleTeamSlots = setOf(1, 2, 3, 4, 5, 6, 13, 14, 15, 16, 17, 18),
+            lobbySlotByTeamSlot = mapOf(18 to 3),
+            usesPairRelativeIdentity = true,
+        ) as MatchOcrReviewUiState.Ready
+
+        assertEquals(18, restored.rows.single().originalSuggestedTeamSlot)
+        assertEquals("Lobby 03 · Phoenix", restored.rows.single().teamIdentityDisplayValue)
+        assertFalse(restored.rows.single().topThreeSuggestionsSummary.single().contains("18"))
+        assertEquals(3, restored.lobbySlotByTeamSlot[18])
     }
 
     @Test

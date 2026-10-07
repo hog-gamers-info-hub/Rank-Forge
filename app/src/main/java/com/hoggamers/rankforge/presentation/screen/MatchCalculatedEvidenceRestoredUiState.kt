@@ -12,7 +12,20 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
     matchId: String,
     teamNamesBySlot: Map<Int, String>,
     eligibleTeamSlots: Set<Int> = com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.toSet(),
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
 ): MatchOcrReviewUiState {
+    val invalidCanonicalSlot = result.positions
+        .asSequence()
+        .mapNotNull { it.slotNumber }
+        .firstOrNull { it !in eligibleTeamSlots }
+    if (invalidCanonicalSlot != null) {
+        return MatchOcrReviewUiState.Error(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            message = "Saved calculated evidence contains an invalid team identity.",
+        )
+    }
     val excludedSourcePositions = result.excludedSourcePositions
     val positions = result.positions.sortedBy { it.position }
     if (positions.isEmpty()) {
@@ -21,6 +34,8 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
             matchId = matchId,
             teamNamesBySlot = teamNamesBySlot,
             eligibleTeamSlots = eligibleTeamSlots,
+            lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+            usesPairRelativeIdentity = usesPairRelativeIdentity,
         )
     }
     val positionsByNumber = positions.associateBy { it.position }
@@ -53,7 +68,11 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         if (position.position in restoredManualPositions) {
             manualFallbackRowsByPosition.getValue(position.position)
         } else {
-            position.toRestoredReviewRow()
+            position.toRestoredReviewRow(
+                teamNamesBySlot = teamNamesBySlot,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
+            )
         }
     }
     val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(
@@ -119,6 +138,8 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         matchResultOcrPreview = preview,
         teamNamesBySlot = restoredTeamNames,
         eligibleTeamSlots = eligibleTeamSlots,
+        lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+        usesPairRelativeIdentity = usesPairRelativeIdentity,
         evidenceSource = MatchOcrReviewEvidenceSource.RESTORED_CALCULATED,
         calculatedEvidenceOrigin = result.calculationOrigin,
         manuallyRevealedPositions = restoredManualPositions,
@@ -175,13 +196,25 @@ private fun ResultPositionCalculatedEvidence.toRestoredPreviewRow(): MatchResult
     )
 }
 
-private fun ResultPositionCalculatedEvidence.toRestoredReviewRow(): MatchOcrReviewRowUiState {
+private fun ResultPositionCalculatedEvidence.toRestoredReviewRow(
+    teamNamesBySlot: Map<Int, String> = emptyMap(),
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
+): MatchOcrReviewRowUiState {
     val displayPlacement = displayPlacement()
     val applicability = playerKillApplicability()
     val playerNamesLabel = (1..4).joinToString(", ") { slot ->
         "P$slot ${playerNameAt(slot)}"
     }
     val assignedSlot = slotNumber?.toString().orEmpty()
+    val teamIdentityDisplayValue = slotNumber?.let {
+        displayTeamIdentityLabel(
+            teamSlot = it,
+            teamNamesBySlot = teamNamesBySlot,
+            lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+            usesPairRelativeIdentity = usesPairRelativeIdentity,
+        )
+    }
     val total = totalKills?.toString().orEmpty()
     val blockers = buildList {
         if (displayPlacement.isBlank()) add("Placement unavailable")
@@ -198,11 +231,16 @@ private fun ResultPositionCalculatedEvidence.toRestoredReviewRow(): MatchOcrRevi
         detectedPlayerNameEvidenceLabel = playerNamesLabel,
         playerNameStatusLabel = RESTORED_EVIDENCE_LABEL,
         suggestedTeamSlotDisplayValue = assignedSlot,
+        teamIdentityDisplayValue = teamIdentityDisplayValue,
         confidenceScoreDisplayValue = RESTORED_EVIDENCE_LABEL,
         confidenceTierLabel = RESTORED_EVIDENCE_LABEL,
         assignmentSafetyStatusLabel = if (slotNumber == null) UNAVAILABLE_LABEL else RESTORED_EVIDENCE_LABEL,
         topThreeSuggestionsSummary = listOf(
-            "Saved team slot: ${assignedSlot.ifBlank { UNAVAILABLE_LABEL }}",
+            if (usesPairRelativeIdentity) {
+                "Saved team identity: ${teamIdentityDisplayValue ?: UNAVAILABLE_LABEL}"
+            } else {
+                "Saved team slot: ${assignedSlot.ifBlank { UNAVAILABLE_LABEL }}"
+            },
         ),
         warningLabels = emptyList(),
         blockerLabels = blockers,

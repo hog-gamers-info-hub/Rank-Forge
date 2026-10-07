@@ -3029,7 +3029,7 @@ class RoomTournamentRepository @Inject constructor(
                 row.originalKills == null || row.originalKills >= 0
             } &&
             rows.all { row ->
-                row.originalSuggestedTeamSlot == null || row.originalSuggestedTeamSlot in TeamSlot.SLOT_NUMBERS
+                row.originalSuggestedTeamSlot == null || row.originalSuggestedTeamSlot in expectedTeamSlots
             } &&
             placements.map { it.teamSlotNumber }.toSet() == expectedTeamSlots &&
             kills.map { it.teamSlotNumber }.toSet() == expectedTeamSlots &&

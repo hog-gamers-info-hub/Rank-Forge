@@ -536,6 +536,116 @@ class RoomTournamentRepositoryTest {
     }
 
     @Test
+    fun groupRotationCanonicalIdentityAndPreservedOcrEvidenceSurviveRoomReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-ocr-identity.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "group-rotation-ocr-identity"
+            val matchId = "group-rotation-ocr-identity-match"
+            val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+            val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+            repository.create(
+                Tournament(
+                    id = tournamentId,
+                    name = "Rotation OCR Cup",
+                    stageName = "Organizer",
+                    organizerContactNumber = "123",
+                    status = TournamentStatus.DRAFT,
+                    format = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 3,
+                    selectedGroupPairings = listOf(pairing),
+                    ownerUserId = "user-a",
+                ),
+            )
+            repository.saveTeamNames(
+                tournamentId,
+                canonicalSlots.associateWith { slot -> "Team $slot" },
+            )
+            database.groupRotationPairingLobbySlotDao().upsertAll(
+                canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                    GroupRotationPairingLobbySlotEntity(
+                        tournamentId = tournamentId,
+                        pairingKey = pairing.canonicalKey,
+                        lobbySlotNumber = index + 1,
+                        teamSlotNumber = teamSlotNumber,
+                    )
+                },
+            )
+            val match = Match(
+                id = matchId,
+                tournamentId = tournamentId,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 7),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            )
+            assertEquals(CreateMatchRepositoryResult.Created, repository.createDraftMatch(match))
+
+            val placements = canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                MatchPlacement(teamSlotNumber, index + 1)
+            }
+            val kills = canonicalSlots.map { teamSlotNumber -> MatchKill(teamSlotNumber, 0) }
+            val evidence = PreservedMatchOcrEvidence(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                sourceScreenshotId = "group-rotation-ocr-screenshot",
+                preservedAt = 1L,
+                provenance = "OCR_REVIEW_FINALIZATION",
+                rows = (0 until 12).map { rowIndex ->
+                    PreservedMatchOcrRowEvidence(
+                        rowIndex = rowIndex,
+                        originalOcrText = "Lobby row $rowIndex",
+                        originalPlacement = rowIndex + 1,
+                        originalKills = 0,
+                        originalSuggestedTeamSlot = canonicalSlots[rowIndex],
+                        confidenceSummary = null,
+                        safetySummary = null,
+                        manualReviewRequired = false,
+                    )
+                },
+                correctionSnapshots = (0 until 12).map { rowIndex ->
+                    PreservedMatchOcrCorrectionSnapshot(
+                        rowIndex = rowIndex,
+                        correctedPlacement = rowIndex + 1,
+                        correctedKills = 0,
+                        correctedTeamSlot = canonicalSlots[rowIndex],
+                        placementChanged = false,
+                        killsChanged = false,
+                        teamSlotChanged = false,
+                    )
+                },
+            )
+
+            assertTrue(
+                repository.finalizeDraftMatchWithOcrEvidence(
+                    matchId = matchId,
+                    placements = placements,
+                    kills = kills,
+                    evidence = evidence,
+                ) is FinalizeMatchRepositoryResult.Finalized,
+            )
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            val reopenedMatch = reopenedRepository.observeMatchById(matchId).first { it != null }!!
+            val reopenedEvidence = reopenedRepository.readPreservedMatchOcrEvidence(tournamentId, matchId)!!
+            assertEquals(18, reopenedMatch.placements[2].teamSlotNumber)
+            assertEquals(18, reopenedMatch.kills[2].teamSlotNumber)
+            assertTrue(reopenedMatch.participantResults.any { it.teamSlotNumber == 18 })
+            assertEquals(18, reopenedEvidence.rows[2].originalSuggestedTeamSlot)
+            assertEquals(18, reopenedEvidence.correctionSnapshots[2].correctedTeamSlot)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun createPersistsTournamentInNormalizedTableAndObservationsReadIt() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "room-repository-tournament-create.db"
