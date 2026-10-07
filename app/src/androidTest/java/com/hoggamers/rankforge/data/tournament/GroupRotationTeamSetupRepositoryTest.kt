@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.RoomGroupRotationTeamSetupDraftRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadResult
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamEntry
@@ -173,6 +174,196 @@ class GroupRotationTeamSetupRepositoryTest {
     }
 
     @Test
+    fun readRepositoryLoadsCompleteOwnerScopedSetupInOneAuthoritativeShape() = runBlocking {
+        val tournament = createTournament(TournamentStatus.DRAFT)
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        assertEquals(
+            GroupRotationTeamSetupLocalSaveResult.Saved,
+            localRepository.saveGroupRotationTeamSetup(candidate("Read"), OWNER_ID),
+        )
+
+        val result = RoomGroupRotationTeamSetupReadRepository(database)
+            .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID)
+
+        val loaded = result as GroupRotationTeamSetupReadResult.Loaded
+        assertEquals(tournament.id, loaded.setup.tournament.id)
+        assertEquals(12, loaded.setup.candidate.entries.size)
+        assertEquals("Read 1", loaded.setup.candidate.entries.first().teamName)
+        assertEquals(
+            GroupRotationTeamSetupReadResult.TournamentNotFound,
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, "other-owner"),
+        )
+    }
+
+    @Test
+    fun readRepositoryFailsClosedForPartialMappingSet() = runBlocking {
+        val tournament = createTournament(TournamentStatus.DRAFT)
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        localRepository.saveGroupRotationTeamSetup(candidate("Partial"), OWNER_ID)
+        database.openHelper.writableDatabase.execSQL(
+            "DELETE FROM tournament_group_pairing_lobby_slots " +
+                "WHERE tournament_id = '$TOURNAMENT_ID' AND lobby_slot_number = 12",
+        )
+
+        assertEquals(
+            GroupRotationTeamSetupReadResult.InvalidStoredSetup,
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
+        )
+    }
+
+    @Test
+    fun readRepositoryReportsNoSavedSetupOnlyWhenSlotsAndMappingsAreEmpty() = runBlocking {
+        val tournament = createTournament(TournamentStatus.DRAFT)
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+
+        assertEquals(
+            GroupRotationTeamSetupReadResult.NoSavedSetup(tournament),
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
+        )
+
+        database.teamSlotDao().upsertAll(
+            listOf(
+                com.hoggamers.rankforge.data.local.TeamSlotEntity(
+                    tournamentId = TOURNAMENT_ID,
+                    slotNumber = 1,
+                    teamName = "Orphaned authoritative name",
+                    group = "A",
+                ),
+            ),
+        )
+        assertEquals(
+            GroupRotationTeamSetupReadResult.InvalidStoredSetup,
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
+        )
+    }
+
+    @Test
+    fun readRepositoryReportsNoSavedSetupForFreshFourGroupTournament() = runBlocking {
+        val tournament = createTournament(
+            status = TournamentStatus.DRAFT,
+            groupCount = 4,
+            pairings = listOf("A:B", "B:C", "C:D", "A:D"),
+        )
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+
+        assertEquals(
+            GroupRotationTeamSetupReadResult.NoSavedSetup(tournament),
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
+        )
+    }
+
+    @Test
+    fun readRepositoryLoadsCompleteFourGroupSetupAndPreservesEachLobbySequence() = runBlocking {
+        val tournament = createTournament(
+            status = TournamentStatus.DRAFT,
+            groupCount = 4,
+            pairings = listOf("A:B", "B:C", "C:D", "A:D"),
+        )
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        localRepository.saveGroupRotationTeamSetup(candidateFor(tournament, "Four"), OWNER_ID)
+
+        val result = RoomGroupRotationTeamSetupReadRepository(database)
+            .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID) as GroupRotationTeamSetupReadResult.Loaded
+
+        assertEquals(48, result.setup.candidate.entries.size)
+        result.setup.candidate.entries.groupBy { it.pairing.canonicalKey }.values.forEach { entries ->
+            assertEquals((1..12).toList(), entries.map { it.lobbySlotNumber })
+        }
+    }
+
+    @Test
+    fun readRepositoryLoadsArbitrarySelectedPairingSubsetAndOrder() = runBlocking {
+        val tournament = createTournament(
+            status = TournamentStatus.DRAFT,
+            groupCount = 3,
+            pairings = listOf("A:C", "A:B"),
+        )
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        localRepository.saveGroupRotationTeamSetup(candidateFor(tournament, "Subset"), OWNER_ID)
+
+        val result = RoomGroupRotationTeamSetupReadRepository(database)
+            .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID) as GroupRotationTeamSetupReadResult.Loaded
+
+        assertEquals(setOf("A:B", "A:C"), result.setup.tournament.selectedGroupPairings.map { it.canonicalKey }.toSet())
+        assertEquals(setOf("A:B", "A:C"), result.setup.candidate.entries.map { it.pairing.canonicalKey }.toSet())
+    }
+
+    @Test
+    fun readRepositoryReconstructsRepeatedIdentityToTheSamePermanentSlot() = runBlocking {
+        val tournament = createTournament(
+            status = TournamentStatus.DRAFT,
+            groupCount = 3,
+            pairings = listOf("A:B", "A:C"),
+        )
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        localRepository.saveGroupRotationTeamSetup(repeatedIdentityCandidate(tournament), OWNER_ID)
+
+        val mappings = database.groupRotationPairingLobbySlotDao()
+            .observeByTournamentId(TOURNAMENT_ID)
+            .first()
+        assertEquals(
+            mappings.first { it.pairingKey == "A:B" && it.lobbySlotNumber == 1 }.teamSlotNumber,
+            mappings.first { it.pairingKey == "A:C" && it.lobbySlotNumber == 1 }.teamSlotNumber,
+        )
+        val loaded = RoomGroupRotationTeamSetupReadRepository(database)
+            .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID) as GroupRotationTeamSetupReadResult.Loaded
+        assertEquals(
+            listOf("Shared", "Shared"),
+            loaded.setup.candidate.entries.filter { it.lobbySlotNumber == 1 }.map { it.teamName },
+        )
+    }
+
+    @Test
+    fun readRepositoryRejectsCrossPairIdentityMappedToDifferentCanonicalSlots() = runBlocking {
+        val tournament = createTournament(
+            status = TournamentStatus.DRAFT,
+            groupCount = 3,
+            pairings = listOf("A:B", "A:C"),
+        )
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        localRepository.saveGroupRotationTeamSetup(candidateFor(tournament, "Corrupt"), OWNER_ID)
+        val mappings = database.groupRotationPairingLobbySlotDao()
+            .observeByTournamentId(TOURNAMENT_ID)
+            .first()
+
+        assertEquals(
+            1,
+            mappings.first { it.pairingKey == "A:B" && it.lobbySlotNumber == 1 }.teamSlotNumber,
+        )
+        assertEquals(
+            13,
+            mappings.first { it.pairingKey == "A:C" && it.lobbySlotNumber == 7 }.teamSlotNumber,
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE team_slots SET team_name = 'Alpha' " +
+                "WHERE tournament_id = '$TOURNAMENT_ID' AND slot_number = 1",
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE team_slots SET team_name = ' ALPHA ' " +
+                "WHERE tournament_id = '$TOURNAMENT_ID' AND slot_number = 13",
+        )
+
+        assertEquals(
+            GroupRotationTeamSetupReadResult.InvalidStoredSetup,
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
+        )
+    }
+
+    @Test
     fun draftRepositoryReplacesRawSnapshotWithoutTouchingFinalSetupState() = runBlocking {
         val tournament = createTournament(TournamentStatus.CONFIRMED)
         database.tournamentDao().upsert(tournament.toEntity(1))
@@ -212,7 +403,11 @@ class GroupRotationTeamSetupRepositoryTest {
         assertTrue(repository.readDraft(TOURNAMENT_ID).isEmpty())
     }
 
-    private suspend fun createTournament(status: TournamentStatus): Tournament {
+    private suspend fun createTournament(
+        status: TournamentStatus,
+        groupCount: Int = 3,
+        pairings: List<String> = listOf("A:B"),
+    ): Tournament {
         val tournament = Tournament(
             id = TOURNAMENT_ID,
             name = "Rotation",
@@ -221,11 +416,44 @@ class GroupRotationTeamSetupRepositoryTest {
             status = status,
             ownerUserId = OWNER_ID,
             format = TournamentFormat.GROUP_ROTATION,
-            groupCount = 3,
-            selectedGroupPairings = listOf(GroupPairing.fromCanonicalKey("A:B")),
+            groupCount = groupCount,
+            selectedGroupPairings = pairings.map(GroupPairing::fromCanonicalKey),
         )
         return tournament
     }
+
+    private fun candidateFor(
+        tournament: Tournament,
+        teamNamePrefix: String,
+    ): GroupRotationTeamSetupCandidate = GroupRotationTeamSetupCandidate(
+        tournamentId = tournament.id,
+        entries = tournament.selectedGroupPairings.flatMapIndexed { pairingIndex, pairing ->
+            (1..12).map { lobbySlot ->
+                val teamNumber = when (pairingIndex) {
+                    0 -> lobbySlot
+                    1 -> if (lobbySlot <= 6) lobbySlot else lobbySlot + 6
+                    2 -> if (lobbySlot <= 6) lobbySlot + 6 else lobbySlot + 12
+                    else -> lobbySlot + 12
+                }
+                GroupRotationPairingTeamEntry(pairing, lobbySlot, "$teamNamePrefix $teamNumber")
+            }
+        },
+    )
+
+    private fun repeatedIdentityCandidate(
+        tournament: Tournament,
+    ): GroupRotationTeamSetupCandidate = GroupRotationTeamSetupCandidate(
+        tournamentId = tournament.id,
+        entries = tournament.selectedGroupPairings.flatMap { pairing ->
+            (1..12).map { lobbySlot ->
+                GroupRotationPairingTeamEntry(
+                    pairing,
+                    lobbySlot,
+                    if (lobbySlot == 1) "Shared" else "${pairing.canonicalKey} Team $lobbySlot",
+                )
+            }
+        },
+    )
 
     private fun candidate(
         teamNamePrefix: String,

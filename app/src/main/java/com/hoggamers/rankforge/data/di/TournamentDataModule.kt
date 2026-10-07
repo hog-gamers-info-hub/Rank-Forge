@@ -45,7 +45,9 @@ import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RoomMatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.RoomMatchLobbyOcrCacheRepository
 import com.hoggamers.rankforge.data.local.RoomGroupRotationTeamSetupDraftRepository
+import com.hoggamers.rankforge.data.local.GroupRotationTeamSetupReadDao
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
+import com.hoggamers.rankforge.data.tournament.RoomGroupRotationTeamSetupReadRepository
 import com.hoggamers.rankforge.data.tournament.RoomDeletionIntentRepository
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrCacheCodec
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyOcrCacheCodec
@@ -86,6 +88,7 @@ import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEn
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadRepository
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 
@@ -127,6 +130,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindGroupRotationTeamSetupDraftRepository(
         repository: RoomGroupRotationTeamSetupDraftRepository,
     ): GroupRotationTeamSetupDraftRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamSetupReadRepository(
+        repository: RoomGroupRotationTeamSetupReadRepository,
+    ): GroupRotationTeamSetupReadRepository
 
     @Binds
     @Singleton
@@ -246,6 +255,11 @@ object TournamentDataProvidersModule {
     @Provides
     @Singleton
     fun provideDeletionIntentDao(database: RankForgeDatabase): DeletionIntentDao = database.deletionIntentDao()
+
+    @Provides
+    @Singleton
+    fun provideGroupRotationTeamSetupReadDao(database: RankForgeDatabase): GroupRotationTeamSetupReadDao =
+        database.groupRotationTeamSetupReadDao()
 
     @Provides
     @Singleton

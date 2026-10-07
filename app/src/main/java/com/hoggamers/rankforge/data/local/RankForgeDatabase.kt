@@ -68,6 +68,7 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun tournamentGroupPairingDao(): TournamentGroupPairingDao
     abstract fun groupRotationPairingLobbySlotDao(): GroupRotationPairingLobbySlotDao
     abstract fun groupRotationPairingTeamEntryDraftDao(): GroupRotationPairingTeamEntryDraftDao
+    abstract fun groupRotationTeamSetupReadDao(): GroupRotationTeamSetupReadDao
     abstract fun rosterPlayerDao(): RosterPlayerDao
     abstract fun matchDao(): MatchDao
     abstract fun matchPlacementDao(): MatchPlacementDao
