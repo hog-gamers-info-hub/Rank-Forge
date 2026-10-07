@@ -51,6 +51,12 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnaps
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupCandidate
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalSaveResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupPlanner
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupPlanningResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidator
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.DeletionBlockedException
@@ -104,7 +110,7 @@ class RoomTournamentRepository @Inject constructor(
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
 ) : TournamentRepository, TournamentRestorationLocalRepository, MatchRestorationLocalRepository,
-    LocalDeletionRepository, AccountDeletionLocalCleanupRepository {
+    LocalDeletionRepository, AccountDeletionLocalCleanupRepository, GroupRotationTeamSetupLocalRepository {
     constructor(database: RankForgeDatabase) : this(
         database = database,
         localImagePreserver = LocalImagePreserver(
@@ -139,6 +145,8 @@ class RoomTournamentRepository @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
     private val json = Json { ignoreUnknownKeys = true }
+    private val groupRotationTeamSetupValidator = GroupRotationTeamSetupValidator()
+    private val groupRotationTeamSetupPlanner = GroupRotationTeamSetupPlanner()
 
     init {
         scope.launch {
@@ -1184,6 +1192,93 @@ class RoomTournamentRepository @Inject constructor(
         teamNamesBySlotNumber: Map<Int, String>,
     ): OwnerScopedTournamentMutationResult =
         saveTeamNamesInternal(tournamentId, teamNamesBySlotNumber, ownerUserId)
+
+    override suspend fun saveGroupRotationTeamSetup(
+        candidate: GroupRotationTeamSetupCandidate,
+        ownerUserId: String,
+    ): GroupRotationTeamSetupLocalSaveResult {
+        awaitState()
+        return writeMutex.withLock {
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(candidate.tournamentId, ownerUserId)) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.TournamentNotFound
+                }
+                if (database.deletionIntentDao().isLocalMutationBlocked(candidate.tournamentId, null, ownerUserId)) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.TournamentNotFound
+                }
+                val tournament = readTournament(candidate.tournamentId)
+                    ?: return@withTransaction GroupRotationTeamSetupLocalSaveResult.TournamentNotFound
+                val validation = groupRotationTeamSetupValidator.validate(tournament, candidate)
+                val validated = when (validation) {
+                    is com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidationResult.Invalid -> {
+                        return@withTransaction GroupRotationTeamSetupLocalSaveResult.InvalidSetup(validation.issues)
+                    }
+                    is com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidationResult.Valid -> validation
+                }
+                if (database.matchDao().observeByTournamentId(candidate.tournamentId).first().isNotEmpty() ||
+                    database.rosterPlayerDao().observeByTournamentId(candidate.tournamentId).first().isNotEmpty()
+                ) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.ProtectedHistory
+                }
+                val existingSlots = database.teamSlotDao()
+                    .observeByTournamentId(candidate.tournamentId)
+                    .first()
+                    .map { it.toDomain() }
+                val plan = when (val planning = groupRotationTeamSetupPlanner.plan(tournament, existingSlots, validated)) {
+                    is GroupRotationTeamSetupPlanningResult.Invalid -> {
+                        return@withTransaction GroupRotationTeamSetupLocalSaveResult.InvalidSetup(planning.issues)
+                    }
+                    is GroupRotationTeamSetupPlanningResult.Planned -> planning.plan
+                }
+                val existingMappings = database.groupRotationPairingLobbySlotDao()
+                    .observeByTournamentId(candidate.tournamentId)
+                    .first()
+                    .sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
+                val plannedMappings = plan.lobbySlotMappings
+                    .map { it.toEntity() }
+                    .sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
+                val existingSlotEntities = database.teamSlotDao()
+                    .observeByTournamentId(candidate.tournamentId)
+                    .first()
+                    .sortedBy { it.slotNumber }
+                val plannedSlotEntities = plan.teamSlots.map { it.toEntity() }.sortedBy { it.slotNumber }
+                val teamSlotsChanged = existingSlotEntities != plannedSlotEntities
+                val mappingsChanged = existingMappings != plannedMappings
+                val current = state.value
+                val nextTournament = if (tournament.status == TournamentStatus.CONFIRMED &&
+                    (teamSlotsChanged || mappingsChanged)
+                ) {
+                    tournament.copy(status = TournamentStatus.DRAFT)
+                } else {
+                    tournament
+                }
+                val statusChanged = tournament.status != nextTournament.status
+                if (!teamSlotsChanged && !mappingsChanged && !statusChanged) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.Saved
+                }
+                val next = current.copy(
+                    tournaments = current.tournaments.map { existing ->
+                        if (existing.id == tournament.id) nextTournament else existing
+                    },
+                    slots = current.slots + (tournament.id to plan.teamSlots),
+                )
+                database.teamSlotDao().upsertAll(plannedSlotEntities)
+                database.groupRotationPairingLobbySlotDao().deleteByTournamentId(candidate.tournamentId)
+                database.groupRotationPairingLobbySlotDao().upsertAll(plannedMappings)
+                persistTournamentStatusChanges(current, next)
+                touchTournament(candidate.tournamentId)
+                saveLegacyState(next)
+                markLocalRevisionChanged(candidate.tournamentId)
+                updatedState = next
+                GroupRotationTeamSetupLocalSaveResult.Saved
+            }
+            if (result is GroupRotationTeamSetupLocalSaveResult.Saved && updatedState != null) {
+                state.value = checkNotNull(updatedState)
+            }
+            result
+        }
+    }
 
     private suspend fun saveTeamNamesInternal(
         tournamentId: String,

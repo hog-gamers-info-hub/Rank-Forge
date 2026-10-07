@@ -44,6 +44,7 @@ import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RoomMatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.RoomMatchLobbyOcrCacheRepository
+import com.hoggamers.rankforge.data.local.RoomGroupRotationTeamSetupDraftRepository
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
 import com.hoggamers.rankforge.data.tournament.RoomDeletionIntentRepository
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrCacheCodec
@@ -83,6 +84,9 @@ import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCas
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 
 @Module
@@ -111,6 +115,18 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindTournamentRepository(
         repository: RoomTournamentRepository,
     ): TournamentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamSetupLocalRepository(
+        repository: RoomTournamentRepository,
+    ): GroupRotationTeamSetupLocalRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamSetupDraftRepository(
+        repository: RoomGroupRotationTeamSetupDraftRepository,
+    ): GroupRotationTeamSetupDraftRepository
 
     @Binds
     @Singleton
@@ -220,6 +236,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_27_28,
         RankForgeDatabase.MIGRATION_28_29,
         RankForgeDatabase.MIGRATION_29_30,
+        RankForgeDatabase.MIGRATION_30_31,
     ).build()
 
     @Provides
@@ -352,6 +369,13 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         authRepository: AuthRepository,
     ): SaveTeamSlotNamesUseCase = SaveTeamSlotNamesUseCase(repository, authRepository)
+
+    @Provides
+    @Singleton
+    fun provideSaveGroupRotationTeamSetupUseCase(
+        repository: GroupRotationTeamSetupLocalRepository,
+        authRepository: AuthRepository,
+    ): SaveGroupRotationTeamSetupUseCase = SaveGroupRotationTeamSetupUseCase(repository, authRepository)
 
     @Provides
     @Singleton

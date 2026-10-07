@@ -211,6 +211,40 @@ class GroupRotationPairingLobbySlotDaoTest {
         assertTrue(dao.observeByTournamentId(TOURNAMENT_ID).first().isEmpty())
     }
 
+    @Test
+    fun deletingAllAssignmentsForTournamentLeavesOtherTournamentsUntouched() = runBlocking {
+        val dao = database.groupRotationPairingLobbySlotDao()
+        database.tournamentDao().upsert(
+            TournamentEntity(
+                id = "other-tournament",
+                name = "Other",
+                stageName = "Stage",
+                organizerContactNumber = "456",
+                status = "DRAFT",
+            ),
+        )
+        database.teamSlotDao().upsertAll(
+            listOf(TeamSlotEntity("other-tournament", 1, "Other Team", "A")),
+        )
+        database.tournamentGroupPairingDao().upsertAll(
+            listOf(TournamentGroupPairingEntity("other-tournament", "A:B", "A", "B")),
+        )
+        dao.upsertAll(listOf(assignment("A:C", lobbySlot = 1, teamSlot = 13)))
+        dao.upsertAll(
+            listOf(
+                GroupRotationPairingLobbySlotEntity("other-tournament", "A:B", 1, 1),
+            ),
+        )
+
+        dao.deleteByTournamentId(TOURNAMENT_ID)
+
+        assertTrue(dao.observeByTournamentId(TOURNAMENT_ID).first().isEmpty())
+        assertEquals(
+            listOf("A:B:1:1"),
+            dao.observeByTournamentId("other-tournament").first().map { it.asIdentity() },
+        )
+    }
+
     private fun assignment(pairingKey: String, lobbySlot: Int, teamSlot: Int) =
         GroupRotationPairingLobbySlotEntity(
             tournamentId = TOURNAMENT_ID,

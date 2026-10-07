@@ -34,6 +34,12 @@ interface GroupRotationPairingLobbySlotDao {
     )
     suspend fun deleteByTournamentAndPairing(tournamentId: String, pairingKey: String)
 
+    @Query(
+        "DELETE FROM tournament_group_pairing_lobby_slots " +
+            "WHERE tournament_id = :tournamentId",
+    )
+    suspend fun deleteByTournamentId(tournamentId: String)
+
     @Transaction
     suspend fun replaceForTournamentAndPairing(
         tournamentId: String,
