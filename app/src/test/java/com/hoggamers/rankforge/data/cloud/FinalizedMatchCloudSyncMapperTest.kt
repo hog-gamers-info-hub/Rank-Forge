@@ -102,7 +102,7 @@ class FinalizedMatchCloudSyncMapperTest {
     }
 
     @Test
-    fun mapsGroupRotationFinalizedPairingAndRestingGroupsAreAbsent() {
+    fun rejectsGroupRotationFinalizedUntilV2CloudMappingSupportExists() {
         val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
         val groupTournament = snapshot().tournament.copy(
             format = TournamentFormat.GROUP_ROTATION,
@@ -129,16 +129,9 @@ class FinalizedMatchCloudSyncMapperTest {
                     .map { slot -> slot.copy(teamName = "Team ${slot.slotNumber}") },
                 matches = listOf(groupMatch),
             ),
-        ) as FinalizedMatchCloudSyncMappingResult.Success
+        )
 
-        assertEquals("A:C", result.payloads.matches.single().groupPairingKey)
-        assertEquals(12, result.payloads.matchResults.size)
-        assertTrue(result.payloads.matchResults.any {
-            it.teamSlotId == teamSlotId(13)
-        })
-        assertTrue(result.payloads.matchResults.none {
-            it.teamSlotId == teamSlotId(7) || it.teamSlotId == teamSlotId(19)
-        })
+        assertEquals(FinalizedMatchCloudSyncMappingResult.Invalid, result)
     }
 
     @Test

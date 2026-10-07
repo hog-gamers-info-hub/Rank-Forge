@@ -258,6 +258,7 @@ class MatchCorrectionViewModel @Inject constructor(
                     SaveMatchDraftValueResult.AuthenticationRequired ->
                         MatchCorrectionGlobalError.AUTHENTICATION_REQUIRED
                     SaveMatchDraftValueResult.MatchNotFound -> MatchCorrectionGlobalError.MATCH_NOT_FOUND
+                    SaveMatchDraftValueResult.InvalidData -> MatchCorrectionGlobalError.INVALID_DATA
                 }
             }
         }

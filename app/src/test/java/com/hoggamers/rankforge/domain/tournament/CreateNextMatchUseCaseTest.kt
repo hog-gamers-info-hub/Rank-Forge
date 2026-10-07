@@ -26,6 +26,7 @@ class CreateNextMatchUseCaseTest {
                 LocalDate.of(2026, 7, 24).atStartOfDay(ZoneOffset.UTC).toInstant(),
                 ZoneOffset.UTC,
             ),
+            repository,
         )
     }
 
@@ -134,6 +135,7 @@ class CreateNextMatchUseCaseTest {
             (useCase(tournamentId) as CreateNextMatchResult.Rejected).failure,
         )
 
+        saveGroupRotationMapping(tournamentId, pairing)
         val created = useCase(tournamentId, pairing).createdMatch()
         assertEquals(1, created.matchNumber)
         assertEquals(pairing, created.groupPairing)
@@ -144,12 +146,13 @@ class CreateNextMatchUseCaseTest {
         val tournamentId = "rotation-resting"
         val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
         repository.create(groupTournament(tournamentId))
-        repository.saveTeamNames(tournamentId, mapOf(19 to "Resting Team"))
-
-        assertEquals(
-            CreateNextMatchFailure.NO_PARTICIPATING_TEAMS,
-            (useCase(tournamentId, pairing) as CreateNextMatchResult.Rejected).failure,
+        saveGroupRotationMapping(tournamentId, pairing)
+        repository.saveTeamNames(
+            tournamentId,
+            mapOf(19 to "Resting Team"),
         )
+
+        assertTrue(useCase(tournamentId, pairing) is CreateNextMatchResult.Created)
     }
 
     private suspend fun createReadyTournament(id: String) {
@@ -165,6 +168,27 @@ class CreateNextMatchUseCaseTest {
                 date = LocalDate.of(2026, 7, 24),
                 mapName = "Bermuda",
             ),
+        )
+    }
+
+    private suspend fun saveGroupRotationMapping(
+        tournamentId: String,
+        pairing: GroupPairing,
+    ) {
+        val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+        repository.saveTeamNames(
+            tournamentId,
+            canonicalSlots.associateWith { slot -> "Team $slot" },
+        )
+        repository.replaceGroupRotationPairingLobbySlots(
+            canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(
+                    tournamentId = tournamentId,
+                    pairing = pairing,
+                    lobbySlotNumber = index + 1,
+                    teamSlotNumber = teamSlotNumber,
+                )
+            },
         )
     }
 

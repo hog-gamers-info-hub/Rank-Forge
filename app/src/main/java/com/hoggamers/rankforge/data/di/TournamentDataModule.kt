@@ -89,6 +89,8 @@ import com.hoggamers.rankforge.domain.tournament.TieBreakRules
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadRepository
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextRepository
+import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 
@@ -136,6 +138,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindGroupRotationTeamSetupReadRepository(
         repository: RoomGroupRotationTeamSetupReadRepository,
     ): GroupRotationTeamSetupReadRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchTeamIdentityContextRepository(
+        repository: RoomTournamentRepository,
+    ): MatchTeamIdentityContextRepository
 
     @Binds
     @Singleton
@@ -462,7 +470,20 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         authRepository: AuthRepository,
         clock: Clock,
-    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository, authRepository, clock)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+    ): CreateNextMatchUseCase = CreateNextMatchUseCase(
+        repository,
+        authRepository,
+        clock,
+        matchIdentityContextRepository,
+    )
+
+    @Provides
+    @Singleton
+    fun provideReadMatchTeamIdentityContextUseCase(
+        repository: MatchTeamIdentityContextRepository,
+        authRepository: AuthRepository,
+    ): ReadMatchTeamIdentityContextUseCase = ReadMatchTeamIdentityContextUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -485,14 +506,24 @@ object TournamentDataProvidersModule {
     fun provideSaveMatchPlacementsUseCase(
         repository: TournamentRepository,
         authRepository: AuthRepository,
-    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(repository, authRepository)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(
+        repository,
+        authRepository,
+        matchIdentityContextRepository,
+    )
 
     @Provides
     @Singleton
     fun provideSaveMatchKillsUseCase(
         repository: TournamentRepository,
         authRepository: AuthRepository,
-    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository, authRepository)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(
+        repository,
+        authRepository,
+        matchIdentityContextRepository,
+    )
 
     @Provides
     @Singleton
@@ -528,7 +559,13 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
         authRepository: AuthRepository,
-    ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult, authRepository)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+    ): FinalizeMatchUseCase = FinalizeMatchUseCase(
+        repository,
+        validateMatchResult,
+        authRepository,
+        matchIdentityContextRepository,
+    )
 
     @Provides
     @Singleton
@@ -536,8 +573,14 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         finalizeMatch: FinalizeMatchUseCase,
         authRepository: AuthRepository,
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
     ): FinalizeOcrCorrectionMatchUseCase =
-        FinalizeOcrCorrectionMatchUseCase(repository, finalizeMatch, authRepository)
+        FinalizeOcrCorrectionMatchUseCase(
+            repository,
+            finalizeMatch,
+            authRepository,
+            matchIdentityContextRepository = matchIdentityContextRepository,
+        )
 
     @Provides
     @Singleton

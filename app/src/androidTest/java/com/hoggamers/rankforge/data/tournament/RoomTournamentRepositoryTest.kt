@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.data.local.MatchDraftValueEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.MatchKillEntity
 import com.hoggamers.rankforge.data.local.MatchPlacementEntity
+import com.hoggamers.rankforge.data.local.GroupRotationPairingLobbySlotEntity
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -406,6 +407,128 @@ class RoomTournamentRepositoryTest {
                     .first()
                     .map { it.pairingKey },
             )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationMatchMutationsUsePersistedLobbyMappingForCanonicalIdentity() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-match-identity.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "group-rotation-match-identity"
+            val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+            val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+            repository.create(
+                Tournament(
+                    id = tournamentId,
+                    name = "Rotation Cup",
+                    stageName = "Organizer",
+                    organizerContactNumber = "123",
+                    status = TournamentStatus.DRAFT,
+                    format = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 3,
+                    selectedGroupPairings = listOf(pairing),
+                    ownerUserId = "user-a",
+                ),
+            )
+            repository.saveTeamNames(
+                tournamentId,
+                canonicalSlots.associateWith { slot -> "Team $slot" },
+            )
+            database.groupRotationPairingLobbySlotDao().upsertAll(
+                canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                    GroupRotationPairingLobbySlotEntity(
+                        tournamentId = tournamentId,
+                        pairingKey = pairing.canonicalKey,
+                        lobbySlotNumber = index + 1,
+                        teamSlotNumber = teamSlotNumber,
+                    )
+                },
+            )
+            val match = Match(
+                id = "group-rotation-match-identity-1",
+                tournamentId = tournamentId,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 7),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            )
+
+            assertEquals(CreateMatchRepositoryResult.Created, repository.createDraftMatch(match))
+            database.groupRotationPairingLobbySlotDao()
+                .deleteByTournamentAndPairing(tournamentId, pairing.canonicalKey)
+            assertEquals(
+                OwnerScopedMatchMutationResult.InvalidData,
+                repository.saveDraftMatchValueByOwner(
+                    tournamentId,
+                    match.id,
+                    "user-a",
+                    14,
+                    "1",
+                    "7",
+                ),
+            )
+            database.groupRotationPairingLobbySlotDao().upsertAll(
+                canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                    GroupRotationPairingLobbySlotEntity(
+                        tournamentId = tournamentId,
+                        pairingKey = pairing.canonicalKey,
+                        lobbySlotNumber = index + 1,
+                        teamSlotNumber = teamSlotNumber,
+                    )
+                },
+            )
+            assertEquals(
+                SaveMatchPlacementsRepositoryResult.Saved,
+                repository.saveDraftMatchPlacements(match.id, listOf(MatchPlacement(14, 1))),
+            )
+            assertEquals(
+                SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.INVALID_TEAM_SLOT),
+                repository.saveDraftMatchPlacements(match.id, listOf(MatchPlacement(7, 2))),
+            )
+            assertEquals(
+                SaveMatchKillsRepositoryResult.Saved,
+                repository.saveDraftMatchKills(match.id, listOf(MatchKill(14, 7))),
+            )
+            repository.saveDraftMatchValue(
+                tournamentId = tournamentId,
+                matchId = match.id,
+                teamSlotNumber = 14,
+                placementInput = "1",
+                killsInput = "7",
+            )
+            val draftBeforeOutOfPairWrite = repository.observeDraftMatchValues(tournamentId, match.id).first()
+            assertEquals(
+                OwnerScopedMatchMutationResult.InvalidData,
+                repository.saveDraftMatchValueByOwner(
+                    tournamentId,
+                    match.id,
+                    "user-a",
+                    7,
+                    "9",
+                    "9",
+                ),
+            )
+            assertEquals(
+                draftBeforeOutOfPairWrite,
+                repository.observeDraftMatchValues(tournamentId, match.id).first(),
+            )
+            val finalized = repository.finalizeDraftMatch(
+                match.id,
+                canonicalSlots.mapIndexed { index, teamSlotNumber -> MatchPlacement(teamSlotNumber, index + 1) },
+                canonicalSlots.map { teamSlotNumber -> MatchKill(teamSlotNumber, 0) },
+            ) as FinalizeMatchRepositoryResult.Finalized
+
+            assertEquals(canonicalSlots.toSet(), finalized.match.participantResults.map { it.teamSlotNumber }.toSet())
+            assertEquals(14, finalized.match.placements.first().teamSlotNumber)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)

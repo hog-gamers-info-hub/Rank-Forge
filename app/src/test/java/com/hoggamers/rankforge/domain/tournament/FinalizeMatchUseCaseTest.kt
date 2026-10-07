@@ -87,6 +87,16 @@ class FinalizeMatchUseCaseTest {
             "rotation-id",
             ((1..6).toList() + (13..18).toList()).associateWith { slot -> "Team $slot" },
         )
+        repository.replaceGroupRotationPairingLobbySlots(
+            (1..6).toList().plus((13..18).toList()).mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(
+                    tournamentId = "rotation-id",
+                    pairing = pairing,
+                    lobbySlotNumber = index + 1,
+                    teamSlotNumber = teamSlotNumber,
+                )
+            },
+        )
         repository.createDraftMatch(
             Match(
                 id = "rotation-match",
@@ -99,7 +109,12 @@ class FinalizeMatchUseCaseTest {
             ),
         )
 
-        val useCase = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase(), SignedInTournamentTestAuthRepository())
+        val useCase = FinalizeMatchUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
+            repository,
+        )
         val result = useCase(
             FinalizeMatchInput(
                 matchId = "rotation-match",

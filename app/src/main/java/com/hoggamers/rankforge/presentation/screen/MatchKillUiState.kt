@@ -36,4 +36,5 @@ data class MatchKillRowUiState(
     val teamName: String,
     val killsInput: String,
     val playerNames: List<String> = emptyList(),
+    val lobbySlotNumber: Int = teamSlotNumber,
 )

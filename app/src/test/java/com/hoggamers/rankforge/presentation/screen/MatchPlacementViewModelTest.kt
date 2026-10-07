@@ -21,6 +21,9 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchInput
 import com.hoggamers.rankforge.domain.tournament.CreateMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
+import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -32,6 +35,8 @@ import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -91,6 +96,73 @@ class MatchPlacementViewModelTest {
         assertTrue(viewModel.uiState.value.isAvailable)
         assertEquals((1..12).toList(), viewModel.uiState.value.rows.map { it.teamSlotNumber })
         assertTrue(viewModel.uiState.value.rows.all { it.placementInput.isEmpty() })
+    }
+
+    @Test
+    fun groupRotationRowsFollowLobbyOrderWhileRetainingCanonicalTeamIdentity() = runTest {
+        val tournamentId = "rotation-placement"
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+        repository.create(
+            Tournament(
+                id = tournamentId,
+                name = "Rotation Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.DRAFT,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = listOf(pairing),
+            ),
+        )
+        repository.saveTeamNames(
+            tournamentId,
+            canonicalSlots.associateWith { slot -> "Team $slot" },
+        )
+        repository.replaceGroupRotationPairingLobbySlots(
+            canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(tournamentId, pairing, index + 1, teamSlotNumber)
+            },
+        )
+        val rotationMatch = com.hoggamers.rankforge.domain.tournament.Match(
+            id = "rotation-placement-match",
+            tournamentId = tournamentId,
+            matchNumber = 1,
+            date = LocalDate.of(2026, 10, 7),
+            mapName = "Bermuda",
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+            groupPairing = pairing,
+        )
+        assertEquals(
+            com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult.Created,
+            repository.createDraftMatch(rotationMatch),
+        )
+
+        val rotationViewModel = MatchPlacementViewModel(
+            observeMatches = ObserveMatchesUseCase(repository),
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
+            saveMatchPlacements = SaveMatchPlacementsUseCase(repository, SignedInTournamentTestAuthRepository(), repository),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository, SignedInTournamentTestAuthRepository()),
+            clearDraftMatch = ClearDraftMatchUseCase(repository, SignedInTournamentTestAuthRepository()),
+            readMatchTeamIdentityContext = ReadMatchTeamIdentityContextUseCase(
+                repository,
+                SignedInTournamentTestAuthRepository(),
+            ),
+        )
+        rotationViewModel.load(tournamentId, rotationMatch.id)
+        advanceUntilIdle()
+
+        assertTrue(rotationViewModel.uiState.value.isAvailable)
+        assertEquals((1..12).toList(), rotationViewModel.uiState.value.rows.map { it.lobbySlotNumber })
+        assertEquals(canonicalSlots, rotationViewModel.uiState.value.rows.map { it.teamSlotNumber })
+        assertEquals("Team 14", rotationViewModel.uiState.value.rows.first().teamName)
+        rotationViewModel.onPlacementChanged(14, "1")
+        rotationViewModel.save()
+        advanceUntilIdle()
+        assertEquals(listOf(MatchPlacement(14, 1)), repository.observeMatchById(rotationMatch.id).first()?.placements)
     }
 
     @Test
@@ -239,5 +311,82 @@ class MatchPlacementViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.observeMatchById(matchId).first()?.placements?.first()?.position)
+    }
+
+    @Test
+    fun finalizedLegacyGroupRotationPlacementRemainsReadableWithoutLobbyClaims() = runTest {
+        val tournamentId = "legacy-rotation-placement"
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+        repository.create(
+            Tournament(
+                id = tournamentId,
+                name = "Rotation Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.DRAFT,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = listOf(pairing),
+            ),
+        )
+        repository.saveTeamNames(tournamentId, canonicalSlots.associateWith { slot -> "Team $slot" })
+        repository.replaceGroupRotationPairingLobbySlots(
+            canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(tournamentId, pairing, index + 1, teamSlotNumber)
+            },
+        )
+        val legacyMatch = com.hoggamers.rankforge.domain.tournament.Match(
+            id = "legacy-rotation-placement-match",
+            tournamentId = tournamentId,
+            matchNumber = 1,
+            date = LocalDate.of(2026, 10, 7),
+            mapName = "Bermuda",
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.DRAFT,
+            groupPairing = pairing,
+        )
+        assertEquals(
+            com.hoggamers.rankforge.domain.tournament.CreateMatchRepositoryResult.Created,
+            repository.createDraftMatch(legacyMatch),
+        )
+        repository.finalizeDraftMatch(
+            matchId = legacyMatch.id,
+            placements = canonicalSlots.mapIndexed { index, teamSlotNumber -> MatchPlacement(teamSlotNumber, index + 1) },
+            kills = canonicalSlots.map { teamSlotNumber ->
+                com.hoggamers.rankforge.domain.tournament.MatchKill(teamSlotNumber, 0)
+            },
+        )
+        repository.replaceGroupRotationPairingLobbySlots(
+            canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(
+                    tournamentId,
+                    pairing,
+                    index + 1,
+                    if (index == 1) canonicalSlots.first() else teamSlotNumber,
+                )
+            },
+        )
+
+        val rotationViewModel = MatchPlacementViewModel(
+            observeMatches = ObserveMatchesUseCase(repository),
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            observeDraftValues = ObserveMatchDraftValuesUseCase(repository),
+            saveMatchPlacements = SaveMatchPlacementsUseCase(repository, SignedInTournamentTestAuthRepository()),
+            saveDraftValue = SaveMatchDraftValueUseCase(repository, SignedInTournamentTestAuthRepository()),
+            clearDraftMatch = ClearDraftMatchUseCase(repository, SignedInTournamentTestAuthRepository()),
+            readMatchTeamIdentityContext = ReadMatchTeamIdentityContextUseCase(
+                repository,
+                SignedInTournamentTestAuthRepository(),
+            ),
+        )
+        rotationViewModel.load(tournamentId, legacyMatch.id)
+        advanceUntilIdle()
+
+        assertTrue(rotationViewModel.uiState.value.isAvailable)
+        assertTrue(rotationViewModel.uiState.value.isReadOnly)
+        assertTrue(rotationViewModel.uiState.value.rows.all { it.lobbySlotNumber == null })
+        assertEquals(canonicalSlots.sorted(), rotationViewModel.uiState.value.rows.map { it.teamSlotNumber })
     }
 }

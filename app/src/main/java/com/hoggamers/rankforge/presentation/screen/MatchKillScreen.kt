@@ -208,11 +208,8 @@ private fun MatchKillRow(
             .testTag(MATCH_KILL_ROW_TEST_TAG_PREFIX + row.teamSlotNumber),
     ) {
         Text(
-            text = stringResource(
-                R.string.match_kill_team_label,
-                row.teamSlotNumber,
+            text = "Lobby ${row.lobbySlotNumber.toString().padStart(2, '0')} · " +
                 row.teamName.ifBlank { stringResource(R.string.empty_team_slot_subtitle) },
-            ),
             style = MaterialTheme.typography.bodyLarge,
         )
         if (row.playerNames.isNotEmpty()) {

@@ -72,7 +72,7 @@ class DraftMatchCloudSyncMapperTest {
     }
 
     @Test
-    fun mapsGroupRotationDraftPairingAndPermanentSlotIdentity() {
+    fun rejectsGroupRotationDraftUntilV2CloudMappingSupportExists() {
         val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
         val groupTournament = snapshot().tournament.copy(
             format = TournamentFormat.GROUP_ROTATION,
@@ -87,12 +87,9 @@ class DraftMatchCloudSyncMapperTest {
 
         val result = DraftMatchCloudSyncMapper.map(
             DraftMatchCloudSyncSnapshot(groupTournament, listOf(groupMatch)),
-        ) as DraftMatchCloudSyncMappingResult.Success
+        )
 
-        assertEquals("A:C", result.payloads.matches.single().groupPairingKey)
-        assertEquals(13, result.payloads.matchResults.single().teamSlotId.let {
-            (1..24).single { slot -> it == TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), slot) }
-        })
+        assertEquals(DraftMatchCloudSyncMappingResult.Invalid, result)
     }
 
     @Test

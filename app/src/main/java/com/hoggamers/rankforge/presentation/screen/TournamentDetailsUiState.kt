@@ -175,7 +175,13 @@ fun Tournament.toDetailsItemUiState(
                     slots,
                     match,
                 )
-            }.getOrElse { TeamSlot.SLOT_NUMBERS.toSet() })
+                }.getOrElse {
+                    if (format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION) {
+                        emptySet()
+                    } else {
+                        TeamSlot.SLOT_NUMBERS.toSet()
+                    }
+                })
                 .errorsByTeamSlot
                 .toSortedMap()
                 .flatMap { (teamSlotNumber, errors) ->

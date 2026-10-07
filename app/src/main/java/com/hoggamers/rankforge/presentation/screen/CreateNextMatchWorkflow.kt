@@ -13,6 +13,8 @@ import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.defaultTeamNameForSlot
+import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -26,15 +28,24 @@ class CreateNextMatchWorkflow @Inject constructor(
     private val syncDraftMatches: DraftMatchCloudSyncAction,
     private val applyLobbyTemplate: ApplyLobbyTemplateAction,
     private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction,
+    private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
+        ReadMatchTeamIdentityContextUseCase(),
 ) {
     suspend fun teamCountConfirmationOrNull(
         tournamentId: String,
         groupPairing: GroupPairing? = null,
     ): TeamCountConfirmationUiState? {
         val persistedSlots = observeTournamentSlots(tournamentId).first()
-        val eligibleSlots = groupPairing?.let { pairing ->
-            persistedSlots.filter { it.group == pairing.firstGroup || it.group == pairing.secondGroup }
-        } ?: persistedSlots
+        val eligibleSlots = if (groupPairing == null) {
+            persistedSlots
+        } else {
+            when (val result = readMatchTeamIdentityContext.forPairing(tournamentId, groupPairing)) {
+                is MatchTeamIdentityContextReadResult.Loaded -> persistedSlots.filter {
+                    it.slotNumber in result.context.eligibleTeamSlotNumbers
+                }
+                else -> return null
+            }
+        }
         val participation = eligibleSlots.analyzeTeamSlotParticipation(
             eligibleSlots.map { it.slotNumber },
         )
@@ -52,12 +63,18 @@ class CreateNextMatchWorkflow @Inject constructor(
         tournamentId: String,
         groupPairing: GroupPairing? = null,
     ): Boolean {
-        val slots = observeTournamentSlots(tournamentId).first()
-            .filter { slot ->
-                groupPairing == null ||
-                    slot.group == groupPairing.firstGroup ||
-                    slot.group == groupPairing.secondGroup
-            }
+        val persistedSlots = observeTournamentSlots(tournamentId).first()
+        if (groupPairing != null) {
+            val result = readMatchTeamIdentityContext.forPairing(tournamentId, groupPairing)
+            return result is MatchTeamIdentityContextReadResult.Loaded &&
+                persistedSlots.filter {
+                    it.slotNumber in result.context.eligibleTeamSlotNumbers
+                }.let { slots ->
+                    slots.size == TeamSlot.SLOT_NUMBERS.count() &&
+                        slots.all { it.teamName.trim().isNotBlank() }
+                }
+        }
+        val slots = persistedSlots
         val names = slots.associate { slot ->
             val trimmedName = slot.teamName.trim()
             slot.slotNumber to if (trimmedName.isBlank()) {

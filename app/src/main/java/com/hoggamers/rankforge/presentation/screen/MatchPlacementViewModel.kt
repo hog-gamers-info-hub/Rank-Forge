@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.PlacementGlobalError
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -14,6 +15,9 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchInput
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchResult
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
+import com.hoggamers.rankforge.domain.tournament.finalizedHistoricalTeamSlotNumbers
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsInput
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
@@ -38,6 +42,8 @@ class MatchPlacementViewModel @Inject constructor(
     private val saveMatchPlacements: SaveMatchPlacementsUseCase,
     private val saveDraftValue: SaveMatchDraftValueUseCase,
     private val clearDraftMatch: ClearDraftMatchUseCase,
+    private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
+        ReadMatchTeamIdentityContextUseCase(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchPlacementUiState())
     val uiState: StateFlow<MatchPlacementUiState> = _uiState.asStateFlow()
@@ -75,6 +81,35 @@ class MatchPlacementViewModel @Inject constructor(
                         matchId = matchId,
                     )
                 } else {
+                    val identityContext = (readMatchTeamIdentityContext.forMatch(match.id)
+                        as? MatchTeamIdentityContextReadResult.Loaded)?.context
+                    val isGroupRotationMatch = match.groupPairing != null ||
+                        slots.any { it.slotNumber !in TeamSlot.SLOT_NUMBERS }
+                    val isLegacyFinalizedGroupRotation = isGroupRotationMatch &&
+                        match.status == MatchStatus.FINALIZED &&
+                        identityContext == null
+                    if (isGroupRotationMatch && identityContext == null &&
+                        !isLegacyFinalizedGroupRotation
+                    ) {
+                        return@combine MatchPlacementUiState(
+                            isLoading = false,
+                            isAvailable = false,
+                            tournamentId = tournamentId,
+                            matchId = matchId,
+                        )
+                    }
+                    val identities = identityContext?.orderedTeams
+                        ?: if (isLegacyFinalizedGroupRotation) emptyList() else slots.sortedBy { it.slotNumber }.map { slot ->
+                            com.hoggamers.rankforge.domain.tournament.MatchLobbyTeamIdentity(
+                                lobbySlotNumber = slot.slotNumber,
+                                teamSlotNumber = slot.slotNumber,
+                            )
+                        }
+                    val canonicalTeamSlotNumbers = if (isLegacyFinalizedGroupRotation) {
+                        match.finalizedHistoricalTeamSlotNumbers()
+                    } else {
+                        identities.map { it.teamSlotNumber }
+                    }
                     val isReadOnly = match.status == MatchStatus.FINALIZED
                     val savedPlacements = match.placements.associateBy { it.teamSlotNumber }
                     MatchPlacementUiState(
@@ -84,7 +119,9 @@ class MatchPlacementViewModel @Inject constructor(
                         matchId = matchId,
                         matchNumber = match.matchNumber,
                         isReadOnly = isReadOnly,
-                        rows = slots.sortedBy { it.slotNumber }.map { slot ->
+                        rows = canonicalTeamSlotNumbers.mapNotNull { teamSlotNumber ->
+                            val slot = slots.firstOrNull { it.slotNumber == teamSlotNumber }
+                                ?: return@mapNotNull null
                             MatchPlacementRowUiState(
                                 teamSlotNumber = slot.slotNumber,
                                 teamName = slot.teamName,
@@ -95,6 +132,9 @@ class MatchPlacementViewModel @Inject constructor(
                                         ?: savedPlacements[slot.slotNumber]?.position?.toString().orEmpty()
                                 },
                                 playerNames = rosters[slot.slotNumber].orEmpty().map { it.displayName },
+                                lobbySlotNumber = identities.firstOrNull {
+                                    it.teamSlotNumber == teamSlotNumber
+                                }?.lobbySlotNumber,
                             )
                         },
                     )
@@ -242,6 +282,7 @@ class MatchPlacementViewModel @Inject constructor(
                     SaveMatchDraftValueResult.Saved -> draftWriteError
                     SaveMatchDraftValueResult.AuthenticationRequired -> PlacementGlobalError.AUTHENTICATION_REQUIRED
                     SaveMatchDraftValueResult.MatchNotFound -> PlacementGlobalError.MATCH_NOT_FOUND
+                    SaveMatchDraftValueResult.InvalidData -> PlacementGlobalError.INVALID_DATA
                 }
             }
         }

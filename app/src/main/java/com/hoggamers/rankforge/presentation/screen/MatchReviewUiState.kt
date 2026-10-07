@@ -196,6 +196,7 @@ data class MatchReviewUiState(
     val pendingNextMatchTeamCountConfirmation: TeamCountConfirmationUiState? = null,
     val isCreatingNextMatch: Boolean = false,
     val nextMatchCreationMessage: CalculatePointsMessage? = null,
+    val isLegacyFinalizedGroupRotation: Boolean = false,
     val nextMatchReviewRequest: MatchReviewRequest? = null,
     val selectedScreenshotUri: String? = null,
     val isPhotoPickerLaunchPending: Boolean = false,
@@ -271,6 +272,9 @@ data class MatchReviewUiState(
 
     val isEditable: Boolean
         get() = isAvailable && status == MatchStatus.DRAFT
+
+    val isCorrectionAvailable: Boolean
+        get() = isAvailable && status == MatchStatus.FINALIZED && !isLegacyFinalizedGroupRotation
 
     val hasLinkedScreenshot: Boolean
         get() = isScreenshotLinked || linkedScreenshotUri != null
@@ -373,4 +377,5 @@ data class MatchReviewRowUiState(
     val killsInput: String = "",
     val pointAdjustment: Int = 0,
     val validationErrors: Set<MatchResultValidationError> = emptySet(),
+    val lobbySlotNumber: Int? = teamSlotNumber,
 )

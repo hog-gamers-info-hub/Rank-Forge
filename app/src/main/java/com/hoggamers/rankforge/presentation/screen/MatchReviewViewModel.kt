@@ -79,8 +79,11 @@ import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
+import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
+import com.hoggamers.rankforge.domain.tournament.finalizedHistoricalTeamSlotNumbers
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationResult
@@ -187,6 +190,8 @@ class MatchReviewViewModel @Inject constructor(
         ScreenshotReconciliationScheduler(),
     private val createNextMatchWorkflow: CreateNextMatchWorkflow? = null,
     private val saveDraftValue: SaveMatchDraftValueUseCase? = null,
+    private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
+        ReadMatchTeamIdentityContextUseCase(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
@@ -332,6 +337,36 @@ class MatchReviewViewModel @Inject constructor(
                         matchId = matchId,
                     )
                 } else {
+                    val identityContext = (readMatchTeamIdentityContext.forMatch(match.id)
+                        as? MatchTeamIdentityContextReadResult.Loaded)?.context
+                    val isGroupRotationMatch = tournamentFormat == TournamentFormat.GROUP_ROTATION ||
+                        match.groupPairing != null
+                    val isLegacyFinalizedGroupRotation = isGroupRotationMatch &&
+                        match.status == MatchStatus.FINALIZED &&
+                        identityContext == null
+                    if (isGroupRotationMatch && identityContext == null &&
+                        !isLegacyFinalizedGroupRotation
+                    ) {
+                        return@combine MatchReviewUiState(
+                            isLoading = false,
+                            isAvailable = false,
+                            tournamentId = tournamentId,
+                            tournamentFormat = tournamentFormat,
+                            matchId = matchId,
+                        )
+                    }
+                    val identities = identityContext?.orderedTeams
+                        ?: if (isLegacyFinalizedGroupRotation) emptyList() else TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                            com.hoggamers.rankforge.domain.tournament.MatchLobbyTeamIdentity(
+                                lobbySlotNumber = slotNumber,
+                                teamSlotNumber = slotNumber,
+                            )
+                        }
+                    val canonicalTeamSlotNumbers = if (isLegacyFinalizedGroupRotation) {
+                        match.finalizedHistoricalTeamSlotNumbers()
+                    } else {
+                        identities.map { it.teamSlotNumber }
+                    }
                     val fallbackSlots = TeamSlot.fixedSlotsForTournament(tournamentId)
                         .associateBy { it.slotNumber }
                     val slotsByNumber = slots.associateBy { it.slotNumber }
@@ -341,8 +376,9 @@ class MatchReviewViewModel @Inject constructor(
                         ?.map { result -> result.teamSlotNumber }
                         ?.toSet()
                         .orEmpty()
-                    val rows = TeamSlot.SLOT_NUMBERS.map { teamSlotNumber ->
-                        val slot = slotsByNumber[teamSlotNumber] ?: fallbackSlots.getValue(teamSlotNumber)
+                    val rows = canonicalTeamSlotNumbers.mapNotNull { teamSlotNumber ->
+                        val slot = slotsByNumber[teamSlotNumber] ?: fallbackSlots[teamSlotNumber]
+                            ?: return@mapNotNull null
                         val draft = draftValues[teamSlotNumber]
                             .takeIf { match.status == MatchStatus.DRAFT }
                         MatchReviewRowUiState(
@@ -354,6 +390,9 @@ class MatchReviewViewModel @Inject constructor(
                             killsInput = draft?.killsInput
                                 ?: killsBySlot[teamSlotNumber]?.kills?.toString().orEmpty(),
                             pointAdjustment = draft?.pointAdjustment ?: 0,
+                            lobbySlotNumber = identities.firstOrNull {
+                                it.teamSlotNumber == teamSlotNumber
+                            }?.lobbySlotNumber,
                         )
                     }
                     val validation = if (match.status == MatchStatus.FINALIZED || draftValues.isEmpty()) {
@@ -378,12 +417,16 @@ class MatchReviewViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         tournamentFormat = tournamentFormat,
                         matchId = matchId,
-                        activeTeamCount = slots.analyzeTeamSlotParticipation().activeCount,
+                        activeTeamCount = slots
+                            .filter { slot -> canonicalTeamSlotNumbers.contains(slot.slotNumber) }
+                            .analyzeTeamSlotParticipation(canonicalTeamSlotNumbers)
+                            .activeCount,
                         finalizedParticipantSlotNumbers = finalizedParticipantSlotNumbers,
                         matchNumber = match.matchNumber,
                         nextMatchNumber = nextAvailableMatchNumber(matches.map { it.matchNumber }),
                         existingMatchCount = matches.size,
                         status = match.status,
+                        isLegacyFinalizedGroupRotation = isLegacyFinalizedGroupRotation,
                         correctionHistory = match.correctionHistory,
                         rows = rows.map { row ->
                             row.copy(validationErrors = validation.errorsByTeamSlot[row.teamSlotNumber].orEmpty())
@@ -571,7 +614,7 @@ class MatchReviewViewModel @Inject constructor(
         val state = _uiState.value
         val tournamentId = state.tournamentId?.takeIf { it.isNotBlank() } ?: return
         val matchId = state.matchId?.takeIf { it.isNotBlank() } ?: return
-        if (!state.isEditable || teamSlotNumber !in TeamSlot.SLOT_NUMBERS) return
+        if (!state.isEditable || state.rows.none { it.teamSlotNumber == teamSlotNumber }) return
         saveDraftValue ?: return
         viewModelScope.launch {
             saveDraftValue(
@@ -586,7 +629,7 @@ class MatchReviewViewModel @Inject constructor(
     }
 
     fun openCorrection() {
-        if (_uiState.value.status == MatchStatus.FINALIZED) {
+        if (_uiState.value.isCorrectionAvailable) {
             _uiState.update { it.copy(navigation = MatchReviewNavigation.CORRECTION) }
         }
     }

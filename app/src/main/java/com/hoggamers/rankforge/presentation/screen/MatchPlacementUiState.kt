@@ -37,4 +37,5 @@ data class MatchPlacementRowUiState(
     val teamName: String,
     val placementInput: String,
     val playerNames: List<String> = emptyList(),
+    val lobbySlotNumber: Int? = teamSlotNumber,
 )
