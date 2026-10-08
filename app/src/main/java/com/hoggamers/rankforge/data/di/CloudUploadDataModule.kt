@@ -32,8 +32,10 @@ import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRemoteD
 import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRepository
 import com.hoggamers.rankforge.data.cloud.SupabaseProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemoteReader
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteReader
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
@@ -242,6 +244,12 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindTournamentCloudUploadRetryAction(
         useCase: UploadTournamentUseCase,
     ): TournamentCloudUploadRetryAction
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentCloudRestorationRemoteReader(
+        reader: SupabaseTournamentCloudRestorationRemoteReader,
+    ): TournamentCloudRestorationRemoteReader
 
     @Binds
     @Singleton

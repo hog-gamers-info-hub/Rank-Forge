@@ -60,6 +60,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupPlanner
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupPlanningResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidator
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationRestorationValidator
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
@@ -935,9 +936,28 @@ class RoomTournamentRepository @Inject constructor(
     ) {
         require(expectedOwnerUserId.isNotBlank())
         require(snapshot.tournament.ownerUserId == expectedOwnerUserId)
+        require(snapshot.cloudRevision?.value?.let { it > 0 } == true)
         val expectedSlots = snapshot.tournament.formatDerivedSlots()
-        require(snapshot.slots.map { it.slotNumber } == expectedSlots.map { it.slotNumber })
-        require(snapshot.slots.map { it.group } == expectedSlots.map { it.group })
+        when (snapshot.tournament.format) {
+            TournamentFormat.STANDARD -> {
+                require(snapshot.pairingLobbySlots.isEmpty())
+                require(snapshot.slots.map { it.slotNumber } == expectedSlots.map { it.slotNumber })
+                require(snapshot.slots.map { it.group } == expectedSlots.map { it.group })
+            }
+
+            TournamentFormat.GROUP_ROTATION -> {
+                require(
+                    GroupRotationRestorationValidator.isValid(
+                        snapshot.tournament,
+                        snapshot.slots,
+                        snapshot.pairingLobbySlots,
+                    ),
+                )
+                require(snapshot.slots.map { it.slotNumber }.toSet() == expectedSlots.map { it.slotNumber }.toSet())
+                require(snapshot.slots.size == expectedSlots.size)
+                require(snapshot.slots.map { it.slotNumber }.distinct().size == snapshot.slots.size)
+            }
+        }
         require(snapshot.slots.all { it.tournamentId == snapshot.tournament.id })
         require(snapshot.players.all {
             it.tournamentId == snapshot.tournament.id &&
@@ -979,6 +999,7 @@ class RoomTournamentRepository @Inject constructor(
                                 }
                             },
                     ),
+                teamEntryDrafts = current.teamEntryDrafts - snapshot.tournament.id,
             )
             database.withTransaction {
                 val existingTournament = database.tournamentDao()
@@ -1001,6 +1022,9 @@ class RoomTournamentRepository @Inject constructor(
                         },
                     ),
                 )
+                database.groupRotationPairingLobbySlotDao()
+                    .deleteByTournamentId(snapshot.tournament.id)
+                database.rosterPlayerDao().deleteByTournamentId(snapshot.tournament.id)
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
                 database.teamSlotDao().upsertAll(snapshot.slots.map { it.toEntity() })
                 database.tournamentGroupPairingDao().deleteByTournamentId(snapshot.tournament.id)
@@ -1008,15 +1032,19 @@ class RoomTournamentRepository @Inject constructor(
                     snapshot.tournament.selectedGroupPairings.map { it.toEntity(snapshot.tournament.id) },
                 )
                 database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
-                snapshot.cloudRevision?.let { revision ->
-                    database.syncRevisionDao().upsert(
-                        com.hoggamers.rankforge.data.local.SyncRevisionEntity(
-                            snapshot.tournament.id,
-                            revision.value,
-                            revision.value,
-                        ),
-                    )
-                }
+                database.groupRotationPairingLobbySlotDao().upsertAll(
+                    snapshot.pairingLobbySlots.map { it.toEntity() },
+                )
+                database.groupRotationPairingTeamEntryDraftDao()
+                    .deleteByTournamentId(snapshot.tournament.id)
+                val revision = requireNotNull(snapshot.cloudRevision)
+                database.syncRevisionDao().upsert(
+                    com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                        snapshot.tournament.id,
+                        revision.value,
+                        revision.value,
+                    ),
+                )
                 saveLegacyState(next)
             }
             state.value = next

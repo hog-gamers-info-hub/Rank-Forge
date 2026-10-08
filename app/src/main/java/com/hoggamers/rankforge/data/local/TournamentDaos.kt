@@ -292,6 +292,9 @@ interface RosterPlayerDao {
     @Upsert
     suspend fun upsertAll(rosterPlayers: List<RosterPlayerEntity>)
 
+    @Query("DELETE FROM roster_players WHERE tournament_id = :tournamentId")
+    suspend fun deleteByTournamentId(tournamentId: String)
+
     @Query(
         "DELETE FROM roster_players WHERE tournament_id = :tournamentId AND slot_number = :slotNumber",
     )

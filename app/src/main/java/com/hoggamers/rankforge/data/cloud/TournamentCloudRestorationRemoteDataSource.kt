@@ -55,10 +55,72 @@ interface TournamentCloudRestorationRemoteDataSource {
     ): TournamentCloudRestorationRemoteResult<TournamentCloudRestorationPayloads>
 }
 
+interface TournamentCloudRestorationRemoteReader {
+    suspend fun readTournament(tournamentId: String): TournamentCloudRestorePayload?
+
+    suspend fun readTeamSlots(tournamentId: String): List<TeamSlotCloudRestorePayload>
+
+    suspend fun readPlayers(teamSlotId: String): List<PlayerCloudRestorePayload>
+
+    suspend fun readPairings(tournamentId: String): List<GroupPairingUploadPayload>
+
+    suspend fun readPairingLobbySlots(tournamentId: String): List<GroupPairingLobbySlotUploadPayload>
+}
+
+@Singleton
+class SupabaseTournamentCloudRestorationRemoteReader @Inject constructor(
+    private val clientProvider: SupabaseClientProvider,
+) : TournamentCloudRestorationRemoteReader {
+    override suspend fun readTournament(tournamentId: String): TournamentCloudRestorePayload? =
+        clientProvider.client
+            .from("tournaments")
+            .select {
+                filter { eq("id", tournamentId) }
+            }
+            .decodeList<TournamentCloudRestorePayload>()
+            .singleOrNull()
+
+    override suspend fun readTeamSlots(tournamentId: String): List<TeamSlotCloudRestorePayload> =
+        clientProvider.client
+            .from("tournament_team_slots")
+            .select {
+                filter { eq("tournament_id", tournamentId) }
+            }
+            .decodeList()
+
+    override suspend fun readPlayers(teamSlotId: String): List<PlayerCloudRestorePayload> =
+        clientProvider.client
+            .from("players")
+            .select {
+                filter { eq("team_slot_id", teamSlotId) }
+            }
+            .decodeList()
+
+    override suspend fun readPairings(tournamentId: String): List<GroupPairingUploadPayload> =
+        clientProvider.client
+            .from("tournament_group_pairings")
+            .select {
+                filter { eq("tournament_id", tournamentId) }
+            }
+            .decodeList()
+
+    override suspend fun readPairingLobbySlots(
+        tournamentId: String,
+    ): List<GroupPairingLobbySlotUploadPayload> =
+        clientProvider.client
+            .from("tournament_group_pairing_lobby_slots")
+            .select {
+                filter { eq("tournament_id", tournamentId) }
+            }
+            .decodeList<GroupPairingLobbySlotUploadPayload>()
+            .sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
+}
+
 @Singleton
 class SupabaseTournamentCloudRestorationRemoteDataSource @Inject constructor(
     private val config: SupabaseAuthConfig,
     private val clientProvider: SupabaseClientProvider,
+    private val reader: TournamentCloudRestorationRemoteReader,
 ) : TournamentCloudRestorationRemoteDataSource {
     override suspend fun listOwnedTournaments(): TournamentCloudRestorationRemoteResult<
         List<TournamentCloudRestorePayload>
@@ -81,50 +143,63 @@ class SupabaseTournamentCloudRestorationRemoteDataSource @Inject constructor(
         tournamentId: String,
     ): TournamentCloudRestorationRemoteResult<TournamentCloudRestorationPayloads> {
         val accessFailure = accessFailure() ?: return try {
-            val client = clientProvider.client
-            val tournaments = client
-                .from("tournaments")
-                .select {
-                    filter { eq("id", tournamentId) }
-                }
-                .decodeList<TournamentCloudRestorePayload>()
-            val tournament = tournaments.singleOrNull()
-                ?: return TournamentCloudRestorationRemoteResult.Failure(
-                    TournamentCloudRestorationFailureCategory.NOT_FOUND,
-                )
-            val slots = client
-                .from("tournament_team_slots")
-                .select {
-                    filter { eq("tournament_id", tournamentId) }
-                }
-                .decodeList<TeamSlotCloudRestorePayload>()
-            val players = slots.flatMap { slot ->
-                client
-                    .from("players")
-                    .select {
-                        filter { eq("team_slot_id", slot.id) }
-                    }
-                    .decodeList<PlayerCloudRestorePayload>()
-            }
-            val pairings = client
-                .from("tournament_group_pairings")
-                .select {
-                    filter { eq("tournament_id", tournamentId) }
-                }
-                .decodeList<GroupPairingUploadPayload>()
-            TournamentCloudRestorationRemoteResult.Success(
-                TournamentCloudRestorationPayloads(
-                    tournament = tournament.toUploadPayload(pairings),
-                    teamSlots = slots.map { it.toUploadPayload() },
-                    players = players.map { it.toUploadPayload() },
-                ),
-            )
+            readRevisionFencedSnapshot(tournamentId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
             TournamentCloudRestorationRemoteResult.Failure(throwable.toFailureCategory())
         }
         return accessFailure
+    }
+
+    private suspend fun readRevisionFencedSnapshot(
+        tournamentId: String,
+    ): TournamentCloudRestorationRemoteResult<TournamentCloudRestorationPayloads> {
+        for (attempt in 0 until MAX_REVISION_READ_ATTEMPTS) {
+            val firstParent = reader.readTournament(tournamentId)
+                ?: return TournamentCloudRestorationRemoteResult.Failure(
+                    TournamentCloudRestorationFailureCategory.NOT_FOUND,
+                )
+            val firstFence = firstParent.toRevisionFence(tournamentId)
+                ?: return TournamentCloudRestorationRemoteResult.Failure(
+                    TournamentCloudRestorationFailureCategory.VALIDATION,
+                )
+
+            val slots = reader.readTeamSlots(tournamentId)
+            val players = slots
+                .sortedBy { it.slotNumber }
+                .flatMap { slot -> reader.readPlayers(slot.id) }
+            val pairings = reader.readPairings(tournamentId)
+            val pairingLobbySlots = reader.readPairingLobbySlots(tournamentId)
+
+            val secondParent = reader.readTournament(tournamentId)
+                ?: return TournamentCloudRestorationRemoteResult.Failure(
+                    TournamentCloudRestorationFailureCategory.NOT_FOUND,
+                )
+            val secondFence = secondParent.toRevisionFence(tournamentId)
+                ?: return TournamentCloudRestorationRemoteResult.Failure(
+                    TournamentCloudRestorationFailureCategory.VALIDATION,
+                )
+
+            if (firstFence == secondFence) {
+                return TournamentCloudRestorationRemoteResult.Success(
+                    TournamentCloudRestorationPayloads(
+                        tournament = firstParent.toUploadPayload(pairings),
+                        teamSlots = slots.map { it.toUploadPayload() },
+                        players = players.map { it.toUploadPayload() },
+                        pairingLobbySlots = pairingLobbySlots
+                            .sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber })),
+                    ),
+                )
+            }
+
+            if (attempt == MAX_REVISION_READ_ATTEMPTS - 1) {
+                return TournamentCloudRestorationRemoteResult.Failure(
+                    TournamentCloudRestorationFailureCategory.NETWORK,
+                )
+            }
+        }
+        error("Revision-fenced restoration read did not complete.")
     }
 
     private fun accessFailure(): TournamentCloudRestorationRemoteResult.Failure? {
@@ -141,6 +216,29 @@ class SupabaseTournamentCloudRestorationRemoteDataSource @Inject constructor(
         return null
     }
 }
+
+private data class TournamentRevisionFence(
+    val tournamentId: String,
+    val ownerId: String,
+    val revision: Int,
+)
+
+private fun TournamentCloudRestorePayload.toRevisionFence(
+    requestedTournamentId: String,
+): TournamentRevisionFence? =
+    takeIf {
+        id == requestedTournamentId &&
+            ownerId.isNotBlank() &&
+            revision > 0
+    }?.let {
+        TournamentRevisionFence(
+            tournamentId = id,
+            ownerId = ownerId,
+            revision = revision,
+        )
+    }
+
+private const val MAX_REVISION_READ_ATTEMPTS = 2
 
 private fun TournamentCloudRestorePayload.toUploadPayload(
     pairings: List<GroupPairingUploadPayload> = selectedGroupPairings,

@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationRestorationValidator
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
@@ -16,6 +18,7 @@ data class TournamentCloudRestorationPayloads(
     val tournament: TournamentUploadPayload,
     val teamSlots: List<TeamSlotUploadPayload>,
     val players: List<PlayerUploadPayload>,
+    val pairingLobbySlots: List<GroupPairingLobbySlotUploadPayload> = emptyList(),
 )
 
 sealed interface TournamentCloudRestorationMappingResult<out T> {
@@ -103,6 +106,13 @@ object TournamentCloudRestorationMapper {
             return TournamentCloudRestorationMappingResult.Invalid
         }
 
+        if (format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION &&
+            (payloads.teamSlots.size != expectedSlots.size ||
+                slotsByNumber.keys != expectedSlotNumbers)
+        ) {
+            return TournamentCloudRestorationMappingResult.Invalid
+        }
+
         val slots = expectedSlots.map { expectedSlot ->
             val slotNumber = expectedSlot.slotNumber
             val payload = slotsByNumber[slotNumber]?.singleOrNull()
@@ -113,6 +123,33 @@ object TournamentCloudRestorationMapper {
                 group = expectedSlot.group,
             )
         }
+
+        if (format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.STANDARD &&
+            payloads.pairingLobbySlots.isNotEmpty()
+        ) {
+            return TournamentCloudRestorationMappingResult.Invalid
+        }
+        val pairingsByKey = selectedPairings.associateBy { it.canonicalKey }
+        val pairingLobbySlots = payloads.pairingLobbySlots.map { payload ->
+            if (payload.tournamentId != tournament.id) {
+                return TournamentCloudRestorationMappingResult.Invalid
+            }
+            val pairing = pairingsByKey[payload.pairingKey]
+                ?: return TournamentCloudRestorationMappingResult.Invalid
+            runCatching {
+                GroupRotationPairingLobbySlot(
+                    tournamentId = payload.tournamentId,
+                    pairing = pairing,
+                    lobbySlotNumber = payload.lobbySlotNumber,
+                    teamSlotNumber = payload.teamSlotNumber,
+                )
+            }.getOrNull() ?: return TournamentCloudRestorationMappingResult.Invalid
+        }.sortedWith(compareBy({ it.pairing.canonicalKey }, { it.lobbySlotNumber }))
+
+        if (!GroupRotationRestorationValidator.isValid(tournament, slots, pairingLobbySlots)) {
+            return TournamentCloudRestorationMappingResult.Invalid
+        }
+
         val slotIds = expectedSlotNumbers.associateWith { slotNumber ->
             TournamentCloudIdentity.teamSlotId(tournamentUuid, slotNumber)
         }
@@ -158,6 +195,7 @@ object TournamentCloudRestorationMapper {
                 slots = slots,
                 players = players,
                 cloudRevision = cloudRevision,
+                pairingLobbySlots = pairingLobbySlots,
             ),
         )
     }

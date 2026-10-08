@@ -23,6 +23,7 @@ data class TournamentCloudRestorationSnapshot(
     val slots: List<TeamSlot>,
     val players: List<RestoredRosterPlayer>,
     val cloudRevision: CloudRevision? = null,
+    val pairingLobbySlots: List<GroupRotationPairingLobbySlot> = emptyList(),
 )
 
 enum class TournamentCloudRestorationFailureCategory {
