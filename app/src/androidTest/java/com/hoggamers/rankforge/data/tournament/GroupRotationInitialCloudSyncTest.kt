@@ -101,6 +101,7 @@ class GroupRotationInitialCloudSyncTest {
             )
             val result = UploadTournamentUseCase(
                 tournamentRepository = repository,
+                localSnapshotRepository = repository,
                 authRepository = SignedInAuthRepository,
                 cloudUploadRepository = cloud,
                 queueRecorder = RecordSyncQueueOutcome(NoOpPersistentSyncQueueRepository),

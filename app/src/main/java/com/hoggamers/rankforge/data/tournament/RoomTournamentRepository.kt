@@ -47,6 +47,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadLocalSnapshotRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
@@ -68,6 +70,7 @@ import com.hoggamers.rankforge.domain.tournament.DeletionBlockedException
 import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 import com.hoggamers.rankforge.data.local.TournamentSummaryProjection
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
@@ -78,6 +81,7 @@ import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.domain.sync.detectDivergence
+import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
 import java.time.LocalDate
 import java.time.Clock
 import javax.inject.Inject
@@ -116,7 +120,7 @@ class RoomTournamentRepository @Inject constructor(
     private val clock: Clock,
 ) : TournamentRepository, TournamentRestorationLocalRepository, MatchRestorationLocalRepository,
     LocalDeletionRepository, AccountDeletionLocalCleanupRepository, GroupRotationTeamSetupLocalRepository,
-    MatchTeamIdentityContextRepository {
+    MatchTeamIdentityContextRepository, TournamentCloudUploadLocalSnapshotRepository {
     constructor(database: RankForgeDatabase) : this(
         database = database,
         localImagePreserver = LocalImagePreserver(
@@ -361,6 +365,57 @@ class RoomTournamentRepository @Inject constructor(
         awaitState()
         return database.syncRevisionDao().readByTournamentId(tournamentId)?.toDomain()
             ?: LocalRevisionState.Missing
+    }
+
+    override suspend fun readCloudUploadSnapshotByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): TournamentCloudUploadSnapshot? {
+        awaitState()
+        return database.withTransaction {
+            val tournamentEntity = database.tournamentDao()
+                .readByIdAndOwner(tournamentId, ownerUserId)
+                ?: return@withTransaction null
+            val pairings = database.tournamentGroupPairingDao()
+                .readByTournamentId(tournamentId)
+                .map { it.toDomain() }
+            val tournament = runCatching { tournamentEntity.toDomain(pairings) }
+                .getOrNull()
+                ?: return@withTransaction null
+            val slots = database.teamSlotDao()
+                .readByTournamentId(tournamentId)
+                .map { it.toDomain() }
+            val rosters = database.rosterPlayerDao()
+                .readByTournamentId(tournamentId)
+                .map { it.toDomain() }
+                .groupBy { it.slotNumber }
+            val mappingEntities = database.groupRotationPairingLobbySlotDao()
+                .readByTournamentId(tournamentId)
+            val pairingLobbySlots = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                val pairingsByKey = tournament.selectedGroupPairings.associateBy { it.canonicalKey }
+                buildList {
+                    for (entity in mappingEntities) {
+                        val pairing = pairingsByKey[entity.pairingKey]
+                            ?: return@withTransaction null
+                        add(entity.toDomain(pairing))
+                    }
+                }
+            } else {
+                if (mappingEntities.isNotEmpty()) return@withTransaction null
+                emptyList()
+            }
+            val expectedCloudRevision = database.syncRevisionDao()
+                .readByTournamentId(tournamentId)
+                ?.toDomain()
+                ?.expectedRevisionForWrite()
+            TournamentCloudUploadSnapshot(
+                tournament = tournament,
+                slots = slots,
+                rosters = rosters,
+                pairingLobbySlots = pairingLobbySlots,
+                expectedCloudRevision = expectedCloudRevision,
+            )
+        }
     }
 
     override suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) {

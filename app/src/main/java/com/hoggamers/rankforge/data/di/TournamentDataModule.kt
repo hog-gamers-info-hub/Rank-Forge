@@ -72,6 +72,7 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadLocalSnapshotRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
@@ -120,6 +121,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindTournamentRepository(
         repository: RoomTournamentRepository,
     ): TournamentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentCloudUploadLocalSnapshotRepository(
+        repository: RoomTournamentRepository,
+    ): TournamentCloudUploadLocalSnapshotRepository
 
     @Binds
     @Singleton

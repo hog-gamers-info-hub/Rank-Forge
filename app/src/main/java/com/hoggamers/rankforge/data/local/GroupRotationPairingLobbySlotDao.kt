@@ -17,6 +17,13 @@ interface GroupRotationPairingLobbySlotDao {
 
     @Query(
         "SELECT * FROM tournament_group_pairing_lobby_slots " +
+            "WHERE tournament_id = :tournamentId " +
+            "ORDER BY pairing_key, lobby_slot_number",
+    )
+    suspend fun readByTournamentId(tournamentId: String): List<GroupRotationPairingLobbySlotEntity>
+
+    @Query(
+        "SELECT * FROM tournament_group_pairing_lobby_slots " +
             "WHERE tournament_id = :tournamentId AND pairing_key = :pairingKey " +
             "ORDER BY lobby_slot_number",
     )

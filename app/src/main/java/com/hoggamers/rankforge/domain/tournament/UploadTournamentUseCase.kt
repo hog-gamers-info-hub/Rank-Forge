@@ -11,11 +11,11 @@ import kotlinx.coroutines.flow.first
 import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
-import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
 import com.hoggamers.rankforge.domain.sync.queueFailureCategory
 
 class UploadTournamentUseCase @Inject constructor(
     private val tournamentRepository: TournamentRepository,
+    private val localSnapshotRepository: TournamentCloudUploadLocalSnapshotRepository,
     private val authRepository: AuthRepository,
     private val cloudUploadRepository: TournamentCloudUploadRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
@@ -60,16 +60,10 @@ class UploadTournamentUseCase @Inject constructor(
         }
 
         val snapshot = try {
-            val tournament = tournamentRepository.observeByIdAndOwner(tournamentId, expectedOwnerUserId).first()
-                ?: return TournamentCloudUploadResult.ValidationFailure
-            TournamentCloudUploadSnapshot(
-                tournament = tournament,
-                slots = tournamentRepository.observeSlotsByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
-                rosters = tournamentRepository.observeRosterByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
-                expectedCloudRevision = tournamentRepository
-                    .readLocalRevisionState(tournamentId)
-                    .expectedRevisionForWrite(),
-            )
+            localSnapshotRepository.readCloudUploadSnapshotByOwner(
+                tournamentId = tournamentId,
+                ownerUserId = expectedOwnerUserId,
+            ) ?: return TournamentCloudUploadResult.ValidationFailure
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {

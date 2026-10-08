@@ -78,6 +78,10 @@ class GroupRotationPairingLobbySlotDaoTest {
             dao.observeByTournamentId(TOURNAMENT_ID).first().map { it.asIdentity() },
         )
         assertEquals(
+            listOf("A:C:1:16", "A:C:7:17", "B:C:1:13", "B:C:2:14"),
+            dao.readByTournamentId(TOURNAMENT_ID).map { it.asIdentity() },
+        )
+        assertEquals(
             listOf("A:C:1:16", "A:C:7:17"),
             dao.observeByTournamentAndPairing(TOURNAMENT_ID, "A:C")
                 .first()

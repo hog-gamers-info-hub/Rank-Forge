@@ -7,6 +7,7 @@ data class TournamentCloudUploadSnapshot(
     val tournament: Tournament,
     val slots: List<TeamSlot>,
     val rosters: Map<Int, List<RosterPlayer>>,
+    val pairingLobbySlots: List<GroupRotationPairingLobbySlot> = emptyList(),
     val expectedCloudRevision: Int? = null,
 )
 
@@ -41,6 +42,13 @@ interface TournamentCloudUploadRepository {
         snapshot: TournamentCloudUploadSnapshot,
         ownerId: String,
     ): TournamentCloudUploadResult
+}
+
+interface TournamentCloudUploadLocalSnapshotRepository {
+    suspend fun readCloudUploadSnapshotByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): TournamentCloudUploadSnapshot?
 }
 
 fun interface TournamentCloudUploadAction {

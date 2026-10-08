@@ -69,9 +69,11 @@ class SupabaseTournamentCloudUploadRemoteDataSourceTest {
 
         assertEquals(CloudUploadExecutionResult.Success(7), result)
         assertEquals(1, probe.awaitInitializationCalls)
-        assertEquals(1, rpc.parameters.size)
-        assertEquals(0, rpc.parameters.single().expectedRevision)
-        assertEquals("group_rotation", rpc.parameters.single().tournament.format)
+        assertEquals(0, rpc.parameters.size)
+        assertEquals(1, rpc.groupRotationParameters.size)
+        assertEquals(0, rpc.groupRotationParameters.single().expectedRevision)
+        assertEquals("group_rotation", rpc.groupRotationParameters.single().tournament.format)
+        assertEquals(0, rpc.groupRotationParameters.single().pairingLobbySlots.size)
     }
 
     @Test
@@ -91,6 +93,7 @@ class SupabaseTournamentCloudUploadRemoteDataSourceTest {
 
         assertEquals(CloudUploadExecutionResult.Success(3), result)
         assertEquals("standard", rpc.parameters.single().tournament.format)
+        assertEquals(0, rpc.groupRotationParameters.size)
     }
 
     @Test
@@ -111,6 +114,30 @@ class SupabaseTournamentCloudUploadRemoteDataSourceTest {
     }
 
     @Test
+    fun groupRotationSnapshotWriteParametersSerializeMappingArgument() {
+        val payloads = payloads()
+        val parameters = TournamentSnapshotWriteV2Parameters(
+            tournament = payloads.tournament,
+            teamSlots = payloads.teamSlots,
+            players = payloads.players,
+            pairingLobbySlots = listOf(
+                GroupPairingLobbySlotUploadPayload(
+                    tournamentId = payloads.tournament.id,
+                    pairingKey = "A:B",
+                    lobbySlotNumber = 1,
+                    teamSlotNumber = 18,
+                ),
+            ),
+            expectedRevision = 0,
+        )
+
+        val json = Json.encodeToString(parameters)
+
+        assertTrue(json.contains("\"p_pairing_lobby_slots\""))
+        assertTrue(json.contains("\"team_slot_number\":18"))
+    }
+
+    @Test
     fun rpcRequestFailureIsReportedAfterPreRpcChecks() = runTest {
         val rpc = RecordingRpcInvoker(failure = IllegalArgumentException("invalid request"))
 
@@ -120,7 +147,32 @@ class SupabaseTournamentCloudUploadRemoteDataSourceTest {
             CloudUploadExecutionResult.Failure(null, CloudUploadFailureCategory.VALIDATION),
             result,
         )
-        assertEquals(1, rpc.parameters.size)
+        assertEquals(0, rpc.parameters.size)
+        assertEquals(1, rpc.groupRotationParameters.size)
+    }
+
+    @Test
+    fun groupRotationOutcomesMapToTheirSpecificFailureCategories() = runTest {
+        val cases = listOf(
+            RevisionWriteResponse("stale_write", revision = 4) to CloudUploadFailureCategory.CONFLICT,
+            RevisionWriteResponse("missing_revision") to CloudUploadFailureCategory.CONFLICT,
+            RevisionWriteResponse("authentication_required") to CloudUploadFailureCategory.AUTHENTICATION,
+            RevisionWriteResponse("unauthorized") to CloudUploadFailureCategory.AUTHORIZATION,
+            RevisionWriteResponse("validation_failure") to CloudUploadFailureCategory.VALIDATION,
+            RevisionWriteResponse("unexpected") to CloudUploadFailureCategory.UNKNOWN,
+        )
+
+        cases.forEach { (response, category) ->
+            val result = remote(
+                rpc = RecordingRpcInvoker(response = response),
+            ).upload(payloads(), expectedRevision = 3)
+
+            assertEquals(
+                "outcome=${response.outcome}",
+                category,
+                (result as CloudUploadExecutionResult.Failure).category,
+            )
+        }
     }
 
     private fun remote(
@@ -186,9 +238,18 @@ class SupabaseTournamentCloudUploadRemoteDataSourceTest {
         private val failure: Throwable? = null,
     ) : TournamentSnapshotRpcInvoker {
         val parameters = mutableListOf<TournamentSnapshotWriteParameters>()
+        val groupRotationParameters = mutableListOf<TournamentSnapshotWriteV2Parameters>()
 
         override suspend fun invoke(parameters: TournamentSnapshotWriteParameters): RevisionWriteResponse {
             this.parameters += parameters
+            failure?.let { throw it }
+            return response
+        }
+
+        override suspend fun invokeGroupRotation(
+            parameters: TournamentSnapshotWriteV2Parameters,
+        ): RevisionWriteResponse {
+            groupRotationParameters += parameters
             failure?.let { throw it }
             return response
         }

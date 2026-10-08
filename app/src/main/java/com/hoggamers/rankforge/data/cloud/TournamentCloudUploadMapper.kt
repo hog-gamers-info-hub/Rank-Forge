@@ -1,7 +1,10 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.tournament.RosterNameNormalizer
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import com.hoggamers.rankforge.domain.tournament.toCloudValue
 import java.nio.charset.StandardCharsets
@@ -48,10 +51,19 @@ data class PlayerUploadPayload(
     @SerialName("normalized_name") val normalizedName: String,
 )
 
+@Serializable
+data class GroupPairingLobbySlotUploadPayload(
+    @SerialName("tournament_id") val tournamentId: String,
+    @SerialName("pairing_key") val pairingKey: String,
+    @SerialName("lobby_slot_number") val lobbySlotNumber: Int,
+    @SerialName("team_slot_number") val teamSlotNumber: Int,
+)
+
 data class TournamentCloudUploadPayloads(
     val tournament: TournamentUploadPayload,
     val teamSlots: List<TeamSlotUploadPayload>,
     val players: List<PlayerUploadPayload>,
+    val pairingLobbySlots: List<GroupPairingLobbySlotUploadPayload> = emptyList(),
 )
 
 sealed interface TournamentCloudUploadMappingResult {
@@ -78,6 +90,20 @@ object TournamentCloudUploadMapper {
             snapshot.rosters.keys.any { it !in expectedSlotNumbers }
         ) {
             return TournamentCloudUploadMappingResult.Invalid
+        }
+
+        val mappingPayloads = when (snapshot.tournament.format) {
+            TournamentFormat.STANDARD -> {
+                if (snapshot.pairingLobbySlots.isNotEmpty()) {
+                    return TournamentCloudUploadMappingResult.Invalid
+                }
+                emptyList()
+            }
+            TournamentFormat.GROUP_ROTATION -> mapGroupRotationMappings(
+                snapshot = snapshot,
+                expectedSlotNumbers = expectedSlotNumbers,
+                slotsByNumber = slotsByNumber,
+            ) ?: return TournamentCloudUploadMappingResult.Invalid
         }
 
         val slotPayloads = expectedSlots.map { expectedSlot ->
@@ -135,8 +161,61 @@ object TournamentCloudUploadMapper {
                 ),
                 teamSlots = slotPayloads,
                 players = playerPayloads,
+                pairingLobbySlots = mappingPayloads,
             ),
         )
+    }
+
+    private fun mapGroupRotationMappings(
+        snapshot: TournamentCloudUploadSnapshot,
+        expectedSlotNumbers: Set<Int>,
+        slotsByNumber: Map<Int, List<TeamSlot>>,
+    ): List<GroupPairingLobbySlotUploadPayload>? {
+        val mappings = snapshot.pairingLobbySlots
+        if (mappings.isEmpty()) return emptyList()
+
+        val selectedPairingKeys = snapshot.tournament.selectedGroupPairings
+            .map { it.canonicalKey }
+            .toSet()
+        if (mappings.map { it.pairing.canonicalKey }.toSet() != selectedPairingKeys) {
+            return null
+        }
+        if (mappings.any {
+                it.tournamentId != snapshot.tournament.id ||
+                    it.teamSlotNumber !in expectedSlotNumbers
+            }
+        ) {
+            return null
+        }
+
+        val validMappings = mappings
+            .groupBy { it.pairing.canonicalKey }
+            .all { (_, pairingMappings) ->
+                pairingMappings.size == GroupRotationPairingLobbySlot.MAX_LOBBY_SLOT_NUMBER &&
+                    pairingMappings.map { it.lobbySlotNumber }.toSet() ==
+                    GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS.toSet() &&
+                    pairingMappings.map { it.teamSlotNumber }.distinct().size ==
+                    GroupRotationPairingLobbySlot.MAX_LOBBY_SLOT_NUMBER &&
+                    pairingMappings.all { mapping ->
+                        slotsByNumber[mapping.teamSlotNumber]
+                            ?.singleOrNull()
+                            ?.teamName
+                            ?.trim()
+                            ?.isNotEmpty() == true
+                    }
+            }
+        if (!validMappings) return null
+
+        return mappings
+            .sortedWith(compareBy({ it.pairing.canonicalKey }, { it.lobbySlotNumber }))
+            .map { mapping ->
+                GroupPairingLobbySlotUploadPayload(
+                    tournamentId = mapping.tournamentId,
+                    pairingKey = mapping.pairing.canonicalKey,
+                    lobbySlotNumber = mapping.lobbySlotNumber,
+                    teamSlotNumber = mapping.teamSlotNumber,
+                )
+            }
     }
 
     private fun String.toUuidOrNull(): UUID? = runCatching { UUID.fromString(this) }.getOrNull()
