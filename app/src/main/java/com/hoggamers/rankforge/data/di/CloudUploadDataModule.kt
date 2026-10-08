@@ -52,7 +52,9 @@ import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncReposito
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.data.cloud.MatchCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.MatchCloudRestorationRemoteReader
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRemoteReader
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRepository
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchScreenshotRestorationAction
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationRepository
@@ -337,6 +339,11 @@ abstract class CloudUploadDataBindingsModule {
 
     @Binds @Singleton
     abstract fun bindMatchCloudRestorationRemoteDataSource(dataSource: SupabaseMatchCloudRestorationRemoteDataSource): MatchCloudRestorationRemoteDataSource
+
+    @Binds @Singleton
+    abstract fun bindMatchCloudRestorationRemoteReader(
+        reader: SupabaseMatchCloudRestorationRemoteReader,
+    ): MatchCloudRestorationRemoteReader
 
     @Binds @Singleton
     abstract fun bindMatchCloudRestorationRepository(repository: SupabaseMatchCloudRestorationRepository): MatchCloudRestorationRepository

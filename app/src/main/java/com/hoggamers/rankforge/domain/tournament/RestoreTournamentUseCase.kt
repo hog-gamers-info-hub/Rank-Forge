@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -81,7 +82,17 @@ class RestoreTournamentUseCase @Inject constructor(
                     return TournamentCloudRestorationResult.AuthorizationFailure
                 }
                 try {
-                    matchCloudRestorationAction(tournamentId, expectedOwnerUserId)
+                    val childResult = matchCloudRestorationAction(
+                        tournamentId = tournamentId,
+                        expectedOwnerUserId = expectedOwnerUserId,
+                        expectedParentCloudRevision = cloudRevision,
+                    ).primaryResult
+                    if (
+                        childResult == MatchCloudRestorationResult.GenerationMismatch ||
+                        childResult == MatchCloudRestorationResult.NetworkFailure
+                    ) {
+                        return TournamentCloudRestorationResult.NetworkFailure
+                    }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Throwable) {

@@ -31,6 +31,16 @@ interface MatchRestorationLocalRepository {
         snapshot: MatchCloudRestorationSnapshot,
     ): Unit = error("Expected owner is required for match restoration.")
 
+    suspend fun replaceMatchesByOwnerAtCloudRevision(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+        expectedParentCloudRevision: CloudRevision,
+    ): MatchRestorationLocalWriteResult =
+        throw SecurityException(
+            "Parent cloud revision-aware match replacement must be explicitly implemented.",
+        )
+
     /** Owner-bound draft replacement for conflict-resolution cloud continuations. */
     suspend fun replaceDraftMatchesByOwner(
         tournamentId: String,
@@ -47,6 +57,11 @@ interface MatchRestorationLocalRepository {
     ): RevisionConflict? = null
 }
 
+sealed interface MatchRestorationLocalWriteResult {
+    data object Replaced : MatchRestorationLocalWriteResult
+    data object GenerationMismatch : MatchRestorationLocalWriteResult
+}
+
 sealed interface MatchCloudRestorationResult {
     data object Success : MatchCloudRestorationResult
     data object NoCloudMatches : MatchCloudRestorationResult
@@ -54,6 +69,7 @@ sealed interface MatchCloudRestorationResult {
     data object AuthorizationFailure : MatchCloudRestorationResult
     data object ValidationFailure : MatchCloudRestorationResult
     data object NetworkFailure : MatchCloudRestorationResult
+    data object GenerationMismatch : MatchCloudRestorationResult
     data class Conflict(
         val conflict: RevisionConflict,
         val context: ConflictResolutionContext? = null,
@@ -70,12 +86,30 @@ fun interface MatchCloudRestorationAction {
         expectedOwnerUserId: String,
     ): QueueAwareActionResult<MatchCloudRestorationResult> =
         throw SecurityException("Expected owner is required for child restoration.")
+
+    suspend operator fun invoke(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        expectedParentCloudRevision: CloudRevision,
+    ): QueueAwareActionResult<MatchCloudRestorationResult> =
+        throw SecurityException(
+            "Parent cloud revision-aware child restoration must be explicitly implemented.",
+        )
 }
 
 fun interface MatchCloudRestorationRetryAction {
     suspend fun executeForRetry(tournamentId: String): MatchCloudRestorationResult
     suspend fun executeForRetry(tournamentId: String, expectedOwnerUserId: String): MatchCloudRestorationResult =
         throw SecurityException("Expected queue owner is required.")
+
+    suspend fun executeForRetry(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        expectedParentCloudRevision: CloudRevision,
+    ): MatchCloudRestorationResult =
+        throw SecurityException(
+            "Parent cloud revision-aware child retry must be explicitly implemented.",
+        )
 }
 
 fun interface MatchScreenshotRestorationAction {

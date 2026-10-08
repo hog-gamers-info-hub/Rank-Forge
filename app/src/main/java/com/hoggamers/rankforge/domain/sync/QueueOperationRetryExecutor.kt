@@ -107,6 +107,7 @@ private fun MatchCloudRestorationResult.toRetryOutcome(): SyncQueueRetryOutcome 
     -> retryOutcome(SyncQueueStatus.COMPLETED)
     MatchCloudRestorationResult.AuthenticationRequired -> retryOutcome(SyncQueueStatus.BLOCKED_AUTHENTICATION)
     MatchCloudRestorationResult.NetworkFailure -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
+    MatchCloudRestorationResult.GenerationMismatch -> retryOutcome(SyncQueueStatus.BLOCKED_NETWORK)
     MatchCloudRestorationResult.ValidationFailure -> retryOutcome(SyncQueueStatus.FAILED_VALIDATION)
     MatchCloudRestorationResult.AuthorizationFailure -> retryOutcome(SyncQueueStatus.FAILED_AUTHORIZATION)
     MatchCloudRestorationResult.LocalTransactionFailure -> retryOutcome(SyncQueueStatus.FAILED_LOCAL)

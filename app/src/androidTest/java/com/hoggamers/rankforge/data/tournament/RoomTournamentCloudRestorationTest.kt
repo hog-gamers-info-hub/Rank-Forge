@@ -6,17 +6,20 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.GroupRotationPairingLobbySlotEntity
 import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamEntryDraftEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.local.SyncRevisionEntity
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
+import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalWriteResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
@@ -187,6 +190,100 @@ class RoomTournamentCloudRestorationTest {
             assertTrue(repository.observeMatchesByTournamentId("legacy-match").first().isEmpty())
             assertEquals(foreignRevision, database.syncRevisionDao().readByTournamentId("foreign-match"))
             assertEquals(legacyRevision, database.syncRevisionDao().readByTournamentId("legacy-match"))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun parentBoundMatchRestoreFencesBeforeValidationWhenLocalGenerationChanged() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-match-generation-fence.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = tournament("match-generation-fence", "Local", TournamentStatus.DRAFT)
+                .copy(ownerUserId = "owner-a")
+            repository.create(tournament)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            database.syncRevisionDao().upsert(
+                SyncRevisionEntity(
+                    tournamentId = tournament.id,
+                    localRevision = 11,
+                    baseCloudRevision = 10,
+                ),
+            )
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            val replacement = existing.copy(
+                id = "replacement-\${tournament.id}",
+                matchNumber = 2,
+                placements = listOf(MatchPlacement(teamSlotNumber = 999, position = 1)),
+            )
+
+            val result = repository.replaceMatchesByOwnerAtCloudRevision(
+                tournamentId = tournament.id,
+                expectedOwnerUserId = "owner-a",
+                snapshot = MatchCloudRestorationSnapshot(
+                    tournamentId = tournament.id,
+                    matches = listOf(replacement),
+                    cloudRevision = CloudRevision(10),
+                ),
+                expectedParentCloudRevision = CloudRevision(10),
+            )
+
+            assertEquals(MatchRestorationLocalWriteResult.GenerationMismatch, result)
+            assertEquals(listOf(existing), repository.observeMatchesByTournamentId(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun parentBoundMatchRestoreRejectsSnapshotRevisionMismatchBeforeValidation() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-match-snapshot-revision.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = tournament("match-snapshot-revision", "Local", TournamentStatus.DRAFT)
+                .copy(ownerUserId = "owner-a")
+            repository.create(tournament)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            database.syncRevisionDao().upsert(
+                SyncRevisionEntity(
+                    tournamentId = tournament.id,
+                    localRevision = 10,
+                    baseCloudRevision = 10,
+                ),
+            )
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            val invalidReplacement = existing.copy(
+                id = "replacement-\${tournament.id}",
+                matchNumber = 2,
+                placements = listOf(MatchPlacement(teamSlotNumber = 999, position = 1)),
+            )
+
+            val result = repository.replaceMatchesByOwnerAtCloudRevision(
+                tournamentId = tournament.id,
+                expectedOwnerUserId = "owner-a",
+                snapshot = MatchCloudRestorationSnapshot(
+                    tournamentId = tournament.id,
+                    matches = listOf(invalidReplacement),
+                    cloudRevision = CloudRevision(11),
+                ),
+                expectedParentCloudRevision = CloudRevision(10),
+            )
+
+            assertEquals(MatchRestorationLocalWriteResult.GenerationMismatch, result)
+            assertEquals(listOf(existing), repository.observeMatchesByTournamentId(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
         } finally {
             database.close()
             context.deleteDatabase(databaseName)

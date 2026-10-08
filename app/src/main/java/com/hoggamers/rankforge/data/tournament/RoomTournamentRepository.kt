@@ -53,6 +53,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnaps
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
+import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalWriteResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupCandidate
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalSaveResult
@@ -1087,6 +1088,32 @@ class RoomTournamentRepository @Inject constructor(
         expectedOwnerUserId: String,
         snapshot: MatchCloudRestorationSnapshot,
     ) {
+        replaceMatchesByOwnerInternal(
+            tournamentId = tournamentId,
+            expectedOwnerUserId = expectedOwnerUserId,
+            snapshot = snapshot,
+            expectedParentCloudRevision = null,
+        )
+    }
+
+    override suspend fun replaceMatchesByOwnerAtCloudRevision(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+        expectedParentCloudRevision: CloudRevision,
+    ): MatchRestorationLocalWriteResult = replaceMatchesByOwnerInternal(
+        tournamentId = tournamentId,
+        expectedOwnerUserId = expectedOwnerUserId,
+        snapshot = snapshot,
+        expectedParentCloudRevision = expectedParentCloudRevision,
+    )
+
+    private suspend fun replaceMatchesByOwnerInternal(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+        expectedParentCloudRevision: CloudRevision?,
+    ): MatchRestorationLocalWriteResult {
         require(expectedOwnerUserId.isNotBlank())
         require(snapshot.tournamentId == tournamentId)
         require(snapshot.matches.all { it.tournamentId == tournamentId })
@@ -1094,12 +1121,27 @@ class RoomTournamentRepository @Inject constructor(
         awaitState()
         writeMutex.withLock {
             val next = state.value.copy(matches = state.value.matches + (tournamentId to snapshot.matches))
-            database.withTransaction {
+            val result = database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
                     throw SecurityException("Tournament is not owned by the expected restoration owner.")
                 }
                 if (database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, expectedOwnerUserId)) {
                     throw DeletionBlockedException(tournamentId)
+                }
+                if (
+                    expectedParentCloudRevision != null &&
+                    database.syncRevisionDao().readByTournamentId(tournamentId)?.let { revision ->
+                        revision.localRevision == expectedParentCloudRevision.value &&
+                            revision.baseCloudRevision == expectedParentCloudRevision.value
+                    } != true
+                ) {
+                    return@withTransaction MatchRestorationLocalWriteResult.GenerationMismatch
+                }
+                if (
+                    expectedParentCloudRevision != null &&
+                    snapshot.cloudRevision != expectedParentCloudRevision
+                ) {
+                    return@withTransaction MatchRestorationLocalWriteResult.GenerationMismatch
                 }
                 validateRestoredMatches(state.value, tournamentId, snapshot.matches, database)
                 database.matchDao().deleteByTournamentId(tournamentId)
@@ -1121,8 +1163,12 @@ class RoomTournamentRepository @Inject constructor(
                     )
                 }
                 saveLegacyState(next)
+                MatchRestorationLocalWriteResult.Replaced
             }
-            state.value = next
+            if (result == MatchRestorationLocalWriteResult.Replaced) {
+                state.value = next
+            }
+            return result
         }
     }
 
