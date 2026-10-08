@@ -131,6 +131,7 @@ class GroupRotationTeamEntryScreenTest {
                             ),
                         ),
                         saveError = GroupRotationTeamEntrySaveError.ProtectedHistory,
+                        cloudSyncError = GroupRotationTeamEntryCloudSyncError.QueuePersistenceFailed,
                     ),
                     onBackToDetails = {},
                     onPairingSelected = {},
@@ -143,6 +144,8 @@ class GroupRotationTeamEntryScreenTest {
 
         composeTestRule.onNodeWithText("All 12 names for A × B must be filled.").assertIsDisplayed()
         composeTestRule.onNodeWithText("This tournament has protected history.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Team setup was saved locally, but the cloud retry could not be queued.")
+            .assertIsDisplayed()
     }
 
     @Test

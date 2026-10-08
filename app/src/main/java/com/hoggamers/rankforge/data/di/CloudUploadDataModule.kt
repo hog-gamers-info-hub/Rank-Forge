@@ -35,6 +35,7 @@ import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemo
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase
@@ -60,6 +61,7 @@ import com.hoggamers.rankforge.domain.tournament.DraftConflictResolver
 import com.hoggamers.rankforge.domain.tournament.ResolveDraftConflictUseCase
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRepository
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.CloudStorageObjectDeleter
 import com.hoggamers.rankforge.data.cloud.SupabaseCloudStorageObjectDeleter
 import com.hoggamers.rankforge.data.cloud.CustomDesignImagePreparer
@@ -79,6 +81,7 @@ import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryCoordinato
 import com.hoggamers.rankforge.data.cloud.SupabaseCloudDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.CloudDeletionRepository
 import com.hoggamers.rankforge.data.cloud.TournamentRosterCloudReplacementRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.TournamentRosterSnapshotRpcInvoker
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementAction
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
@@ -233,6 +236,18 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindTournamentCloudUploadAction(
         useCase: UploadTournamentUseCase,
     ): TournamentCloudUploadAction
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentCloudUploadRetryAction(
+        useCase: UploadTournamentUseCase,
+    ): TournamentCloudUploadRetryAction
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentRosterSnapshotRpcInvoker(
+        invoker: SupabaseTournamentRosterSnapshotRpcInvoker,
+    ): TournamentRosterSnapshotRpcInvoker
 
     @Binds
     @Singleton

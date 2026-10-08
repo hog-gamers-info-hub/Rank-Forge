@@ -69,7 +69,10 @@ import com.hoggamers.rankforge.domain.tournament.CheckTournamentQuotaUseCase
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadLocalSnapshotRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
@@ -247,7 +250,6 @@ import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
-import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRemoteResult
@@ -2130,6 +2132,12 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         )
         val cloudReplacement = ReplaceTournamentRosterInCloudUseCase(
             tournamentRepository = repository,
+            localSnapshotRepository = object : TournamentCloudUploadLocalSnapshotRepository {
+                override suspend fun readCloudUploadSnapshotByOwner(
+                    tournamentId: String,
+                    ownerUserId: String,
+                ): TournamentCloudUploadSnapshot? = null
+            },
             authRepository = object : AuthRepository {
                 override fun observeAuthState(): Flow<AuthState> = flowOf(AuthState.SignedOut)
                 override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
@@ -2143,12 +2151,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     ownerId: String,
                 ): TournamentRosterCloudReplacementResult = TournamentRosterCloudReplacementResult.NetworkFailure
             },
-            cloudUploadRepository = object : TournamentCloudUploadRepository {
-                override suspend fun upload(
-                    snapshot: com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot,
-                    ownerId: String,
-                ): TournamentCloudUploadResult = TournamentCloudUploadResult.NetworkFailure
-            },
             cloudRestorationRepository = object : TournamentCloudRestorationRepository {
                 override suspend fun listOwnedTournaments(): TournamentCloudRestorationRemoteResult<List<com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary>> =
                     TournamentCloudRestorationRemoteResult.Success(emptyList())
@@ -2157,6 +2159,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     tournamentId: String,
                 ): TournamentCloudRestorationRemoteResult<com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot> =
                     TournamentCloudRestorationRemoteResult.Failure(TournamentCloudRestorationFailureCategory.NOT_FOUND)
+            },
+            tournamentUploadRetryAction = TournamentCloudUploadRetryAction {
+                TournamentCloudUploadResult.NetworkFailure
             },
             queueRecorder = RecordSyncQueueOutcome(NoOpPersistentSyncQueueRepository),
         )

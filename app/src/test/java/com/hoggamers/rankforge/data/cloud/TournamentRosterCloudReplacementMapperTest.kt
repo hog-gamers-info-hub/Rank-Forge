@@ -74,6 +74,7 @@ class TournamentRosterCloudReplacementMapperTest {
         ) as TournamentRosterCloudReplacementMappingResult.Success
 
         assertEquals(24, result.payloads.teamSlots.size)
+        assertEquals(TournamentFormat.GROUP_ROTATION, result.payloads.format)
         assertEquals("D", result.payloads.teamSlots.single { it.slotNumber == 24 }.group)
     }
 

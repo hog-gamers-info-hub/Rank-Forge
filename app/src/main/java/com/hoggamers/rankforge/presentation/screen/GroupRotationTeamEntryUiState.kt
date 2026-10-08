@@ -16,6 +16,7 @@ data class GroupRotationTeamEntryUiState(
     val validationIssues: List<GroupRotationTeamSetupIssue> = emptyList(),
     val loadError: GroupRotationTeamEntryLoadError? = null,
     val saveError: GroupRotationTeamEntrySaveError? = null,
+    val cloudSyncError: GroupRotationTeamEntryCloudSyncError? = null,
 ) {
     val selectedPairing: GroupRotationPairingEntryUiState?
         get() = pairingSections.firstOrNull { it.pairing.canonicalKey == selectedPairingKey }
@@ -45,6 +46,18 @@ enum class GroupRotationTeamEntrySaveError {
     AuthenticationRequired,
     TournamentNotFound,
     ProtectedHistory,
+    Unexpected,
+}
+
+enum class GroupRotationTeamEntryCloudSyncError {
+    AuthenticationRequired,
+    AuthorizationFailure,
+    ValidationFailure,
+    NetworkFailure,
+    QueuePersistenceFailed,
+    Conflict,
+    TournamentLimitReached,
+    PartialFailure,
     Unexpected,
 }
 

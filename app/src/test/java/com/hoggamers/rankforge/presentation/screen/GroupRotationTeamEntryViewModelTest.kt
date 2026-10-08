@@ -17,8 +17,12 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadResul
 import com.hoggamers.rankforge.domain.tournament.ReadGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CompletableDeferred
@@ -44,6 +48,7 @@ class GroupRotationTeamEntryViewModelTest {
     private lateinit var readRepository: FakeReadRepository
     private lateinit var saveRepository: FakeSaveRepository
     private lateinit var draftRepository: FakeDraftRepository
+    private lateinit var uploadAction: RecordingUploadAction
 
     @Before
     fun setUp() {
@@ -51,6 +56,7 @@ class GroupRotationTeamEntryViewModelTest {
         readRepository = FakeReadRepository()
         saveRepository = FakeSaveRepository()
         draftRepository = FakeDraftRepository()
+        uploadAction = RecordingUploadAction()
         TestAuthRepository.state = AuthState.SignedIn(AuthUser(OWNER_ID, "owner@example.test"))
     }
 
@@ -168,6 +174,7 @@ class GroupRotationTeamEntryViewModelTest {
         val complete = completeCandidate("Team")
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         draftRepository.raw = complete.entries
+        uploadAction.onInvoke = { draftRepository.events += "cloud-upload" }
         val viewModel = viewModel()
         viewModel.load(TOURNAMENT_ID)
         advanceUntilIdle()
@@ -182,6 +189,102 @@ class GroupRotationTeamEntryViewModelTest {
             GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails,
             navigation.await(),
         )
+        assertEquals(1, uploadAction.calls)
+        assertEquals(listOf("cloud-upload", "draft-cleared"), draftRepository.events)
+    }
+
+    @Test
+    fun localSaveWithQueuedNetworkFailureNavigatesWithoutLocalSaveError() = runTest {
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = completeCandidate("Team").entries
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        uploadAction.onInvoke = { draftRepository.events += "cloud-upload" }
+        val viewModel = viewModel()
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        val navigation = async { viewModel.navigationEvents.first() }
+
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails, navigation.await())
+        assertEquals(null, viewModel.uiState.value.saveError)
+        assertEquals(null, viewModel.uiState.value.cloudSyncError)
+        assertTrue(draftRepository.cleared)
+        assertEquals(listOf("cloud-upload", "draft-cleared"), draftRepository.events)
+    }
+
+    @Test
+    fun localSaveWithQueuePersistenceFailureStaysOnScreenWithCloudError() = runTest {
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = completeCandidate("Team").entries
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.NetworkFailure,
+            queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
+        )
+        val viewModel = viewModel()
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        val navigation = async { viewModel.navigationEvents.first() }
+
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(GroupRotationTeamEntryCloudSyncError.QueuePersistenceFailed, viewModel.uiState.value.cloudSyncError)
+        assertEquals(null, viewModel.uiState.value.saveError)
+        assertFalse(draftRepository.cleared)
+        assertFalse(navigation.isCompleted)
+        navigation.cancel()
+    }
+
+    @Test
+    fun localSaveWithNonNetworkCloudFailureStaysOnScreenAsCloudFailure() = runTest {
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = completeCandidate("Team").entries
+        uploadAction.result = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.ValidationFailure,
+            queueRecordingResult = QueueRecordingResult.RECORDED,
+        )
+        val viewModel = viewModel()
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        val navigation = async { viewModel.navigationEvents.first() }
+
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(GroupRotationTeamEntryCloudSyncError.ValidationFailure, viewModel.uiState.value.cloudSyncError)
+        assertEquals(null, viewModel.uiState.value.saveError)
+        assertFalse(draftRepository.cleared)
+        assertFalse(navigation.isCompleted)
+        navigation.cancel()
+    }
+
+    @Test
+    fun staleCloudCompletionDoesNotNavigateOrOverwriteNewerDraft() = runTest {
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = completeCandidate("Team").entries
+        uploadAction.blocked = true
+        val viewModel = viewModel()
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        val navigation = async { viewModel.navigationEvents.first() }
+        viewModel.saveTeamNames()
+        runCurrent()
+        uploadAction.started.await()
+
+        viewModel.onTeamNameChanged(GroupPairing.fromCanonicalKey("A:B"), 1, "Newer")
+        uploadAction.release.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("Newer", draftRepository.raw.first { it.pairing.canonicalKey == "A:B" && it.lobbySlotNumber == 1 }.teamName)
+        assertFalse(draftRepository.cleared)
+        assertFalse(navigation.isCompleted)
+        assertFalse(viewModel.uiState.value.cloudSyncError != null)
+        navigation.cancel()
     }
 
     @Test
@@ -572,6 +675,7 @@ class GroupRotationTeamEntryViewModelTest {
         readGroupRotationTeamSetup = ReadGroupRotationTeamSetupUseCase(readRepository, TestAuthRepository),
         saveGroupRotationTeamSetup = SaveGroupRotationTeamSetupUseCase(saveRepository, TestAuthRepository),
         draftRepository = draftRepository,
+        uploadTournament = uploadAction,
     )
 
     private fun tournament(
@@ -635,6 +739,7 @@ class GroupRotationTeamEntryViewModelTest {
     private class FakeDraftRepository : GroupRotationTeamSetupDraftRepository {
         var raw: List<GroupRotationPairingTeamEntry> = emptyList()
         var cleared = false
+        val events = mutableListOf<String>()
         var replaceCalls = 0
         var blockedTournamentId: String? = null
         val writeStarted = CompletableDeferred<Unit>()
@@ -663,6 +768,29 @@ class GroupRotationTeamEntryViewModelTest {
         override suspend fun clearDraft(tournamentId: String) {
             raw = emptyList()
             cleared = true
+            events += "draft-cleared"
+        }
+    }
+
+    private class RecordingUploadAction : TournamentCloudUploadAction {
+        var result: QueueAwareActionResult<TournamentCloudUploadResult> = QueueAwareActionResult(
+            primaryResult = TournamentCloudUploadResult.Success(1),
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+        var calls = 0
+        var onInvoke: (() -> Unit)? = null
+        var blocked = false
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        override suspend fun invoke(tournamentId: String): QueueAwareActionResult<TournamentCloudUploadResult> {
+            calls += 1
+            onInvoke?.invoke()
+            if (blocked) {
+                started.complete(Unit)
+                release.await()
+            }
+            return result
         }
     }
 

@@ -14,7 +14,12 @@ import com.hoggamers.rankforge.domain.tournament.ReadGroupRotationTeamSetupUseCa
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupResult
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadStage
 import com.hoggamers.rankforge.domain.tournament.orderedGroupRotationPairings
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CompletableDeferred
@@ -37,6 +42,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
     private val readGroupRotationTeamSetup: ReadGroupRotationTeamSetupUseCase,
     private val saveGroupRotationTeamSetup: SaveGroupRotationTeamSetupUseCase,
     private val draftRepository: GroupRotationTeamSetupDraftRepository,
+    private val uploadTournament: TournamentCloudUploadAction,
 ) : ViewModel() {
     private sealed interface DraftWriteCommand {
         data class Save(
@@ -159,6 +165,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
             selectedPairingKey = pairing.canonicalKey,
             validationIssues = emptyList(),
             saveError = null,
+            cloudSyncError = null,
         )
         _uiState.value = updated.copy(uniqueTeamCount = updated.uniqueNormalizedTeamCount())
         enqueueDraftSave()
@@ -183,6 +190,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
             },
             validationIssues = emptyList(),
             saveError = null,
+            cloudSyncError = null,
         )
         _uiState.value = updated.copy(uniqueTeamCount = updated.uniqueNormalizedTeamCount())
         enqueueDraftSave()
@@ -200,6 +208,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                 isSaving = true,
                 validationIssues = emptyList(),
                 saveError = null,
+                cloudSyncError = null,
             )
         }
         viewModelScope.launch {
@@ -220,19 +229,33 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                 }
                 when (val result = saveGroupRotationTeamSetup(candidate)) {
                     SaveGroupRotationTeamSetupResult.Saved -> {
-                        clearDraftIfUnchanged(
-                            tournamentId = saveTournamentId,
-                            expectedLoadGeneration = saveLoadGeneration,
-                            expectedEditGeneration = saveEditGeneration,
-                        )
-                        if (finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
-                            return@launch
-                        }
                         val cleanedNames = validated.entries.associate {
                             (it.pairing.canonicalKey to it.lobbySlotNumber) to it.displayTeamName
                         }
-                        _uiState.update { current ->
-                            val cleanedSections = current.pairingSections.map { section ->
+                        val cloudResult: QueueAwareActionResult<TournamentCloudUploadResult> = try {
+                            uploadTournament(saveTournamentId)
+                        } catch (throwable: Throwable) {
+                            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+                            QueueAwareActionResult(
+                                primaryResult = TournamentCloudUploadResult.PartialFailure(
+                                    TournamentCloudUploadStage.TOURNAMENT,
+                                ),
+                                queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
+                            )
+                        }
+                        if (finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                            return@launch
+                        }
+                        if (cloudResult.shouldNavigateAfterLocalSave()) {
+                            clearDraftIfUnchanged(
+                                tournamentId = saveTournamentId,
+                                expectedLoadGeneration = saveLoadGeneration,
+                                expectedEditGeneration = saveEditGeneration,
+                            )
+                            if (finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                                return@launch
+                            }
+                            val cleanedSections = _uiState.value.pairingSections.map { section ->
                                 section.copy(
                                     rows = section.rows.map { row ->
                                         row.copy(
@@ -243,17 +266,43 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                                     },
                                 )
                             }
-                            current.copy(
-                                isSaving = false,
-                                pairingSections = cleanedSections,
-                                uniqueTeamCount = current.copy(
+                            _uiState.update { current ->
+                                val updated = current.copy(
                                     pairingSections = cleanedSections,
-                                ).uniqueNormalizedTeamCount(),
+                                    uniqueTeamCount = current.copy(
+                                        pairingSections = cleanedSections,
+                                    ).uniqueNormalizedTeamCount(),
+                                    isSaving = false,
+                                    cloudSyncError = null,
+                                )
+                                updated
+                            }
+                            navigationEventsChannel.trySend(
+                                GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails,
                             )
+                        } else {
+                            val cleanedSections = _uiState.value.pairingSections.map { section ->
+                                section.copy(
+                                    rows = section.rows.map { row ->
+                                        row.copy(
+                                            teamName = cleanedNames[
+                                                section.pairing.canonicalKey to row.lobbySlotNumber
+                                            ].orEmpty(),
+                                        )
+                                    },
+                                )
+                            }
+                            _uiState.update { current ->
+                                current.copy(
+                                    pairingSections = cleanedSections,
+                                    uniqueTeamCount = current.copy(
+                                        pairingSections = cleanedSections,
+                                    ).uniqueNormalizedTeamCount(),
+                                    isSaving = false,
+                                    cloudSyncError = cloudResult.toCloudSyncError(),
+                                )
+                            }
                         }
-                        navigationEventsChannel.trySend(
-                            GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails,
-                        )
                     }
                     is SaveGroupRotationTeamSetupResult.InvalidSetup -> {
                         if (finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
@@ -442,7 +491,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
     }
 
     private fun showSaveError(error: GroupRotationTeamEntrySaveError) {
-        _uiState.update { it.copy(isSaving = false, saveError = error) }
+        _uiState.update { it.copy(isSaving = false, saveError = error, cloudSyncError = null) }
     }
 
     private fun showValidationIssues(issues: List<GroupRotationTeamSetupIssue>) {
@@ -466,3 +515,32 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
         else -> 0
     }
 }
+
+private fun QueueAwareActionResult<TournamentCloudUploadResult>.shouldNavigateAfterLocalSave(): Boolean =
+    primaryResult is TournamentCloudUploadResult.Success ||
+        (primaryResult == TournamentCloudUploadResult.NetworkFailure &&
+            queueRecordingResult == QueueRecordingResult.RECORDED)
+
+private fun QueueAwareActionResult<TournamentCloudUploadResult>.toCloudSyncError(): GroupRotationTeamEntryCloudSyncError =
+    if (queueRecordingResult == QueueRecordingResult.PERSISTENCE_FAILED) {
+        GroupRotationTeamEntryCloudSyncError.QueuePersistenceFailed
+    } else {
+        when (val result = primaryResult) {
+            is TournamentCloudUploadResult.Success ->
+                GroupRotationTeamEntryCloudSyncError.Unexpected
+            TournamentCloudUploadResult.AuthenticationRequired ->
+                GroupRotationTeamEntryCloudSyncError.AuthenticationRequired
+            TournamentCloudUploadResult.AuthorizationFailure ->
+                GroupRotationTeamEntryCloudSyncError.AuthorizationFailure
+            TournamentCloudUploadResult.ValidationFailure ->
+                GroupRotationTeamEntryCloudSyncError.ValidationFailure
+            TournamentCloudUploadResult.NetworkFailure ->
+                GroupRotationTeamEntryCloudSyncError.NetworkFailure
+            TournamentCloudUploadResult.TournamentLimitReached ->
+                GroupRotationTeamEntryCloudSyncError.TournamentLimitReached
+            is TournamentCloudUploadResult.Conflict ->
+                GroupRotationTeamEntryCloudSyncError.Conflict
+            is TournamentCloudUploadResult.PartialFailure ->
+                GroupRotationTeamEntryCloudSyncError.PartialFailure
+        }
+    }

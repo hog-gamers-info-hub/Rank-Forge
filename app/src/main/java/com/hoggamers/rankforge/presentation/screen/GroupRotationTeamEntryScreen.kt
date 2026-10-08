@@ -69,6 +69,7 @@ const val GROUP_ROTATION_TEAM_ENTRY_UNIQUE_COUNT_TEST_TAG = "group_rotation_team
 const val GROUP_ROTATION_TEAM_ENTRY_LOAD_ERROR_TEST_TAG = "group_rotation_team_entry_load_error"
 const val GROUP_ROTATION_TEAM_ENTRY_VALIDATION_ERROR_TEST_TAG = "group_rotation_team_entry_validation_error"
 const val GROUP_ROTATION_TEAM_ENTRY_SAVE_ERROR_TEST_TAG = "group_rotation_team_entry_save_error"
+const val GROUP_ROTATION_TEAM_ENTRY_CLOUD_ERROR_TEST_TAG = "group_rotation_team_entry_cloud_error"
 const val GROUP_ROTATION_TEAM_ENTRY_PASTE_TEST_TAG = "group_rotation_team_entry_paste"
 const val GROUP_ROTATION_TEAM_ENTRY_SAVE_TEST_TAG = "group_rotation_team_entry_save"
 
@@ -291,6 +292,14 @@ fun GroupRotationTeamEntryScreen(
                     modifier = Modifier.testTag(GROUP_ROTATION_TEAM_ENTRY_SAVE_ERROR_TEST_TAG),
                 )
             }
+            uiState.cloudSyncError?.let { error ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = cloudSyncErrorMessage(error),
+                    color = GroupRotationPointIqError,
+                    modifier = Modifier.testTag(GROUP_ROTATION_TEAM_ENTRY_CLOUD_ERROR_TEST_TAG),
+                )
+            }
             Spacer(modifier = Modifier.height(18.dp))
             Button(
                 onClick = onSave,
@@ -464,6 +473,22 @@ private fun saveErrorMessage(error: GroupRotationTeamEntrySaveError): String = w
         stringResource(R.string.group_rotation_protected_history)
     GroupRotationTeamEntrySaveError.Unexpected ->
         stringResource(R.string.group_rotation_save_failure)
+}
+
+@Composable
+private fun cloudSyncErrorMessage(error: GroupRotationTeamEntryCloudSyncError): String = when (error) {
+    GroupRotationTeamEntryCloudSyncError.AuthenticationRequired ->
+        stringResource(R.string.group_rotation_authentication_required)
+    GroupRotationTeamEntryCloudSyncError.QueuePersistenceFailed ->
+        stringResource(R.string.group_rotation_cloud_queue_persistence_failed)
+    GroupRotationTeamEntryCloudSyncError.AuthorizationFailure,
+    GroupRotationTeamEntryCloudSyncError.ValidationFailure,
+    GroupRotationTeamEntryCloudSyncError.NetworkFailure,
+    GroupRotationTeamEntryCloudSyncError.Conflict,
+    GroupRotationTeamEntryCloudSyncError.TournamentLimitReached,
+    GroupRotationTeamEntryCloudSyncError.PartialFailure,
+    GroupRotationTeamEntryCloudSyncError.Unexpected,
+    -> stringResource(R.string.group_rotation_cloud_sync_failed)
 }
 
 @Composable
