@@ -76,6 +76,15 @@ class GroupRotationTeamEntryViewModelTest {
         assertFalse(viewModel.uiState.value.isLoading)
         assertEquals(listOf("A:B", "A:C"), viewModel.uiState.value.pairingSections.map { it.pairing.canonicalKey })
         assertEquals((1..12).toList(), viewModel.uiState.value.pairingSections.first().rows.map { it.lobbySlotNumber })
+        assertEquals(
+            24,
+            viewModel.uiState.value.pairingSections.sumOf { it.rows.size },
+        )
+        assertTrue(
+            viewModel.uiState.value.pairingSections
+                .flatMap { it.rows }
+                .all { it.teamName.isEmpty() },
+        )
         assertEquals(18, viewModel.uiState.value.maximumUniqueTeams)
     }
 

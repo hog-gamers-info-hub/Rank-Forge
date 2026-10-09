@@ -50,9 +50,6 @@ class RoomGroupRotationTeamSetupReadRepository @Inject constructor(
         }
         val rows = readDao.readMappingRows(tournamentId)
         if (rows.isEmpty()) {
-            if (teamSlots.any { it.teamName.isNotBlank() }) {
-                return@withTransaction GroupRotationTeamSetupReadResult.InvalidStoredSetup
-            }
             return@withTransaction GroupRotationTeamSetupReadResult.NoSavedSetup(tournament)
         }
         val expectedPairingKeys = tournament.selectedGroupPairings.map { it.canonicalKey }.toSet()

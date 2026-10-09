@@ -216,7 +216,7 @@ class GroupRotationTeamSetupRepositoryTest {
     }
 
     @Test
-    fun readRepositoryReportsNoSavedSetupOnlyWhenSlotsAndMappingsAreEmpty() = runBlocking {
+    fun readRepositoryReportsNoSavedSetupForStructurallyValidZeroMappingSlotsRegardlessOfNames() = runBlocking {
         val tournament = createTournament(TournamentStatus.DRAFT)
         val localRepository = RoomTournamentRepository(database)
         localRepository.create(tournament)
@@ -237,6 +237,34 @@ class GroupRotationTeamSetupRepositoryTest {
                 ),
             ),
         )
+        assertEquals(
+            GroupRotationTeamSetupReadResult.NoSavedSetup(tournament),
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
+        )
+
+        database.teamSlotDao().upsertAll(
+            database.teamSlotDao().readByTournamentId(TOURNAMENT_ID).map { slot ->
+                slot.copy(teamName = "Canonical " + slot.slotNumber)
+            },
+        )
+        assertEquals(
+            GroupRotationTeamSetupReadResult.NoSavedSetup(tournament),
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
+        )
+    }
+
+    @Test
+    fun zeroMappingsStillRejectMalformedCanonicalSlotStructure() = runBlocking {
+        val tournament = createTournament(TournamentStatus.DRAFT)
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        database.openHelper.writableDatabase.execSQL(
+            "DELETE FROM team_slots " +
+                "WHERE tournament_id = '$TOURNAMENT_ID' AND slot_number = 18",
+        )
+
         assertEquals(
             GroupRotationTeamSetupReadResult.InvalidStoredSetup,
             RoomGroupRotationTeamSetupReadRepository(database)
