@@ -603,11 +603,13 @@ object TournamentDataProvidersModule {
         validateMatchResult: ValidateMatchResultUseCase,
         authRepository: AuthRepository,
         protectedCorrection: ProtectedMatchCorrectionAction,
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
     ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(
         repository,
         validateMatchResult,
         authRepository,
         protectedCorrection,
+        matchIdentityContextRepository,
     )
 
     @Provides

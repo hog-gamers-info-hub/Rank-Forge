@@ -9,6 +9,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MatchCorrectionUseCaseTest {
+    private companion object {
+        const val TOURNAMENT_ID = "tournament-id"
+    }
+
     @Test
     fun finalizedMatchCanStartCorrection() = runTest {
         val repository = createFinalizedRepository()
@@ -166,6 +170,160 @@ class MatchCorrectionUseCaseTest {
     }
 
     @Test
+    fun standardCorrectionNeverReadsIdentityContextAndKeepsExistingTenTeamBehavior() = runTest {
+        val repository = createTenTeamFinalizedRepository()
+        val identityRepository = RecordingIdentityContextRepository(
+            MatchTeamIdentityContextReadResult.SetupRequired,
+        )
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository = repository,
+            validateMatchResult = ValidateMatchResultUseCase(),
+            authRepository = SignedInTournamentTestAuthRepository(),
+            protectedCorrection = ProtectedMatchCorrectionAction {
+                ProtectedMatchCorrectionResult.Success(2)
+            },
+            matchIdentityContextRepository = identityRepository,
+        )(
+            SubmitMatchCorrectionInput("match-id", correctedRows(10)),
+        )
+
+        assertTrue(result is SubmitMatchCorrectionResult.Submitted)
+        assertTrue(identityRepository.matchIds.isEmpty())
+        assertEquals(10, (result as SubmitMatchCorrectionResult.Submitted).match.placements.size)
+    }
+
+    @Test
+    fun groupRotationCorrectionUsesLoadedExplicitContextIncludingCanonicalSlotEighteen() = runTest {
+        val repository = createGroupRotationFinalizedRepository()
+        val identityRepository = RecordingIdentityContextRepository(
+            MatchTeamIdentityContextReadResult.Loaded(groupRotationIdentityContext()),
+        )
+        var protectedCalls = 0
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository = repository,
+            validateMatchResult = ValidateMatchResultUseCase(),
+            authRepository = SignedInTournamentTestAuthRepository(),
+            protectedCorrection = ProtectedMatchCorrectionAction {
+                protectedCalls++
+                ProtectedMatchCorrectionResult.Success(2)
+            },
+            matchIdentityContextRepository = identityRepository,
+        )(
+            SubmitMatchCorrectionInput("group-match-id", groupRotationCorrectionRows()),
+        )
+
+        assertTrue(result is SubmitMatchCorrectionResult.Submitted)
+        assertEquals(1, protectedCalls)
+        assertEquals(listOf("group-match-id"), identityRepository.matchIds)
+        assertTrue(
+            groupRotationIdentityContext().eligibleTeamSlotNumbers.contains(18),
+        )
+    }
+
+    @Test
+    fun groupRotationSetupRequiredPreventsProtectedCorrection() = runTest {
+        assertGroupRotationIdentityFailurePreventsCloud(
+            MatchTeamIdentityContextReadResult.SetupRequired,
+        )
+    }
+
+    @Test
+    fun groupRotationInvalidMappingPreventsProtectedCorrection() = runTest {
+        assertGroupRotationIdentityFailurePreventsCloud(
+            MatchTeamIdentityContextReadResult.InvalidMapping,
+        )
+    }
+
+    @Test
+    fun groupRotationContextPairingMismatchPreventsProtectedCorrection() = runTest {
+        val repository = createGroupRotationFinalizedRepository()
+        val wrongPairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        var protectedCalls = 0
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository = repository,
+            validateMatchResult = ValidateMatchResultUseCase(),
+            authRepository = SignedInTournamentTestAuthRepository(),
+            protectedCorrection = ProtectedMatchCorrectionAction {
+                protectedCalls++
+                ProtectedMatchCorrectionResult.Success(2)
+            },
+            matchIdentityContextRepository = RecordingIdentityContextRepository(
+                MatchTeamIdentityContextReadResult.Loaded(
+                    MatchTeamIdentityContext(
+                        tournamentId = TOURNAMENT_ID,
+                        pairing = wrongPairing,
+                        teams = groupRotationEligibleSlots().mapIndexed { index, slot ->
+                            MatchLobbyTeamIdentity(index + 1, slot)
+                        },
+                    ),
+                ),
+            ),
+        )(
+            SubmitMatchCorrectionInput("group-match-id", groupRotationCorrectionRows()),
+        )
+
+        assertEquals(MatchCorrectionGlobalError.INVALID_DATA, (result as SubmitMatchCorrectionResult.Invalid).globalError)
+        assertEquals(0, protectedCalls)
+    }
+
+    @Test
+    fun groupRotationParticipantSetDifferentFromContextPreventsProtectedCorrection() = runTest {
+        val repository = createGroupRotationFinalizedRepository()
+        var protectedCalls = 0
+        val result = SubmitMatchCorrectionUseCase(
+            repository = repository,
+            validateMatchResult = ValidateMatchResultUseCase(),
+            authRepository = SignedInTournamentTestAuthRepository(),
+            protectedCorrection = ProtectedMatchCorrectionAction {
+                protectedCalls++
+                ProtectedMatchCorrectionResult.Success(2)
+            },
+            matchIdentityContextRepository = RecordingIdentityContextRepository(
+                MatchTeamIdentityContextReadResult.Loaded(
+                    MatchTeamIdentityContext(
+                        tournamentId = TOURNAMENT_ID,
+                        pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                        teams = (1..12).map { lobbySlot ->
+                            MatchLobbyTeamIdentity(lobbySlot, lobbySlot)
+                        },
+                    ),
+                ),
+            ),
+        )(
+            SubmitMatchCorrectionInput("group-match-id", groupRotationCorrectionRows()),
+        )
+
+        assertEquals(MatchCorrectionGlobalError.INVALID_DATA, (result as SubmitMatchCorrectionResult.Invalid).globalError)
+        assertEquals(0, protectedCalls)
+    }
+
+    @Test
+    fun zeroMappingHistoricalGroupRotationCorrectionFailsBeforeCloudAccess() = runTest {
+        val repository = createGroupRotationFinalizedRepository()
+        var protectedCalls = 0
+        val result = SubmitMatchCorrectionUseCase(
+            repository = repository,
+            validateMatchResult = ValidateMatchResultUseCase(),
+            authRepository = SignedInTournamentTestAuthRepository(),
+            protectedCorrection = ProtectedMatchCorrectionAction {
+                protectedCalls++
+                ProtectedMatchCorrectionResult.Success(2)
+            },
+            matchIdentityContextRepository = RecordingIdentityContextRepository(
+                MatchTeamIdentityContextReadResult.SetupRequired,
+            ),
+        )(
+            SubmitMatchCorrectionInput("group-match-id", groupRotationCorrectionRows()),
+        )
+
+        assertEquals(MatchCorrectionGlobalError.INVALID_DATA, (result as SubmitMatchCorrectionResult.Invalid).globalError)
+        assertEquals(0, protectedCalls)
+    }
+
+    @Test
     fun tenTeamCorrectionRejectsMissingOrExtraIncomingRows() = runTest {
         val repository = createTenTeamFinalizedRepository()
 
@@ -280,6 +438,137 @@ class MatchCorrectionUseCaseTest {
             ) is FinalizeMatchRepositoryResult.Finalized,
         )
         return repository
+    }
+
+    private suspend fun createGroupRotationFinalizedRepository(
+        withMapping: Boolean = true,
+    ): InMemoryTournamentRepository {
+        val repository = InMemoryTournamentRepository()
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        repository.create(
+            Tournament(
+                id = TOURNAMENT_ID,
+                name = "Group Rotation Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 4,
+                selectedGroupPairings = listOf(pairing),
+            ),
+        )
+        repository.saveTeamNames(
+            TOURNAMENT_ID,
+            (1..24).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        if (withMapping) {
+            repository.replaceGroupRotationPairingLobbySlots(
+                groupRotationEligibleSlots().mapIndexed { index, slotNumber ->
+                    GroupRotationPairingLobbySlot(
+                        tournamentId = TOURNAMENT_ID,
+                        pairing = pairing,
+                        lobbySlotNumber = index + 1,
+                        teamSlotNumber = slotNumber,
+                    )
+                },
+            )
+        }
+        repository.createDraftMatch(
+            Match(
+                id = "group-match-id",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 7, 24),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            ),
+        )
+        val participantResults = groupRotationEligibleSlots().mapIndexed { index, slotNumber ->
+            MatchParticipantResult(
+                teamSlotNumber = slotNumber,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = index + 1,
+                kills = index,
+            )
+        }
+        assertTrue(
+            repository.finalizeDraftMatch(
+                matchId = "group-match-id",
+                placements = participantResults.map { MatchPlacement(it.teamSlotNumber, it.placement!!) },
+                kills = participantResults.map { MatchKill(it.teamSlotNumber, it.kills) },
+                participantResults = participantResults,
+            ) is FinalizeMatchRepositoryResult.Finalized,
+        )
+        return repository
+    }
+
+    private fun groupRotationEligibleSlots() = (1..6).toList() + (13..18).toList()
+
+    private fun groupRotationIdentityContext() = MatchTeamIdentityContext(
+        tournamentId = TOURNAMENT_ID,
+        pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+        teams = groupRotationEligibleSlots().mapIndexed { index, slotNumber ->
+            MatchLobbyTeamIdentity(index + 1, slotNumber)
+        },
+    )
+
+    private fun groupRotationCorrectionRows() = groupRotationEligibleSlots().mapIndexed { index, slotNumber ->
+        MatchResultRowInput(
+            teamSlotNumber = slotNumber,
+            placement = when (index) {
+                0 -> "2"
+                1 -> "1"
+                else -> (index + 1).toString()
+            },
+            kills = index.toString(),
+        )
+    }
+
+    private suspend fun assertGroupRotationIdentityFailurePreventsCloud(
+        contextResult: MatchTeamIdentityContextReadResult,
+    ) {
+        val repository = createGroupRotationFinalizedRepository()
+        val identityRepository = RecordingIdentityContextRepository(contextResult)
+        var protectedCalls = 0
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository = repository,
+            validateMatchResult = ValidateMatchResultUseCase(),
+            authRepository = SignedInTournamentTestAuthRepository(),
+            protectedCorrection = ProtectedMatchCorrectionAction {
+                protectedCalls++
+                ProtectedMatchCorrectionResult.Success(2)
+            },
+            matchIdentityContextRepository = identityRepository,
+        )(
+            SubmitMatchCorrectionInput("group-match-id", groupRotationCorrectionRows()),
+        )
+
+        assertEquals(MatchCorrectionGlobalError.INVALID_DATA, (result as SubmitMatchCorrectionResult.Invalid).globalError)
+        assertEquals(0, protectedCalls)
+        assertEquals(listOf("group-match-id"), identityRepository.matchIds)
+    }
+
+    private class RecordingIdentityContextRepository(
+        private val result: MatchTeamIdentityContextReadResult,
+    ) : MatchTeamIdentityContextRepository {
+        val matchIds = mutableListOf<String>()
+
+        override suspend fun readForMatch(
+            matchId: String,
+            ownerUserId: String,
+        ): MatchTeamIdentityContextReadResult {
+            matchIds += matchId
+            return result
+        }
+
+        override suspend fun readForPairing(
+            tournamentId: String,
+            pairing: GroupPairing,
+            ownerUserId: String,
+        ): MatchTeamIdentityContextReadResult = result
     }
 
     private fun correctedRows(count: Int = 12) = (1..count).map { slotNumber ->
