@@ -62,6 +62,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupPlanningR
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidator
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationRestorationValidator
+import com.hoggamers.rankforge.domain.tournament.LegacyGroupRotationFinalizedRestorationValidator
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
@@ -3454,6 +3455,33 @@ private suspend fun validateRestoredMatches(
     val tournament = state.tournaments.firstOrNull { it.id == tournamentId }
         ?: throw IllegalArgumentException("Tournament is not available for match restoration.")
     val persistedSlots = state.slots[tournamentId].orEmpty()
+    val persistedMappings = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+        database.groupRotationPairingLobbySlotDao()
+            .readByTournamentId(tournamentId)
+            .map { entity ->
+                val pairing = runCatching {
+                    GroupPairing.fromCanonicalKey(entity.pairingKey)
+                }.getOrElse {
+                    throw IllegalArgumentException("Invalid persisted Group Rotation pairing key.")
+                }
+                entity.toDomain(pairing)
+            }
+    } else {
+        emptyList()
+    }
+    if (
+        tournament.format == TournamentFormat.GROUP_ROTATION &&
+        persistedMappings.isEmpty()
+    ) {
+        require(
+            LegacyGroupRotationFinalizedRestorationValidator.isValid(
+                tournament = tournament,
+                persistedTeamSlots = persistedSlots,
+                matches = matches,
+            ),
+        )
+        return
+    }
     matches.forEach { match ->
         val mappings = match.groupPairing?.let { pairing ->
             database.groupRotationPairingLobbySlotDao()
