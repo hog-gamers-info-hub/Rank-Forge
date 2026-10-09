@@ -115,7 +115,7 @@ const val TOURNAMENT_GROUP_PARTICIPATION_WARNING_TEST_TAG =
 @Composable
 fun TournamentCreationRoute(
     onBack: () -> Unit,
-    onCreated: (String) -> Unit,
+    onCreated: (String, TournamentFormat) -> Unit,
     viewModel: TournamentCreationViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -129,7 +129,7 @@ fun TournamentCreationRoute(
 
             is TournamentCreationNavigation.Created -> {
                 viewModel.onNavigationHandled()
-                onCreated(navigation.tournamentId)
+                onCreated(navigation.tournamentId, navigation.format)
             }
 
             null -> Unit

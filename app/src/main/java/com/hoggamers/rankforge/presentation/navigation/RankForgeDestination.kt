@@ -40,6 +40,11 @@ data class TeamEntryDestination(
 )
 
 @Serializable
+data class GroupRotationTeamEntryDestination(
+    val tournamentId: String,
+)
+
+@Serializable
 data class RosterEntryDestination(
     val tournamentId: String,
     val slotNumber: Int,
