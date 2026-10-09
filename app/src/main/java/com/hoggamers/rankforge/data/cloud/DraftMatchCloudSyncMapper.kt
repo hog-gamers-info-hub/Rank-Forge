@@ -7,6 +7,7 @@ import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlinx.serialization.SerialName
@@ -59,6 +60,20 @@ object DraftMatchCloudSyncMapper {
         ) {
             return DraftMatchCloudSyncMappingResult.Invalid
         }
+        val groupRotationTeamSlotsByNumber = if (snapshot.tournament.format == TournamentFormat.GROUP_ROTATION) {
+            groupRotationTeamSlotsByNumberOrNull(snapshot.tournament, snapshot.teamSlots)
+                ?: return DraftMatchCloudSyncMappingResult.Invalid
+        } else {
+            null
+        }
+        val identityContextsByMatchId = if (snapshot.tournament.format == TournamentFormat.GROUP_ROTATION) {
+            if (snapshot.identityContextsByMatchId.keys != draftMatches.map { it.id }.toSet()) {
+                return DraftMatchCloudSyncMappingResult.Invalid
+            }
+            snapshot.identityContextsByMatchId
+        } else {
+            emptyMap()
+        }
 
         val matchPayloadByLocalId = draftMatches
             .sortedBy { it.matchNumber }
@@ -76,16 +91,36 @@ object DraftMatchCloudSyncMapper {
             }
         val matchPayloads = matchPayloadByLocalId.values.sortedBy { it.matchNumber }
         val resultPayloads = draftMatches.flatMap { match ->
-            match.toResultPayloads(
-                tournamentId = tournamentUuid,
-                cloudMatchId = matchPayloadByLocalId.getValue(match.id).id,
-                eligibleSlotNumbers = runCatching {
+            val eligibleSlotNumbers = if (snapshot.tournament.format == TournamentFormat.GROUP_ROTATION) {
+                val context = identityContextsByMatchId[match.id]
+                    ?: return DraftMatchCloudSyncMappingResult.Invalid
+                context.eligibleGroupRotationSlotNumbersOrNull(
+                    tournament = snapshot.tournament,
+                    match = match,
+                    teamSlotsByNumber = groupRotationTeamSlotsByNumber.orEmpty(),
+                ) ?: return DraftMatchCloudSyncMappingResult.Invalid
+            } else {
+                runCatching {
                     MatchEligibleTeamSlotResolver().resolve(
                         snapshot.tournament,
                         snapshot.tournament.formatDerivedSlots(),
                         match,
                     )
-                }.getOrNull() ?: return DraftMatchCloudSyncMappingResult.Invalid,
+                }.getOrNull() ?: return DraftMatchCloudSyncMappingResult.Invalid
+            }
+            if (
+                snapshot.tournament.format == TournamentFormat.GROUP_ROTATION &&
+                (match.placements.map { it.teamSlotNumber } +
+                    match.kills.map { it.teamSlotNumber } +
+                    match.participantResults.map { it.teamSlotNumber })
+                    .any { it !in eligibleSlotNumbers }
+            ) {
+                return DraftMatchCloudSyncMappingResult.Invalid
+            }
+            match.toResultPayloads(
+                tournamentId = tournamentUuid,
+                cloudMatchId = matchPayloadByLocalId.getValue(match.id).id,
+                eligibleSlotNumbers = eligibleSlotNumbers,
             ) ?: return DraftMatchCloudSyncMappingResult.Invalid
         }
 

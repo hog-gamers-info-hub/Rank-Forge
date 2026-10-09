@@ -101,6 +101,67 @@ class SyncDraftMatchesUseCaseTest {
     }
 
     @Test
+    fun standardSyncNeverReadsMatchIdentityContexts() = runTest {
+        val identityRepository = RecordingIdentityContextRepository(
+            MatchTeamIdentityContextReadResult.InvalidMapping,
+        )
+        val cloud = RecordingCloudRepository()
+        val result = SyncDraftMatchesUseCase(
+            tournamentRepository = localRepository(),
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudSyncRepository = cloud,
+            queueRecorder = testQueueRecorder(),
+            matchIdentityContextRepository = identityRepository,
+        )(TOURNAMENT_ID)
+
+        assertEquals(DraftMatchCloudSyncResult.Success, result.primaryResult)
+        assertTrue(identityRepository.matchIds.isEmpty())
+        assertTrue(cloud.snapshot?.identityContextsByMatchId?.isEmpty() == true)
+    }
+
+    @Test
+    fun groupRotationDraftSyncSuppliesOwnerScopedContextsToCloudSnapshot() = runTest {
+        val local = groupRotationRepositoryWithDraft()
+        val context = groupRotationContext()
+        val identityRepository = RecordingIdentityContextRepository(
+            MatchTeamIdentityContextReadResult.Loaded(context),
+        )
+        val cloud = RecordingCloudRepository()
+
+        val result = SyncDraftMatchesUseCase(
+            tournamentRepository = local,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudSyncRepository = cloud,
+            queueRecorder = testQueueRecorder(),
+            matchIdentityContextRepository = identityRepository,
+        )(TOURNAMENT_ID)
+
+        assertEquals(DraftMatchCloudSyncResult.Success, result.primaryResult)
+        assertEquals(TOURNAMENT_ID, cloud.snapshot?.tournament?.id)
+        assertEquals(24, cloud.snapshot?.teamSlots?.size)
+        assertEquals(context, cloud.snapshot?.identityContextsByMatchId?.get("group-draft-match"))
+        assertEquals(listOf("group-draft-match"), identityRepository.matchIds)
+    }
+
+    @Test
+    fun invalidGroupRotationDraftContextPreventsCloudAccessForTheWholeSnapshot() = runTest {
+        val local = groupRotationRepositoryWithDraft()
+        val cloud = RecordingCloudRepository()
+        val result = SyncDraftMatchesUseCase(
+            tournamentRepository = local,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudSyncRepository = cloud,
+            queueRecorder = testQueueRecorder(),
+            matchIdentityContextRepository = RecordingIdentityContextRepository(
+                MatchTeamIdentityContextReadResult.SetupRequired,
+            ),
+        )(TOURNAMENT_ID)
+
+        assertEquals(DraftMatchCloudSyncResult.ValidationFailure, result.primaryResult)
+        assertNull(cloud.snapshot)
+    }
+
+    @Test
     fun networkFailureIsRecordedAndQueuePersistenceFailureIsExposed() = runTest {
         val local = localRepository()
         val auth = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
@@ -173,6 +234,57 @@ class SyncDraftMatchesUseCaseTest {
         )
     }
 
+    private suspend fun groupRotationRepositoryWithDraft(): InMemoryTournamentRepository =
+        InMemoryTournamentRepository().also { repository ->
+            val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+            repository.create(
+                Tournament(
+                    id = TOURNAMENT_ID,
+                    name = "Group Rotation Cup",
+                    stageName = "Organizer",
+                    organizerContactNumber = "123",
+                    status = TournamentStatus.CONFIRMED,
+                    ownerUserId = OWNER_ID,
+                    format = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 4,
+                    selectedGroupPairings = listOf(pairing),
+                ),
+            )
+            repository.saveTeamNames(
+                TOURNAMENT_ID,
+                (1..24).associateWith { slotNumber -> "Team $slotNumber" },
+            )
+            repository.replaceGroupRotationPairingLobbySlots(
+                (1..12).map { lobbySlot ->
+                    GroupRotationPairingLobbySlot(
+                        tournamentId = TOURNAMENT_ID,
+                        pairing = pairing,
+                        lobbySlotNumber = lobbySlot,
+                        teamSlotNumber = lobbySlot,
+                    )
+                },
+            )
+            repository.createDraftMatch(
+                Match(
+                    id = "group-draft-match",
+                    tournamentId = TOURNAMENT_ID,
+                    matchNumber = 1,
+                    date = LocalDate.of(2026, 7, 24),
+                    mapName = "Bermuda",
+                    status = MatchStatus.DRAFT,
+                    groupPairing = pairing,
+                ),
+            )
+        }
+
+    private fun groupRotationContext() = MatchTeamIdentityContext(
+        tournamentId = TOURNAMENT_ID,
+        pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+        teams = (1..12).map { lobbySlot ->
+            MatchLobbyTeamIdentity(lobbySlot, lobbySlot)
+        },
+    )
+
     private class RecordingCloudRepository(
         private val result: DraftMatchCloudSyncResult = DraftMatchCloudSyncResult.Success,
     ) : DraftMatchCloudSyncRepository {
@@ -193,6 +305,26 @@ class SyncDraftMatchesUseCaseTest {
             resume.await()
             return DraftMatchCloudSyncResult.Success
         }
+    }
+
+    private class RecordingIdentityContextRepository(
+        private val result: MatchTeamIdentityContextReadResult,
+    ) : MatchTeamIdentityContextRepository {
+        val matchIds = mutableListOf<String>()
+
+        override suspend fun readForMatch(
+            matchId: String,
+            ownerUserId: String,
+        ): MatchTeamIdentityContextReadResult {
+            matchIds += matchId
+            return result
+        }
+
+        override suspend fun readForPairing(
+            tournamentId: String,
+            pairing: GroupPairing,
+            ownerUserId: String,
+        ): MatchTeamIdentityContextReadResult = result
     }
 
     private class CountingRevisionRepository(

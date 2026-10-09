@@ -3,8 +3,10 @@ package com.hoggamers.rankforge.data.cloud
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncSnapshot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
+import com.hoggamers.rankforge.domain.tournament.MatchLobbyTeamIdentity
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentGroup
@@ -93,6 +95,98 @@ class DraftMatchCloudSyncMapperTest {
     }
 
     @Test
+    fun mapsGroupRotationDraftUsingExplicitContextIncludingCanonicalSlotSeven() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val groupTournament = groupRotationTournament(pairing)
+        val match = Match(
+            id = "group-draft-match",
+            tournamentId = TOURNAMENT_ID,
+            matchNumber = 1,
+            date = LocalDate.of(2026, 7, 24),
+            mapName = "Bermuda",
+            status = MatchStatus.DRAFT,
+            placements = listOf(MatchPlacement(7, 1)),
+            kills = listOf(MatchKill(7, 4)),
+            groupPairing = pairing,
+        )
+
+        val result = DraftMatchCloudSyncMapper.map(
+            DraftMatchCloudSyncSnapshot(
+                tournament = groupTournament,
+                teamSlots = namedGroupTeamSlots(groupTournament),
+                matches = listOf(match),
+                identityContextsByMatchId = mapOf(
+                    match.id to identityContext(groupTournament, pairing),
+                ),
+            ),
+        ) as DraftMatchCloudSyncMappingResult.Success
+
+        assertEquals(1, result.payloads.matchResults.size)
+        assertEquals(
+            TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), 7),
+            result.payloads.matchResults.single().teamSlotId,
+        )
+    }
+
+    @Test
+    fun rejectsGroupRotationDraftWhenContextIsMissingOrMismatched() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val groupTournament = groupRotationTournament(pairing)
+        val match = groupDraftMatch(pairing)
+        val base = DraftMatchCloudSyncSnapshot(
+            tournament = groupTournament,
+            teamSlots = namedGroupTeamSlots(groupTournament),
+            matches = listOf(match),
+        )
+
+        assertEquals(DraftMatchCloudSyncMappingResult.Invalid, DraftMatchCloudSyncMapper.map(base))
+        assertEquals(
+            DraftMatchCloudSyncMappingResult.Invalid,
+            DraftMatchCloudSyncMapper.map(
+                base.copy(
+                    identityContextsByMatchId = mapOf(
+                        match.id to identityContext(
+                            groupTournament,
+                            GroupPairing(TournamentGroup.A, TournamentGroup.B),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun rejectsGroupRotationDraftWhenResultIsOutsideExplicitContextOrSlotsAreMalformed() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val groupTournament = groupRotationTournament(pairing)
+        val match = groupDraftMatch(pairing)
+        val context = identityContext(groupTournament, pairing)
+
+        assertEquals(
+            DraftMatchCloudSyncMappingResult.Invalid,
+            DraftMatchCloudSyncMapper.map(
+                DraftMatchCloudSyncSnapshot(
+                    tournament = groupTournament,
+                    teamSlots = namedGroupTeamSlots(groupTournament),
+                    matches = listOf(match.copy(placements = listOf(MatchPlacement(13, 1)))),
+                    identityContextsByMatchId = mapOf(match.id to context),
+                ),
+            ),
+        )
+        assertEquals(
+            DraftMatchCloudSyncMappingResult.Invalid,
+            DraftMatchCloudSyncMapper.map(
+                DraftMatchCloudSyncSnapshot(
+                    tournament = groupTournament,
+                    teamSlots = namedGroupTeamSlots(groupTournament).dropLast(1),
+                    matches = listOf(match),
+                    identityContextsByMatchId = mapOf(match.id to context),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun rejectsInvalidTournamentUuidAndInvalidDraftResultRows() {
         val invalidTournament = snapshot().copy(
             tournament = snapshot().tournament.copy(id = "not-a-uuid"),
@@ -137,6 +231,39 @@ class DraftMatchCloudSyncMapperTest {
                 kills = listOf(MatchKill(1, 9)),
             ),
         ),
+    )
+
+    private fun groupRotationTournament(pairing: GroupPairing) = snapshot().tournament.copy(
+        format = TournamentFormat.GROUP_ROTATION,
+        groupCount = 4,
+        selectedGroupPairings = listOf(pairing),
+    )
+
+    private fun groupDraftMatch(pairing: GroupPairing) = Match(
+        id = "group-draft-match",
+        tournamentId = TOURNAMENT_ID,
+        matchNumber = 1,
+        date = LocalDate.of(2026, 7, 24),
+        mapName = "Bermuda",
+        status = MatchStatus.DRAFT,
+        placements = listOf(MatchPlacement(7, 1)),
+        kills = listOf(MatchKill(7, 4)),
+        groupPairing = pairing,
+    )
+
+    private fun namedGroupTeamSlots(tournament: Tournament) =
+        tournament.formatDerivedSlots().map { it.copy(teamName = "Team " + it.slotNumber) }
+
+    private fun identityContext(
+        tournament: Tournament,
+        pairing: GroupPairing,
+        eligibleSlots: List<Int> = (1..12).toList(),
+    ) = MatchTeamIdentityContext(
+        tournamentId = tournament.id,
+        pairing = pairing,
+        teams = eligibleSlots.mapIndexed { index, slotNumber ->
+            MatchLobbyTeamIdentity(index + 1, slotNumber)
+        },
     )
 
     private companion object {

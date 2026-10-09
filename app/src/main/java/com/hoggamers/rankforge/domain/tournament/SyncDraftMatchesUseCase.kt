@@ -19,6 +19,8 @@ class SyncDraftMatchesUseCase @Inject constructor(
     private val cloudSyncRepository: DraftMatchCloudSyncRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
     private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
+    private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
+        NoOpMatchTeamIdentityContextRepository,
 ) : DraftMatchCloudSyncAction, DraftMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
@@ -70,12 +72,40 @@ class SyncDraftMatchesUseCase @Inject constructor(
         val snapshot = try {
             val tournament = tournamentRepository.observeByIdAndOwner(tournamentId, expectedOwnerUserId).first()
                 ?: return DraftMatchCloudSyncResult.ValidationFailure
+            val matches = tournamentRepository
+                .observeMatchesByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)
+                .first()
+            val teamSlots = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                tournamentRepository
+                    .observeSlotsByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)
+                    .first()
+            } else {
+                emptyList()
+            }
+            val identityContextsByMatchId = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                val contexts = mutableMapOf<String, MatchTeamIdentityContext>()
+                matches.filter { it.status == MatchStatus.DRAFT }.forEach { match ->
+                    when (val contextResult = matchIdentityContextRepository.readForMatch(
+                        match.id,
+                        expectedOwnerUserId,
+                    )) {
+                        is MatchTeamIdentityContextReadResult.Loaded ->
+                            contexts[match.id] = contextResult.context
+                        else -> return DraftMatchCloudSyncResult.ValidationFailure
+                    }
+                }
+                contexts
+            } else {
+                emptyMap()
+            }
             DraftMatchCloudSyncSnapshot(
                 tournament = tournament,
-                matches = tournamentRepository.observeMatchesByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
+                matches = matches,
                 expectedCloudRevision = tournamentRepository
                     .readLocalRevisionState(tournamentId)
                     .expectedRevisionForWrite(),
+                teamSlots = teamSlots,
+                identityContextsByMatchId = identityContextsByMatchId,
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
