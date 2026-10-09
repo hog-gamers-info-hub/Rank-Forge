@@ -193,6 +193,9 @@ interface TournamentDao {
     @Query("SELECT * FROM tournaments WHERE id = :tournamentId AND owner_user_id = :ownerUserId")
     fun observeByIdAndOwner(tournamentId: String, ownerUserId: String): Flow<TournamentEntity?>
 
+    @Query("SELECT * FROM tournaments WHERE id = :tournamentId AND owner_user_id = :ownerUserId")
+    suspend fun readByIdAndOwner(tournamentId: String, ownerUserId: String): TournamentEntity?
+
     @Query(
         "SELECT EXISTS(SELECT 1 FROM tournaments WHERE id = :tournamentId AND owner_user_id = :ownerUserId)",
     )
@@ -222,6 +225,9 @@ interface TeamSlotDao {
     @Query("SELECT * FROM team_slots WHERE tournament_id = :tournamentId ORDER BY slot_number")
     fun observeByTournamentId(tournamentId: String): Flow<List<TeamSlotEntity>>
 
+    @Query("SELECT * FROM team_slots WHERE tournament_id = :tournamentId ORDER BY slot_number")
+    suspend fun readByTournamentId(tournamentId: String): List<TeamSlotEntity>
+
     @Upsert
     suspend fun upsertAll(teamSlots: List<TeamSlotEntity>)
 
@@ -239,6 +245,12 @@ interface TournamentGroupPairingDao {
             "WHERE tournament_id = :tournamentId ORDER BY pairing_key",
     )
     fun observeByTournamentId(tournamentId: String): Flow<List<TournamentGroupPairingEntity>>
+
+    @Query(
+        "SELECT * FROM tournament_group_pairings " +
+            "WHERE tournament_id = :tournamentId ORDER BY pairing_key",
+    )
+    suspend fun readByTournamentId(tournamentId: String): List<TournamentGroupPairingEntity>
 
     @Upsert
     suspend fun upsertAll(pairings: List<TournamentGroupPairingEntity>)
@@ -259,6 +271,13 @@ interface RosterPlayerDao {
     fun observeByTournamentId(tournamentId: String): Flow<List<RosterPlayerEntity>>
 
     @Query(
+        "SELECT * FROM roster_players " +
+            "WHERE tournament_id = :tournamentId " +
+            "ORDER BY slot_number, roster_position",
+    )
+    suspend fun readByTournamentId(tournamentId: String): List<RosterPlayerEntity>
+
+    @Query(
         """
         SELECT * FROM roster_players
         WHERE tournament_id = :tournamentId AND slot_number = :slotNumber
@@ -272,6 +291,9 @@ interface RosterPlayerDao {
 
     @Upsert
     suspend fun upsertAll(rosterPlayers: List<RosterPlayerEntity>)
+
+    @Query("DELETE FROM roster_players WHERE tournament_id = :tournamentId")
+    suspend fun deleteByTournamentId(tournamentId: String)
 
     @Query(
         "DELETE FROM roster_players WHERE tournament_id = :tournamentId AND slot_number = :slotNumber",

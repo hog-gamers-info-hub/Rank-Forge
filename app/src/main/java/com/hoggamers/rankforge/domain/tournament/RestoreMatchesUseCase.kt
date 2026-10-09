@@ -2,7 +2,9 @@ package com.hoggamers.rankforge.domain.tournament
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
+import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
@@ -26,6 +28,22 @@ class RestoreMatchesUseCase @Inject constructor(
     ): QueueAwareActionResult<MatchCloudRestorationResult> =
         record(executeForRetry(tournamentId, expectedOwnerUserId), tournamentId, expectedOwnerUserId)
 
+    override suspend operator fun invoke(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        expectedParentCloudRevision: CloudRevision,
+    ): QueueAwareActionResult<MatchCloudRestorationResult> {
+        val result = executeForRetry(
+            tournamentId = tournamentId,
+            expectedOwnerUserId = expectedOwnerUserId,
+            expectedParentCloudRevision = expectedParentCloudRevision,
+        )
+        return QueueAwareActionResult(
+            primaryResult = result,
+            queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+        )
+    }
+
     override suspend fun invoke(
         tournamentId: String,
     ): QueueAwareActionResult<MatchCloudRestorationResult> {
@@ -43,6 +61,26 @@ class RestoreMatchesUseCase @Inject constructor(
     override suspend fun executeForRetry(
         tournamentId: String,
         expectedOwnerUserId: String,
+    ): MatchCloudRestorationResult = executeForRetryInternal(
+        tournamentId = tournamentId,
+        expectedOwnerUserId = expectedOwnerUserId,
+        expectedParentCloudRevision = null,
+    )
+
+    override suspend fun executeForRetry(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        expectedParentCloudRevision: CloudRevision,
+    ): MatchCloudRestorationResult = executeForRetryInternal(
+        tournamentId = tournamentId,
+        expectedOwnerUserId = expectedOwnerUserId,
+        expectedParentCloudRevision = expectedParentCloudRevision,
+    )
+
+    private suspend fun executeForRetryInternal(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        expectedParentCloudRevision: CloudRevision?,
     ): MatchCloudRestorationResult {
         if (currentOwnerUserId() != expectedOwnerUserId) return MatchCloudRestorationResult.AuthorizationFailure
         if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)) {
@@ -63,6 +101,9 @@ class RestoreMatchesUseCase @Inject constructor(
                     ?: return MatchCloudRestorationResult.Conflict(
                         com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
                     )
+                if (expectedParentCloudRevision != null && cloudRevision != expectedParentCloudRevision) {
+                    return MatchCloudRestorationResult.GenerationMismatch
+                }
                 localRepository.detectMatchDivergence(tournamentId, cloudRevision)?.let { conflict ->
                     return MatchCloudRestorationResult.Conflict(
                         conflict = conflict,
@@ -81,11 +122,24 @@ class RestoreMatchesUseCase @Inject constructor(
                     return MatchCloudRestorationResult.AuthorizationFailure
                 }
                 try {
-                    localRepository.replaceMatchesByOwner(
-                        tournamentId = tournamentId,
-                        expectedOwnerUserId = expectedOwnerUserId,
-                        snapshot = snapshot,
-                    )
+                    val localWriteResult = if (expectedParentCloudRevision == null) {
+                        localRepository.replaceMatchesByOwner(
+                            tournamentId = tournamentId,
+                            expectedOwnerUserId = expectedOwnerUserId,
+                            snapshot = snapshot,
+                        )
+                        MatchRestorationLocalWriteResult.Replaced
+                    } else {
+                        localRepository.replaceMatchesByOwnerAtCloudRevision(
+                            tournamentId = tournamentId,
+                            expectedOwnerUserId = expectedOwnerUserId,
+                            snapshot = snapshot,
+                            expectedParentCloudRevision = expectedParentCloudRevision,
+                        )
+                    }
+                    if (localWriteResult == MatchRestorationLocalWriteResult.GenerationMismatch) {
+                        return MatchCloudRestorationResult.GenerationMismatch
+                    }
                     // Screenshot restoration is the separate 6C3 boundary; the match
                     // replacement above is the only local restoration write secured here.
                     when (
@@ -133,7 +187,7 @@ class RestoreMatchesUseCase @Inject constructor(
     } catch (_: Throwable) { null }
 }
 
-private fun MatchCloudRestorationResult.queueStatus() = when (this) { MatchCloudRestorationResult.Success, MatchCloudRestorationResult.NoCloudMatches -> SyncQueueStatus.COMPLETED; MatchCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; MatchCloudRestorationResult.NetworkFailure -> SyncQueueStatus.BLOCKED_NETWORK; MatchCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; MatchCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; MatchCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL; is MatchCloudRestorationResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT }
+private fun MatchCloudRestorationResult.queueStatus() = when (this) { MatchCloudRestorationResult.Success, MatchCloudRestorationResult.NoCloudMatches -> SyncQueueStatus.COMPLETED; MatchCloudRestorationResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION; MatchCloudRestorationResult.NetworkFailure, MatchCloudRestorationResult.GenerationMismatch -> SyncQueueStatus.BLOCKED_NETWORK; MatchCloudRestorationResult.ValidationFailure -> SyncQueueStatus.FAILED_VALIDATION; MatchCloudRestorationResult.AuthorizationFailure -> SyncQueueStatus.FAILED_AUTHORIZATION; MatchCloudRestorationResult.LocalTransactionFailure -> SyncQueueStatus.FAILED_LOCAL; is MatchCloudRestorationResult.Conflict -> SyncQueueStatus.FAILED_CONFLICT }
 private fun MatchCloudRestorationResult.queueFailureCategory(): String? = (this as? MatchCloudRestorationResult.Conflict)?.conflict?.queueFailureCategory()
 
 private fun MatchCloudRestorationRemoteResult.Failure.toDomainResult() = when (category) {

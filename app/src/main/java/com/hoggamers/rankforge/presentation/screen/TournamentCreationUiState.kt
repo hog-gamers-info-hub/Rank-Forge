@@ -18,6 +18,7 @@ sealed interface TournamentCreationNavigation {
 
     data class Created(
         val tournamentId: String,
+        val format: TournamentFormat,
     ) : TournamentCreationNavigation
 }
 

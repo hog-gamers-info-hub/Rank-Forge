@@ -69,7 +69,10 @@ import com.hoggamers.rankforge.domain.tournament.CheckTournamentQuotaUseCase
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadLocalSnapshotRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaResult
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
@@ -88,7 +91,19 @@ import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamEntry
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupCandidate
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftSaveResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalSaveResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadResult
+import com.hoggamers.rankforge.domain.tournament.ReadGroupRotationTeamSetupUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
@@ -97,6 +112,7 @@ import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TEAM_ENTRY_ROSTER_BUTTON_TEST_TAG_PREFIX
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
+import com.hoggamers.rankforge.presentation.screen.GroupRotationTeamEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.CUSTOM_DESIGN_SETUP_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.ROSTER_ENTRY_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
@@ -247,7 +263,6 @@ import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
-import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRemoteResult
@@ -779,6 +794,44 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
     }
 
     @Test
+    fun groupRotationCreationEntersGroupRotationTeamEntryDestination() {
+        val viewModels = createNavigationViewModels()
+        lateinit var navController: NavHostController
+        composeTestRule.setContent {
+            RankForgeTheme {
+                navController = rememberNavController()
+                RankForgeNavHost(
+                    navController = navController,
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    groupRotationTeamEntryViewModelFactory =
+                        viewModels.groupRotationTeamEntryViewModel,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.open_tournament_creation)).performClick()
+        composeTestRule.runOnIdle {
+            viewModels.creationViewModel.onTournamentNameChanged("Group Cup")
+            viewModels.creationViewModel.onGroupRotationChanged(true)
+            viewModels.creationViewModel.submit()
+        }
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            viewModels.listViewModel.uiState.value.tournaments.size == 1
+        }
+        composeTestRule.waitForIdle()
+
+        val createdTournamentId = viewModels.listViewModel.uiState.value.tournaments.single().id
+        composeTestRule.runOnIdle {
+            assertEquals(
+                GroupRotationTeamEntryDestination(createdTournamentId),
+                navController.currentBackStackEntry?.toRoute<GroupRotationTeamEntryDestination>(),
+            )
+        }
+    }
+
+    @Test
     fun tappingCreatedTournamentOpensDetailsAndBackReturnsToList() {
         val viewModels = createNavigationViewModels()
         composeTestRule.setContent {
@@ -841,6 +894,55 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         composeTestRule.onNodeWithTag(TEAM_ENTRY_SCREEN_TEST_TAG).assertIsDisplayed()
         pressBackOnMainThread()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun groupRotationDetailsEntryActionOpensGroupRotationTeamEntryDestination() {
+        val repository = InMemoryTournamentRepository()
+        val tournamentId = "group-rotation-details-id"
+        runBlocking {
+            repository.create(
+                Tournament(
+                    id = tournamentId,
+                    name = "Group Cup",
+                    stageName = "Alex",
+                    organizerContactNumber = "123",
+                    status = TournamentStatus.DRAFT,
+                    format = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 3,
+                    selectedGroupPairings = defaultGroupPairings(3),
+                ),
+            )
+        }
+        val viewModels = createNavigationViewModels(repository)
+        lateinit var navController: NavHostController
+        composeTestRule.setContent {
+            RankForgeTheme {
+                navController = rememberNavController()
+                RankForgeNavHost(
+                    navController = navController,
+                    creationViewModel = viewModels.creationViewModel,
+                    listViewModel = viewModels.listViewModel,
+                    detailsViewModelFactory = viewModels.detailsViewModel,
+                    groupRotationTeamEntryViewModelFactory =
+                        viewModels.groupRotationTeamEntryViewModel,
+                )
+            }
+        }
+
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            viewModels.listViewModel.uiState.value.tournaments.size == 1
+        }
+        composeTestRule.onNodeWithTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournamentId).performClick()
+        composeTestRule.onNodeWithText(context.getString(R.string.enter_teams_action)).performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.runOnIdle {
+            assertEquals(
+                GroupRotationTeamEntryDestination(tournamentId),
+                navController.currentBackStackEntry?.toRoute<GroupRotationTeamEntryDestination>(),
+            )
+        }
     }
 
     @Test
@@ -2130,6 +2232,12 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         )
         val cloudReplacement = ReplaceTournamentRosterInCloudUseCase(
             tournamentRepository = repository,
+            localSnapshotRepository = object : TournamentCloudUploadLocalSnapshotRepository {
+                override suspend fun readCloudUploadSnapshotByOwner(
+                    tournamentId: String,
+                    ownerUserId: String,
+                ): TournamentCloudUploadSnapshot? = null
+            },
             authRepository = object : AuthRepository {
                 override fun observeAuthState(): Flow<AuthState> = flowOf(AuthState.SignedOut)
                 override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
@@ -2143,12 +2251,6 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     ownerId: String,
                 ): TournamentRosterCloudReplacementResult = TournamentRosterCloudReplacementResult.NetworkFailure
             },
-            cloudUploadRepository = object : TournamentCloudUploadRepository {
-                override suspend fun upload(
-                    snapshot: com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot,
-                    ownerId: String,
-                ): TournamentCloudUploadResult = TournamentCloudUploadResult.NetworkFailure
-            },
             cloudRestorationRepository = object : TournamentCloudRestorationRepository {
                 override suspend fun listOwnedTournaments(): TournamentCloudRestorationRemoteResult<List<com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary>> =
                     TournamentCloudRestorationRemoteResult.Success(emptyList())
@@ -2157,6 +2259,9 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     tournamentId: String,
                 ): TournamentCloudRestorationRemoteResult<com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot> =
                     TournamentCloudRestorationRemoteResult.Failure(TournamentCloudRestorationFailureCategory.NOT_FOUND)
+            },
+            tournamentUploadRetryAction = TournamentCloudUploadRetryAction {
+                TournamentCloudUploadResult.NetworkFailure
             },
             queueRecorder = RecordSyncQueueOutcome(NoOpPersistentSyncQueueRepository),
         )
@@ -2490,6 +2595,68 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                 ).also {
                     it.load(tournamentId)
                 }
+            },
+            groupRotationTeamEntryViewModel = { tournamentId ->
+                GroupRotationTeamEntryViewModel(
+                    readGroupRotationTeamSetup = ReadGroupRotationTeamSetupUseCase(
+                        repository = object : GroupRotationTeamSetupReadRepository {
+                            override suspend fun readGroupRotationTeamSetup(
+                                tournamentId: String,
+                                ownerUserId: String,
+                            ): GroupRotationTeamSetupReadResult =
+                                repository.observeById(tournamentId).first()?.let {
+                                    GroupRotationTeamSetupReadResult.NoSavedSetup(it)
+                                } ?: GroupRotationTeamSetupReadResult.TournamentNotFound
+                        },
+                        authRepository = object : AuthRepository {
+                            override fun observeAuthState(): Flow<AuthState> = flowOf(
+                                AuthState.SignedIn(AuthUser("navigation-user", null)),
+                            )
+
+                            override suspend fun restoreSession(): AuthRestorationResult =
+                                AuthRestorationResult.NoSavedSession
+
+                            override suspend fun signUp(
+                                email: String,
+                                password: String,
+                            ): AuthOperationResult = error("unused")
+
+                            override suspend fun login(
+                                email: String,
+                                password: String,
+                            ): AuthOperationResult = error("unused")
+
+                            override suspend fun logout(): AuthOperationResult = error("unused")
+                        },
+                    ),
+                    saveGroupRotationTeamSetup = SaveGroupRotationTeamSetupUseCase(
+                        repository = object : GroupRotationTeamSetupLocalRepository {
+                            override suspend fun saveGroupRotationTeamSetup(
+                                candidate: GroupRotationTeamSetupCandidate,
+                                ownerUserId: String,
+                            ): GroupRotationTeamSetupLocalSaveResult =
+                                GroupRotationTeamSetupLocalSaveResult.Saved
+                        },
+                    ),
+                    draftRepository = object : GroupRotationTeamSetupDraftRepository {
+                        override fun observeDraft(
+                            tournamentId: String,
+                        ): Flow<List<GroupRotationPairingTeamEntry>> = flowOf(emptyList())
+
+                        override suspend fun readDraft(
+                            tournamentId: String,
+                        ): List<GroupRotationPairingTeamEntry> = emptyList()
+
+                        override suspend fun replaceDraft(
+                            tournament: Tournament,
+                            candidate: GroupRotationTeamSetupCandidate,
+                        ): GroupRotationTeamSetupDraftSaveResult =
+                            GroupRotationTeamSetupDraftSaveResult.Saved
+
+                        override suspend fun clearDraft(tournamentId: String) = Unit
+                    },
+                    uploadTournament = uploadAction,
+                )
             },
             rosterEntryViewModel = { tournamentId, slotNumber ->
                 RosterEntryViewModel(
@@ -2873,6 +3040,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
         val detailsViewModel: (String) -> TournamentDetailsViewModel,
         val standingsViewModel: (String) -> TournamentStandingsViewModel,
         val teamEntryViewModel: (String) -> TeamEntryViewModel,
+        val groupRotationTeamEntryViewModel: (String) -> GroupRotationTeamEntryViewModel,
         val rosterEntryViewModel: (String, Int) -> RosterEntryViewModel,
         val rosterReviewViewModel: (String) -> RosterReviewViewModel,
         val matchCreationViewModel: (String) -> MatchCreationViewModel,

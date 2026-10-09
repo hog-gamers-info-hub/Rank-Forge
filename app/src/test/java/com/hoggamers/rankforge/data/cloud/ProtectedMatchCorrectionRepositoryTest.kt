@@ -9,10 +9,14 @@ import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionRequest
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProtectedMatchCorrectionRepositoryTest {
@@ -35,6 +39,50 @@ class ProtectedMatchCorrectionRepositoryTest {
 
         assertEquals(12, parameters.matchResults.size)
         assertEquals((1..12).toList(), parameters.matchResults.map { it.placement })
+    }
+
+    @Test
+    fun mapsGroupRotationCorrectionUsingExplicitCanonicalIdentityAboveTwelve() {
+        val eligibleSlots = (1..6).toList() + (13..18).toList()
+        val tournament = request(
+            match = matchWithParticipantSlots(eligibleSlots),
+            placements = eligibleSlots.mapIndexed { index, slot -> MatchPlacement(slot, index + 1) },
+            kills = eligibleSlots.mapIndexed { index, slot -> MatchKill(slot, index) },
+            participantResults = eligibleSlots.mapIndexed { index, slot ->
+                MatchParticipantResult(
+                    teamSlotNumber = slot,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = index + 1,
+                    kills = index,
+                )
+            },
+        ).tournament.copy(
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 4,
+            selectedGroupPairings = listOf(GroupPairing(TournamentGroup.A, TournamentGroup.C)),
+        )
+        val parameters = ProtectedMatchCorrectionRequest(
+            tournament = tournament,
+            match = matchWithParticipantSlots(eligibleSlots),
+            placements = eligibleSlots.mapIndexed { index, slot -> MatchPlacement(slot, index + 1) },
+            kills = eligibleSlots.mapIndexed { index, slot -> MatchKill(slot, index) },
+            expectedRevision = 2,
+            participantResults = eligibleSlots.mapIndexed { index, slot ->
+                MatchParticipantResult(
+                    teamSlotNumber = slot,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = index + 1,
+                    kills = index,
+                )
+            },
+        ).toParameters()!!
+
+        assertEquals(12, parameters.matchResults.size)
+        assertTrue(
+            parameters.matchResults.any {
+                it.teamSlotId == TournamentCloudIdentity.teamSlotId(TOURNAMENT_ID, 18)
+            },
+        )
     }
 
     @Test
@@ -138,6 +186,25 @@ class ProtectedMatchCorrectionRepositoryTest {
         status = MatchStatus.FINALIZED,
         placements = slots.mapIndexed { index, slot -> MatchPlacement(slot, index + 1) },
         kills = slots.mapIndexed { index, slot -> MatchKill(slot, index) },
+    )
+
+    private fun matchWithParticipantSlots(slots: List<Int>) = Match(
+        id = "match-id",
+        tournamentId = TOURNAMENT_ID.toString(),
+        matchNumber = 1,
+        date = LocalDate.of(2026, 7, 24),
+        mapName = "Bermuda",
+        status = MatchStatus.FINALIZED,
+        placements = slots.mapIndexed { index, slot -> MatchPlacement(slot, index + 1) },
+        kills = slots.mapIndexed { index, slot -> MatchKill(slot, index) },
+        participantResults = slots.mapIndexed { index, slot ->
+            MatchParticipantResult(
+                teamSlotNumber = slot,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = index + 1,
+                kills = index,
+            )
+        },
     )
 
     private fun correctedPlacements(count: Int) = (1..count).map { slot ->

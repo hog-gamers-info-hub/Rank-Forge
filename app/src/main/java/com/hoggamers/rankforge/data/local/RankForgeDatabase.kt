@@ -31,6 +31,8 @@ interface RankForgeStateDao {
         TournamentEntity::class,
         TeamSlotEntity::class,
         TournamentGroupPairingEntity::class,
+        GroupRotationPairingLobbySlotEntity::class,
+        GroupRotationPairingTeamEntryDraftEntity::class,
         RosterPlayerEntity::class,
         MatchEntity::class,
         MatchPlacementEntity::class,
@@ -56,7 +58,7 @@ interface RankForgeStateDao {
         PointTableDetailsEntity::class,
         PointTableLogoPlacementEntity::class,
     ],
-    version = 29,
+    version = 31,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -64,6 +66,9 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun tournamentDao(): TournamentDao
     abstract fun teamSlotDao(): TeamSlotDao
     abstract fun tournamentGroupPairingDao(): TournamentGroupPairingDao
+    abstract fun groupRotationPairingLobbySlotDao(): GroupRotationPairingLobbySlotDao
+    abstract fun groupRotationPairingTeamEntryDraftDao(): GroupRotationPairingTeamEntryDraftDao
+    abstract fun groupRotationTeamSetupReadDao(): GroupRotationTeamSetupReadDao
     abstract fun rosterPlayerDao(): RosterPlayerDao
     abstract fun matchDao(): MatchDao
     abstract fun matchPlacementDao(): MatchPlacementDao
@@ -920,6 +925,61 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id_group_pairing_key` " +
                         "ON `matches` (`tournament_id`, `group_pairing_key`)",
+                )
+            }
+        }
+
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `tournament_group_pairing_lobby_slots` (
+                        `tournament_id` TEXT NOT NULL,
+                        `pairing_key` TEXT NOT NULL,
+                        `lobby_slot_number` INTEGER NOT NULL,
+                        `team_slot_number` INTEGER NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `pairing_key`, `lobby_slot_number`),
+                        FOREIGN KEY(`tournament_id`, `pairing_key`) REFERENCES `tournament_group_pairings`(`tournament_id`, `pairing_key`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`, `team_slot_number`) REFERENCES `team_slots`(`tournament_id`, `slot_number`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournament_group_pairing_lobby_slots_tournament_id_pairing_key` " +
+                        "ON `tournament_group_pairing_lobby_slots` (`tournament_id`, `pairing_key`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tournament_group_pairing_lobby_slots_tournament_id_team_slot_number` " +
+                        "ON `tournament_group_pairing_lobby_slots` (`tournament_id`, `team_slot_number`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_tournament_group_pairing_lobby_slots_tournament_id_pairing_key_team_slot_number` " +
+                        "ON `tournament_group_pairing_lobby_slots` (`tournament_id`, `pairing_key`, `team_slot_number`)",
+                )
+            }
+        }
+
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_rotation_pairing_team_entry_drafts` (
+                        `tournament_id` TEXT NOT NULL,
+                        `pairing_key` TEXT NOT NULL,
+                        `lobby_slot_number` INTEGER NOT NULL,
+                        `raw_team_name` TEXT NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `pairing_key`, `lobby_slot_number`),
+                        FOREIGN KEY(`tournament_id`, `pairing_key`) REFERENCES `tournament_group_pairings`(`tournament_id`, `pairing_key`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_pairing_team_entry_drafts_tournament_id_pairing_key` " +
+                        "ON `group_rotation_pairing_team_entry_drafts` (`tournament_id`, `pairing_key`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_pairing_team_entry_drafts_tournament_id_lobby_slot_number` " +
+                        "ON `group_rotation_pairing_team_entry_drafts` (`tournament_id`, `lobby_slot_number`)",
                 )
             }
         }

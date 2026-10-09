@@ -12,7 +12,20 @@ class MatchEligibleTeamSlotResolver {
         tournament: Tournament,
         persistedTeamSlots: Collection<TeamSlot>,
         match: Match,
-    ): Set<Int> {
+        persistedMappings: Collection<GroupRotationPairingLobbySlot> = emptyList(),
+    ): Set<Int> = resolveContext(
+        tournament = tournament,
+        persistedTeamSlots = persistedTeamSlots,
+        match = match,
+        persistedMappings = persistedMappings,
+    ).eligibleTeamSlotNumbers
+
+    fun resolveContext(
+        tournament: Tournament,
+        persistedTeamSlots: Collection<TeamSlot>,
+        match: Match,
+        persistedMappings: Collection<GroupRotationPairingLobbySlot> = emptyList(),
+    ): MatchTeamIdentityContext {
         require(match.tournamentId == tournament.id) {
             "Match and tournament ids must match."
         }
@@ -21,7 +34,13 @@ class MatchEligibleTeamSlotResolver {
                 require(match.groupPairing == null) {
                     "Standard matches cannot specify a group pairing."
                 }
-                TeamSlot.SLOT_NUMBERS.toSet()
+                MatchTeamIdentityContext(
+                    tournamentId = tournament.id,
+                    pairing = null,
+                    teams = TeamSlot.SLOT_NUMBERS.map { slotNumber ->
+                        MatchLobbyTeamIdentity(slotNumber, slotNumber)
+                    },
+                )
             }
 
             TournamentFormat.GROUP_ROTATION -> {
@@ -35,26 +54,42 @@ class MatchEligibleTeamSlotResolver {
                 require(pairing.firstGroup.ordinal < groupCount && pairing.secondGroup.ordinal < groupCount) {
                     "Match pairing uses a group outside the tournament configuration."
                 }
-                val selectedGroups = setOf(pairing.firstGroup, pairing.secondGroup)
-                val eligibleSlots = persistedTeamSlots
-                    .filter { it.tournamentId == tournament.id && it.group in selectedGroups }
-                    .onEach { slot ->
-                        require(slot.slotNumber in TeamSlot.TOURNAMENT_SLOT_NUMBERS)
-                    }
-                val slotNumbers = eligibleSlots.map { it.slotNumber }
-                require(slotNumbers.size == slotNumbers.toSet().size) {
-                    "A match cannot contain duplicate permanent team-slot identities."
+                require(persistedMappings.size == TeamSlot.SLOT_NUMBERS.count()) {
+                    "Group Rotation match identity mapping must contain exactly twelve rows."
                 }
-                require(selectedGroups.all { group ->
-                    eligibleSlots.count { it.group == group } == MAX_TEAMS_PER_GROUP
+                require(persistedMappings.all { mapping ->
+                    mapping.tournamentId == tournament.id && mapping.pairing == pairing
                 }) {
-                    "Each group pairing must resolve to six team slots per group."
+                    "Group Rotation match identity mapping belongs to another tournament or pairing."
                 }
-                val eligible = slotNumbers.toSet()
-                require(eligible.size == MAX_TEAMS_PER_GROUP * 2) {
-                    "Each group pairing must resolve to exactly twelve team slots."
+                require(persistedMappings.map { it.lobbySlotNumber }.toSet() == TeamSlot.SLOT_NUMBERS.toSet()) {
+                    "Group Rotation match identity mapping must cover lobby slots 1 through 12 exactly once."
                 }
-                eligible
+                val mappedTeamSlotNumbers = persistedMappings.map { it.teamSlotNumber }
+                require(mappedTeamSlotNumbers.toSet().size == mappedTeamSlotNumbers.size) {
+                    "Group Rotation match identity mapping must contain unique canonical team slots."
+                }
+                val validTournamentSlots = tournament.formatDerivedSlots()
+                    .map { it.slotNumber }
+                    .toSet()
+                require(mappedTeamSlotNumbers.all { it in validTournamentSlots }) {
+                    "Group Rotation match identity mapping contains a team slot outside the tournament format."
+                }
+                val persistedBySlot = persistedTeamSlots
+                    .filter { it.tournamentId == tournament.id }
+                    .associateBy { it.slotNumber }
+                require(mappedTeamSlotNumbers.all { teamSlotNumber ->
+                    persistedBySlot[teamSlotNumber]?.teamName?.isNotBlank() == true
+                }) {
+                    "Group Rotation match identity mapping requires a nonblank canonical team name."
+                }
+                MatchTeamIdentityContext(
+                    tournamentId = tournament.id,
+                    pairing = pairing,
+                    teams = persistedMappings.sortedBy { it.lobbySlotNumber }.map { mapping ->
+                        MatchLobbyTeamIdentity(mapping.lobbySlotNumber, mapping.teamSlotNumber)
+                    },
+                )
             }
         }
     }
@@ -64,4 +99,7 @@ fun MatchEligibleTeamSlotResolver.resolveOrNull(
     tournament: Tournament,
     persistedTeamSlots: Collection<TeamSlot>,
     match: Match,
-): Set<Int>? = runCatching { resolve(tournament, persistedTeamSlots, match) }.getOrNull()
+    persistedMappings: Collection<GroupRotationPairingLobbySlot> = emptyList(),
+): Set<Int>? = runCatching {
+    resolve(tournament, persistedTeamSlots, match, persistedMappings)
+}.getOrNull()

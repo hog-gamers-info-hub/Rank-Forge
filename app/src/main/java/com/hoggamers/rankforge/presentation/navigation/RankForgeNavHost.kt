@@ -20,6 +20,8 @@ import com.hoggamers.rankforge.presentation.auth.AuthScreen
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.screen.TeamEntryRoute
 import com.hoggamers.rankforge.presentation.screen.TeamEntryViewModel
+import com.hoggamers.rankforge.presentation.screen.GroupRotationTeamEntryRoute
+import com.hoggamers.rankforge.presentation.screen.GroupRotationTeamEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterEntryRoute
 import com.hoggamers.rankforge.presentation.screen.RosterEntryViewModel
 import com.hoggamers.rankforge.presentation.screen.RosterReviewRoute
@@ -71,6 +73,7 @@ import com.hoggamers.rankforge.presentation.screen.MatchCorrectionRoute
 import com.hoggamers.rankforge.presentation.screen.MatchCorrectionViewModel
 import com.hoggamers.rankforge.presentation.screen.DraftConflictResolutionRoute
 import com.hoggamers.rankforge.presentation.screen.ContactUsRoute
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 @Composable
@@ -94,6 +97,7 @@ fun RankForgeNavHost(
     matchCloudRestorationViewModelFactory: ((String) -> MatchCloudRestorationViewModel)? = null,
     standingsViewModelFactory: ((String) -> TournamentStandingsViewModel)? = null,
     teamEntryViewModelFactory: ((String) -> TeamEntryViewModel)? = null,
+    groupRotationTeamEntryViewModelFactory: ((String) -> GroupRotationTeamEntryViewModel)? = null,
     rosterEntryViewModelFactory: ((String, Int) -> RosterEntryViewModel)? = null,
     rosterReviewViewModelFactory: ((String) -> RosterReviewViewModel)? = null,
     rosterOcrReviewViewModelFactory: ((String) -> RosterOcrReviewViewModel)? = null,
@@ -230,13 +234,18 @@ fun RankForgeNavHost(
         }
         composable<TournamentCreationDestination> {
             val onBack: () -> Unit = { navController.popBackStack() }
-            val onCreated: (String) -> Unit = { tournamentId ->
+            val onCreated: (String, TournamentFormat) -> Unit = { tournamentId, format ->
                 navController.navigate(TournamentDetailsDestination(tournamentId)) {
                     popUpTo(TournamentCreationDestination) {
                         inclusive = true
                     }
                 }
-                navController.navigate(TeamEntryDestination(tournamentId))
+                when (format) {
+                    TournamentFormat.STANDARD ->
+                        navController.navigate(TeamEntryDestination(tournamentId))
+                    TournamentFormat.GROUP_ROTATION ->
+                        navController.navigate(GroupRotationTeamEntryDestination(tournamentId))
+                }
             }
             if (creationViewModel == null) {
                 TournamentCreationRoute(
@@ -256,8 +265,13 @@ fun RankForgeNavHost(
             val onBackToList: () -> Unit = {
                 navController.popBackStack(TournamentListDestination, inclusive = false)
             }
-            val onEnterTeams: (String) -> Unit = { tournamentId ->
-                navController.navigate(TeamEntryDestination(tournamentId))
+            val onEnterTeams: (String, TournamentFormat) -> Unit = { tournamentId, format ->
+                when (format) {
+                    TournamentFormat.STANDARD ->
+                        navController.navigate(TeamEntryDestination(tournamentId))
+                    TournamentFormat.GROUP_ROTATION ->
+                        navController.navigate(GroupRotationTeamEntryDestination(tournamentId))
+                }
             }
             val onEnterMatchPlacements: (String, String) -> Unit = { tournamentId, matchId ->
                 navController.navigate(MatchPlacementDestination(tournamentId, matchId))
@@ -319,7 +333,10 @@ fun RankForgeNavHost(
                 TournamentDetailsRoute(
                     tournamentId = destination.tournamentId,
                     onBackToList = onBackToList,
-                    onEnterTeams = onEnterTeams,
+                    onEnterTeams = { tournamentId ->
+                        onEnterTeams(tournamentId, TournamentFormat.STANDARD)
+                    },
+                    onEnterTeamsWithFormat = onEnterTeams,
                     onEnterMatchPlacements = onEnterMatchPlacements,
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
@@ -336,7 +353,10 @@ fun RankForgeNavHost(
                 TournamentDetailsRoute(
                     tournamentId = destination.tournamentId,
                     onBackToList = onBackToList,
-                    onEnterTeams = onEnterTeams,
+                    onEnterTeams = { tournamentId ->
+                        onEnterTeams(tournamentId, TournamentFormat.STANDARD)
+                    },
+                    onEnterTeamsWithFormat = onEnterTeams,
                     onEnterMatchPlacements = onEnterMatchPlacements,
                     onEnterMatchKills = onEnterMatchKills,
                     onReviewMatch = onReviewMatch,
@@ -423,6 +443,23 @@ fun RankForgeNavHost(
                     onReviewRoster = onReviewRoster,
                     focusSlotNumber = destination.focusSlotNumber,
                     viewModel = teamEntryViewModel,
+                )
+            }
+        }
+        composable<GroupRotationTeamEntryDestination> { backStackEntry ->
+            val destination = backStackEntry.toRoute<GroupRotationTeamEntryDestination>()
+            val groupRotationTeamEntryViewModel =
+                groupRotationTeamEntryViewModelFactory?.invoke(destination.tournamentId)
+            if (groupRotationTeamEntryViewModel == null) {
+                GroupRotationTeamEntryRoute(
+                    tournamentId = destination.tournamentId,
+                    onBackToDetails = { navController.popBackStack() },
+                )
+            } else {
+                GroupRotationTeamEntryRoute(
+                    tournamentId = destination.tournamentId,
+                    onBackToDetails = { navController.popBackStack() },
+                    viewModel = groupRotationTeamEntryViewModel,
                 )
             }
         }

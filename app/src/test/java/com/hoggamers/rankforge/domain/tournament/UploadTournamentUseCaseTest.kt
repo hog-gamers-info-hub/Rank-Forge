@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
+import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,7 +31,7 @@ class UploadTournamentUseCaseTest {
         val cloud = SuspendingCloudRepository()
         val repository = CountingRevisionRepository(localRepository())
         val queue = RecordingTestQueueRepository()
-        val useCase = UploadTournamentUseCase(repository, auth, cloud, queue.recorder())
+        val useCase = useCase(repository, auth, cloud, queue.recorder())
 
         val job = launch { assertEquals(TournamentCloudUploadResult.AuthorizationFailure, useCase(TOURNAMENT_ID).primaryResult) }
         cloud.started.await()
@@ -49,11 +50,11 @@ class UploadTournamentUseCaseTest {
         val cloud = RecordingCloudRepository()
         val queueRepository = RecordingTestQueueRepository()
         val before = repository.observeById(TOURNAMENT_ID).first()
-        val useCase = UploadTournamentUseCase(
-            tournamentRepository = repository,
-            authRepository = FakeAuthRepository(AuthState.SignedOut),
-            cloudUploadRepository = cloud,
-            queueRecorder = queueRepository.recorder(),
+        val useCase = useCase(
+            repository,
+            FakeAuthRepository(AuthState.SignedOut),
+            cloud,
+            queueRepository.recorder(),
         )
 
         val result = useCase(TOURNAMENT_ID)
@@ -70,11 +71,11 @@ class UploadTournamentUseCaseTest {
         val repository = localRepository()
         val cloud = RecordingCloudRepository()
         val queueRepository = RecordingTestQueueRepository()
-        val useCase = UploadTournamentUseCase(
-            tournamentRepository = repository,
-            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, "owner@example.com"))),
-            cloudUploadRepository = cloud,
-            queueRecorder = queueRepository.recorder(),
+        val useCase = useCase(
+            repository,
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, "owner@example.com"))),
+            cloud,
+            queueRepository.recorder(),
         )
 
         val result = useCase(TOURNAMENT_ID)
@@ -90,10 +91,39 @@ class UploadTournamentUseCaseTest {
     }
 
     @Test
+    fun authenticatedUploadUsesTheAtomicSnapshotBoundaryForAllUploadData() = runTest {
+        val baseRepository = localRepository()
+        val snapshot = TournamentCloudUploadSnapshot(
+            tournament = baseRepository.observeByIdAndOwner(TOURNAMENT_ID, OWNER_ID).first()!!,
+            slots = baseRepository.observeSlotsByTournamentIdAndOwner(TOURNAMENT_ID, OWNER_ID).first(),
+            rosters = baseRepository.observeRosterByTournamentIdAndOwner(TOURNAMENT_ID, OWNER_ID).first(),
+            expectedCloudRevision = baseRepository.readLocalRevisionState(TOURNAMENT_ID)
+                .expectedRevisionForWrite(),
+        )
+        val repository = CountingSnapshotReadRepository(baseRepository)
+        val localSnapshotRepository = RecordingSnapshotRepository(snapshot)
+
+        val result = UploadTournamentUseCase(
+            tournamentRepository = repository,
+            localSnapshotRepository = localSnapshotRepository,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudUploadRepository = RecordingCloudRepository(),
+            queueRecorder = testQueueRecorder(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudUploadResult.Success(7), result.primaryResult)
+        assertEquals(1, localSnapshotRepository.calls)
+        assertEquals(0, repository.slotsReads)
+        assertEquals(0, repository.rosterReads)
+        assertEquals(0, repository.revisionReads)
+    }
+
+    @Test
     fun networkFailureIsRecorded() = runTest {
         val queueRepository = RecordingTestQueueRepository()
-        val result = UploadTournamentUseCase(
-            localRepository(),
+        val repository = localRepository()
+        val result = useCase(
+            repository,
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             RecordingCloudRepository(TournamentCloudUploadResult.NetworkFailure),
             queueRepository.recorder(),
@@ -108,8 +138,9 @@ class UploadTournamentUseCaseTest {
     @Test
     fun tournamentLimitFailureIsNotQueuedForRetry() = runTest {
         val queueRepository = RecordingTestQueueRepository()
-        val result = UploadTournamentUseCase(
-            localRepository(),
+        val repository = localRepository()
+        val result = useCase(
+            repository,
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             RecordingCloudRepository(TournamentCloudUploadResult.TournamentLimitReached),
             queueRepository.recorder(),
@@ -122,8 +153,9 @@ class UploadTournamentUseCaseTest {
 
     @Test
     fun queuePersistenceFailurePreservesCloudFailure() = runTest {
-        val result = UploadTournamentUseCase(
-            localRepository(),
+        val repository = localRepository()
+        val result = useCase(
+            repository,
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             RecordingCloudRepository(TournamentCloudUploadResult.NetworkFailure),
             RecordingTestQueueRepository(enqueueFailure = IllegalStateException()).recorder(),
@@ -137,7 +169,7 @@ class UploadTournamentUseCaseTest {
     fun authorizationAndPartialFailuresArePreserved() = runTest {
         val repository = localRepository()
         val authorizationCloud = RecordingCloudRepository(TournamentCloudUploadResult.AuthorizationFailure)
-        val authorizationResult = UploadTournamentUseCase(
+        val authorizationResult = useCase(
             repository,
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             authorizationCloud,
@@ -149,7 +181,7 @@ class UploadTournamentUseCaseTest {
         val partialCloud = RecordingCloudRepository(
             TournamentCloudUploadResult.PartialFailure(TournamentCloudUploadStage.TOURNAMENT),
         )
-        val partialResult = UploadTournamentUseCase(
+        val partialResult = useCase(
             repository,
             FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
             partialCloud,
@@ -178,6 +210,36 @@ class UploadTournamentUseCaseTest {
                 TOURNAMENT_ID,
                 1,
                 listOf(RosterPlayer.create(TOURNAMENT_ID, 1, "Player One")),
+            )
+        }
+    }
+
+    private fun useCase(
+        repository: TournamentRepository,
+        authRepository: AuthRepository,
+        cloudUploadRepository: TournamentCloudUploadRepository,
+        queueRecorder: com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome,
+    ): UploadTournamentUseCase = UploadTournamentUseCase(
+        tournamentRepository = repository,
+        localSnapshotRepository = snapshotRepository(repository),
+        authRepository = authRepository,
+        cloudUploadRepository = cloudUploadRepository,
+        queueRecorder = queueRecorder,
+    )
+
+    private fun snapshotRepository(
+        repository: TournamentRepository,
+    ): TournamentCloudUploadLocalSnapshotRepository = object : TournamentCloudUploadLocalSnapshotRepository {
+        override suspend fun readCloudUploadSnapshotByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): TournamentCloudUploadSnapshot? {
+            val tournament = repository.observeByIdAndOwner(tournamentId, ownerUserId).first() ?: return null
+            return TournamentCloudUploadSnapshot(
+                tournament = tournament,
+                slots = repository.observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId).first(),
+                rosters = repository.observeRosterByTournamentIdAndOwner(tournamentId, ownerUserId).first(),
+                expectedCloudRevision = repository.readLocalRevisionState(tournamentId).expectedRevisionForWrite(),
             )
         }
     }
@@ -234,6 +296,49 @@ class UploadTournamentUseCaseTest {
         ): OwnerScopedTournamentMutationResult {
             baselineWrites += 1
             return delegate.establishCloudBaselineByOwner(tournamentId, ownerUserId, cloudRevision)
+        }
+    }
+
+    private class CountingSnapshotReadRepository(
+        private val delegate: InMemoryTournamentRepository,
+    ) : TournamentRepository by delegate {
+        var slotsReads = 0
+        var rosterReads = 0
+        var revisionReads = 0
+
+        override fun observeSlotsByTournamentIdAndOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): Flow<List<TeamSlot>> {
+            slotsReads += 1
+            return delegate.observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId)
+        }
+
+        override fun observeRosterByTournamentIdAndOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): Flow<Map<Int, List<RosterPlayer>>> {
+            rosterReads += 1
+            return delegate.observeRosterByTournamentIdAndOwner(tournamentId, ownerUserId)
+        }
+
+        override suspend fun readLocalRevisionState(tournamentId: String) =
+            delegate.readLocalRevisionState(tournamentId).also { revisionReads += 1 }
+    }
+
+    private class RecordingSnapshotRepository(
+        private val snapshot: TournamentCloudUploadSnapshot,
+    ) : TournamentCloudUploadLocalSnapshotRepository {
+        var calls = 0
+
+        override suspend fun readCloudUploadSnapshotByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): TournamentCloudUploadSnapshot? {
+            calls += 1
+            return snapshot.takeIf {
+                it.tournament.id == tournamentId && it.tournament.ownerUserId == ownerUserId
+            }
         }
     }
 

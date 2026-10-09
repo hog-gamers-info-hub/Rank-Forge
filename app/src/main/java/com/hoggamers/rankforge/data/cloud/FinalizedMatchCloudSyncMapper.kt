@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -38,6 +39,7 @@ data class FinalizedMatchResultUploadPayload(
 data class FinalizedMatchCloudSyncPayloads(
     val matches: List<FinalizedMatchUploadPayload>,
     val matchResults: List<FinalizedMatchResultUploadPayload>,
+    val tournamentFormat: TournamentFormat = TournamentFormat.STANDARD,
 )
 
 sealed interface FinalizedMatchCloudSyncMappingResult {
@@ -49,12 +51,21 @@ object FinalizedMatchCloudSyncMapper {
     fun map(snapshot: FinalizedMatchCloudSyncSnapshot): FinalizedMatchCloudSyncMappingResult {
         val tournamentUuid = snapshot.tournament.id.toUuidOrNull()
             ?: return FinalizedMatchCloudSyncMappingResult.Invalid
-        if (
-            snapshot.teamSlots.map { it.slotNumber }.toSet() != snapshot.tournament.formatDerivedSlots().map { it.slotNumber }.toSet() ||
-            snapshot.teamSlots.map { it.slotNumber }.distinct().size != snapshot.teamSlots.size ||
-            snapshot.teamSlots.any { it.tournamentId != snapshot.tournament.id }
+        if (snapshot.tournament.format == TournamentFormat.STANDARD &&
+            (
+                snapshot.teamSlots.map { it.slotNumber }.toSet() !=
+                    snapshot.tournament.formatDerivedSlots().map { it.slotNumber }.toSet() ||
+                    snapshot.teamSlots.map { it.slotNumber }.distinct().size != snapshot.teamSlots.size ||
+                    snapshot.teamSlots.any { it.tournamentId != snapshot.tournament.id }
+                )
         ) {
             return FinalizedMatchCloudSyncMappingResult.Invalid
+        }
+        val groupRotationTeamSlotsByNumber = if (snapshot.tournament.format == TournamentFormat.GROUP_ROTATION) {
+            groupRotationTeamSlotsByNumberOrNull(snapshot.tournament, snapshot.teamSlots)
+                ?: return FinalizedMatchCloudSyncMappingResult.Invalid
+        } else {
+            null
         }
         if (snapshot.matches.any { it.tournamentId != snapshot.tournament.id }) {
             return FinalizedMatchCloudSyncMappingResult.Invalid
@@ -66,6 +77,14 @@ object FinalizedMatchCloudSyncMapper {
             finalizedMatches.any { it.matchNumber !in 1..MAX_MATCHES_PER_TOURNAMENT }
         ) {
             return FinalizedMatchCloudSyncMappingResult.Invalid
+        }
+        val identityContextsByMatchId = if (snapshot.tournament.format == TournamentFormat.GROUP_ROTATION) {
+            if (snapshot.identityContextsByMatchId.keys != finalizedMatches.map { it.id }.toSet()) {
+                return FinalizedMatchCloudSyncMappingResult.Invalid
+            }
+            snapshot.identityContextsByMatchId
+        } else {
+            emptyMap()
         }
 
         val orderedFinalizedMatches = finalizedMatches.sortedBy { it.matchNumber }
@@ -82,12 +101,24 @@ object FinalizedMatchCloudSyncMapper {
                 )
             }
         val resultPayloads = orderedFinalizedMatches.flatMap { match ->
+            val eligibleSlotNumbers = if (snapshot.tournament.format == TournamentFormat.GROUP_ROTATION) {
+                val context = identityContextsByMatchId[match.id]
+                    ?: return FinalizedMatchCloudSyncMappingResult.Invalid
+                context.eligibleGroupRotationSlotNumbersOrNull(
+                    tournament = snapshot.tournament,
+                    match = match,
+                    teamSlotsByNumber = groupRotationTeamSlotsByNumber.orEmpty(),
+                ) ?: return FinalizedMatchCloudSyncMappingResult.Invalid
+            } else {
+                runCatching {
+                    MatchEligibleTeamSlotResolver().resolve(snapshot.tournament, snapshot.teamSlots, match)
+                }.getOrNull() ?: return FinalizedMatchCloudSyncMappingResult.Invalid
+            }
             match.toFinalizedResultPayloads(
                 tournamentId = tournamentUuid,
                 cloudMatchId = matchPayloadByLocalId.getValue(match.id).id,
-                eligibleSlotNumbers = runCatching {
-                    MatchEligibleTeamSlotResolver().resolve(snapshot.tournament, snapshot.teamSlots, match)
-                }.getOrNull() ?: return FinalizedMatchCloudSyncMappingResult.Invalid,
+                eligibleSlotNumbers = eligibleSlotNumbers,
+                requireCompleteGroupRotationSet = snapshot.tournament.format == TournamentFormat.GROUP_ROTATION,
             ) ?: return FinalizedMatchCloudSyncMappingResult.Invalid
         }
 
@@ -95,6 +126,7 @@ object FinalizedMatchCloudSyncMapper {
             FinalizedMatchCloudSyncPayloads(
                 matches = matchPayloadByLocalId.values.sortedBy { it.matchNumber },
                 matchResults = resultPayloads,
+                tournamentFormat = snapshot.tournament.format,
             ),
         )
     }
@@ -103,10 +135,21 @@ object FinalizedMatchCloudSyncMapper {
         tournamentId: UUID,
         cloudMatchId: String,
         eligibleSlotNumbers: Set<Int>,
+        requireCompleteGroupRotationSet: Boolean,
     ): List<FinalizedMatchResultUploadPayload>? {
         val participantResults = finalizedParticipantResultsOrNull() ?: return null
 
-        if (participantResults.any { it.teamSlotNumber !in eligibleSlotNumbers }) return null
+        if (
+            participantResults.any { it.teamSlotNumber !in eligibleSlotNumbers } ||
+            (requireCompleteGroupRotationSet &&
+                (
+                    participantResults.size != TeamSlot.SLOT_NUMBERS.count() ||
+                        participantResults.map { it.teamSlotNumber }.toSet() != eligibleSlotNumbers
+                    )
+                )
+        ) {
+            return null
+        }
         return participantResults.map { result ->
             val slotNumber = result.teamSlotNumber
             val teamSlotId = TournamentCloudIdentity.teamSlotId(tournamentId, slotNumber)

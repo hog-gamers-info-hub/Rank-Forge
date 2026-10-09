@@ -10,11 +10,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SupabaseClientProvider @Inject constructor(
+class SupabaseClientProvider private constructor(
     private val config: SupabaseAuthConfig,
+    private val clientOverride: SupabaseClient?,
+    @Suppress("UNUSED_PARAMETER") marker: Unit,
 ) {
+    @Inject
+    constructor(config: SupabaseAuthConfig) : this(config, null, Unit)
+
+    internal constructor(
+        config: SupabaseAuthConfig,
+        client: SupabaseClient,
+    ) : this(config, client, Unit)
+
     val client: SupabaseClient by lazy {
-        createSupabaseClient(
+        clientOverride ?: createSupabaseClient(
             supabaseUrl = config.supabaseUrl,
             supabaseKey = config.publishableKey,
         ) {

@@ -44,7 +44,10 @@ class GroupRotationInitialCloudSyncTest {
 
         assertEquals(TournamentFormat.GROUP_ROTATION, snapshot.tournament.format)
         assertEquals(3, snapshot.tournament.groupCount)
-        assertEquals(defaultGroupPairings(3), snapshot.tournament.selectedGroupPairings)
+        assertEquals(
+            defaultGroupPairings(3).map { it.canonicalKey }.sorted(),
+            snapshot.tournament.selectedGroupPairings.map { it.canonicalKey }.sorted(),
+        )
         assertEquals(18, snapshot.slots.size)
         assertEquals((1..6).toList(), snapshot.slots.filter { it.group == TournamentGroup.A }.map { it.slotNumber })
         assertEquals((7..12).toList(), snapshot.slots.filter { it.group == TournamentGroup.B }.map { it.slotNumber })
@@ -61,7 +64,10 @@ class GroupRotationInitialCloudSyncTest {
 
         assertEquals(TournamentFormat.GROUP_ROTATION, snapshot.tournament.format)
         assertEquals(4, snapshot.tournament.groupCount)
-        assertEquals(defaultGroupPairings(4), snapshot.tournament.selectedGroupPairings)
+        assertEquals(
+            defaultGroupPairings(4).map { it.canonicalKey }.sorted(),
+            snapshot.tournament.selectedGroupPairings.map { it.canonicalKey }.sorted(),
+        )
         assertEquals(24, snapshot.slots.size)
         assertEquals((19..24).toList(), snapshot.slots.filter { it.group == TournamentGroup.D }.map { it.slotNumber })
         assertEquals(0, snapshot.expectedCloudRevision)
@@ -101,6 +107,7 @@ class GroupRotationInitialCloudSyncTest {
             )
             val result = UploadTournamentUseCase(
                 tournamentRepository = repository,
+                localSnapshotRepository = repository,
                 authRepository = SignedInAuthRepository,
                 cloudUploadRepository = cloud,
                 queueRecorder = RecordSyncQueueOutcome(NoOpPersistentSyncQueueRepository),

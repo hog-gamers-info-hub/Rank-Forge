@@ -404,6 +404,8 @@ sealed interface OwnerScopedMatchMutationResult {
     data object Saved : OwnerScopedMatchMutationResult
 
     data object MatchNotFound : OwnerScopedMatchMutationResult
+
+    data object InvalidData : OwnerScopedMatchMutationResult
 }
 
 sealed interface OwnerScopedTournamentMutationResult {

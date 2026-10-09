@@ -395,10 +395,29 @@ class TournamentCreationViewModelTest {
 
         assertEquals(listOf(repository.records.single().id), uploadAction.tournamentIds)
         assertEquals(
-            TournamentCreationNavigation.Created(repository.records.single().id),
+            TournamentCreationNavigation.Created(
+                repository.records.single().id,
+                repository.records.single().format,
+            ),
             viewModel.uiState.value.navigation,
         )
         assertNull(viewModel.uiState.value.submissionError)
+    }
+
+    @Test
+    fun groupRotationCreationCarriesCreatedTournamentFormat() = runTest {
+        viewModel.onTournamentNameChanged("Group Cup")
+        viewModel.onGroupRotationChanged(true)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val navigation = viewModel.uiState.value.navigation
+        assertTrue(navigation is TournamentCreationNavigation.Created)
+        assertEquals(
+            TournamentFormat.GROUP_ROTATION,
+            (navigation as TournamentCreationNavigation.Created).format,
+        )
     }
 
     @Test

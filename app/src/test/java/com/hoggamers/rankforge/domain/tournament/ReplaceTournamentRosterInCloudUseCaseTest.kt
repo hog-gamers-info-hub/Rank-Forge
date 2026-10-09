@@ -16,6 +16,7 @@ import com.hoggamers.rankforge.domain.sync.SyncQueueEntry
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import com.hoggamers.rankforge.domain.sync.PersistentSyncQueueRepository
+import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,9 +54,32 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
     }
 
     @Test
+    fun ownerSwitchAfterNormalSnapshotReadSkipsRosterReplacement() = runTest {
+        val auth = SwitchingAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val repository = localRepository()
+        val cloud = FakeCloud(TournamentRosterCloudReplacementResult.Success(2))
+        val snapshots = RecordingSnapshotRepository(
+            listOf(standardSnapshot(expectedRevision = 1)),
+            onRead = { index ->
+                if (index == 0) auth.state.value = AuthState.SignedIn(AuthUser(OTHER_OWNER_ID, null))
+            },
+        )
+
+        val result = useCase(
+            repository = repository,
+            cloud = cloud,
+            authRepository = auth,
+            localSnapshotRepository = snapshots,
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentRosterCloudReplacementResult.AuthorizationFailure, result)
+        assertTrue(cloud.snapshots.isEmpty())
+    }
+
+    @Test
     fun missingBaselineBootstrapsAbsentCloudTournamentWithAuthoritativeRevision() = runTest {
         val repository = MissingBaselineRepository(localRepository())
-        val upload = RecordingUploadRepository(TournamentCloudUploadResult.Success(9))
+        val upload = RecordingUploadRetryAction(TournamentCloudUploadResult.Success(9))
         val restoration = RecordingRestorationRepository(
             TournamentCloudRestorationRemoteResult.Failure(
                 TournamentCloudRestorationFailureCategory.NOT_FOUND,
@@ -67,9 +91,7 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
             .executeForRetry(TOURNAMENT_ID)
 
         assertEquals(TournamentRosterCloudReplacementResult.Success(9), result)
-        assertEquals(0, upload.snapshot?.expectedCloudRevision)
-        assertEquals(12, upload.snapshot?.slots?.size)
-        assertTrue(upload.snapshot?.rosters?.get(1)?.single()?.displayName == "Player One")
+        assertEquals(1, upload.calls)
         assertEquals(9, repository.readLocalRevisionState(TOURNAMENT_ID).expectedCloudRevision)
         assertTrue(cloud.snapshots.isEmpty())
     }
@@ -77,7 +99,7 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
     @Test
     fun bootstrapRetryDoesNotRepeatCreateAfterAuthoritativeRevisionWasPersisted() = runTest {
         val repository = MissingBaselineRepository(localRepository())
-        val upload = RecordingUploadRepository(TournamentCloudUploadResult.Success(9))
+        val upload = RecordingUploadRetryAction(TournamentCloudUploadResult.Success(9))
         val cloud = FakeCloud(TournamentRosterCloudReplacementResult.Success(10))
         val action = useCase(
             repository,
@@ -125,6 +147,180 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
     }
 
     @Test
+    fun existingGroupRotationWithMappingsUploadsTournamentThenReplacesRosterAtNextRevision() = runTest {
+        val repository = MissingBaselineRepository(localRepository())
+        val snapshots = RecordingSnapshotRepository(
+            listOf(
+                groupRotationSnapshot(expectedRevision = 0, hasMappings = true),
+                groupRotationSnapshot(expectedRevision = 4, hasMappings = true),
+                groupRotationSnapshot(expectedRevision = 5, hasMappings = true),
+            ),
+        )
+        val upload = RecordingUploadRetryAction(TournamentCloudUploadResult.Success(5))
+        val cloud = FakeCloud(TournamentRosterCloudReplacementResult.Success(6))
+        val restoration = RecordingRestorationRepository(
+            TournamentCloudRestorationRemoteResult.Success(
+                TournamentCloudRestorationSnapshot(
+                    tournament = repository.observeById(TOURNAMENT_ID).first()!!,
+                    slots = TeamSlot.fixedSlotsForTournament(TOURNAMENT_ID),
+                    players = emptyList(),
+                    cloudRevision = CloudRevision(4),
+                ),
+            ),
+        )
+
+        val result = useCase(
+            repository = repository,
+            cloud = cloud,
+            upload = upload,
+            restoration = restoration,
+            localSnapshotRepository = snapshots,
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentRosterCloudReplacementResult.Success(6), result)
+        assertEquals(listOf(4), repository.establishedBaselines)
+        assertEquals(1, upload.calls)
+        assertEquals(3, snapshots.calls)
+        assertEquals(5, cloud.snapshot?.expectedCloudRevision)
+    }
+
+    @Test
+    fun existingGroupRotationWithoutMappingsUsesV2RosterReplacementWithoutTournamentUpload() = runTest {
+        val repository = MissingBaselineRepository(localRepository())
+        val snapshots = RecordingSnapshotRepository(
+            listOf(
+                groupRotationSnapshot(expectedRevision = 0, hasMappings = false),
+                groupRotationSnapshot(expectedRevision = 4, hasMappings = false),
+            ),
+        )
+        val upload = RecordingUploadRetryAction(TournamentCloudUploadResult.Success(5))
+        val cloud = FakeCloud(TournamentRosterCloudReplacementResult.Success(5))
+        val result = useCase(
+            repository = repository,
+            cloud = cloud,
+            upload = upload,
+            restoration = RecordingRestorationRepository(
+                TournamentCloudRestorationRemoteResult.Success(
+                    TournamentCloudRestorationSnapshot(
+                        tournament = repository.observeById(TOURNAMENT_ID).first()!!,
+                        slots = TeamSlot.fixedSlotsForTournament(TOURNAMENT_ID),
+                        players = emptyList(),
+                        cloudRevision = CloudRevision(4),
+                    ),
+                ),
+            ),
+            localSnapshotRepository = snapshots,
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentRosterCloudReplacementResult.Success(5), result)
+        assertEquals(0, upload.calls)
+        assertEquals(2, snapshots.calls)
+        assertEquals(4, cloud.snapshot?.expectedCloudRevision)
+    }
+
+    @Test
+    fun ownerSwitchAfterStandardPostBaselineSnapshotSkipsRosterReplacement() = runTest {
+        val auth = SwitchingAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val repository = MissingBaselineRepository(localRepository())
+        val cloud = FakeCloud(TournamentRosterCloudReplacementResult.Success(5))
+        val snapshots = RecordingSnapshotRepository(
+            listOf(
+                standardSnapshot(expectedRevision = 0),
+                standardSnapshot(expectedRevision = 4),
+            ),
+            onRead = { index ->
+                if (index == 1) auth.state.value = AuthState.SignedIn(AuthUser(OTHER_OWNER_ID, null))
+            },
+        )
+        val restoration = RecordingRestorationRepository(
+            TournamentCloudRestorationRemoteResult.Success(
+                TournamentCloudRestorationSnapshot(
+                    tournament = repository.observeById(TOURNAMENT_ID).first()!!,
+                    slots = TeamSlot.fixedSlotsForTournament(TOURNAMENT_ID),
+                    players = emptyList(),
+                    cloudRevision = CloudRevision(4),
+                ),
+            ),
+        )
+
+        val result = useCase(
+            repository = repository,
+            cloud = cloud,
+            authRepository = auth,
+            restoration = restoration,
+            localSnapshotRepository = snapshots,
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentRosterCloudReplacementResult.AuthorizationFailure, result)
+        assertTrue(cloud.snapshots.isEmpty())
+        assertEquals(listOf(4), repository.establishedBaselines)
+    }
+
+    @Test
+    fun ownerSwitchAfterGroupRotationUploadSkipsRosterReplacementAndKeepsIntermediateRevision() = runTest {
+        val auth = SwitchingAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null)))
+        val repository = MissingBaselineRepository(localRepository())
+        val cloud = FakeCloud(TournamentRosterCloudReplacementResult.Success(6))
+        val upload = RecordingUploadRetryAction(TournamentCloudUploadResult.Success(5))
+        upload.onInvoke = {
+            repository.confirmCloudRevisionByOwner(TOURNAMENT_ID, OWNER_ID, 5)
+        }
+        val snapshots = RecordingSnapshotRepository(
+            listOf(
+                groupRotationSnapshot(expectedRevision = 0, hasMappings = true),
+                groupRotationSnapshot(expectedRevision = 4, hasMappings = true),
+                groupRotationSnapshot(expectedRevision = 5, hasMappings = true),
+            ),
+            onRead = { index ->
+                if (index == 2) auth.state.value = AuthState.SignedIn(AuthUser(OTHER_OWNER_ID, null))
+            },
+        )
+        val restoration = RecordingRestorationRepository(
+            TournamentCloudRestorationRemoteResult.Success(
+                TournamentCloudRestorationSnapshot(
+                    tournament = repository.observeById(TOURNAMENT_ID).first()!!,
+                    slots = TeamSlot.fixedSlotsForTournament(TOURNAMENT_ID),
+                    players = emptyList(),
+                    cloudRevision = CloudRevision(4),
+                ),
+            ),
+        )
+
+        val result = useCase(
+            repository = repository,
+            cloud = cloud,
+            upload = upload,
+            restoration = restoration,
+            authRepository = auth,
+            localSnapshotRepository = snapshots,
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentRosterCloudReplacementResult.AuthorizationFailure, result)
+        assertTrue(cloud.snapshots.isEmpty())
+        assertEquals(5, repository.readLocalRevisionState(TOURNAMENT_ID).expectedCloudRevision)
+    }
+
+    @Test
+    fun replacementUsesAtomicSnapshotInsteadOfAssemblingIndependentRosterReads() = runTest {
+        val baseRepository = localRepository()
+        val guardedRepository = GuardedRosterAssemblyRepository(baseRepository)
+        val snapshot = TournamentCloudUploadSnapshot(
+            tournament = baseRepository.observeById(TOURNAMENT_ID).first()!!,
+            slots = TeamSlot.fixedSlotsForTournament(TOURNAMENT_ID),
+            rosters = emptyMap(),
+            expectedCloudRevision = 1,
+        )
+
+        val result = useCase(
+            repository = guardedRepository,
+            cloud = FakeCloud(TournamentRosterCloudReplacementResult.Success(2)),
+            localSnapshotRepository = RecordingSnapshotRepository(listOf(snapshot)),
+        ).executeForRetry(TOURNAMENT_ID)
+
+        assertEquals(TournamentRosterCloudReplacementResult.Success(2), result)
+    }
+
+    @Test
     fun bootstrapNetworkFailurePreservesMissingBaselineAndReturnsRetryableNetworkFailure() = runTest {
         val repository = MissingBaselineRepository(localRepository())
         val queue = RecordingQueueRepository()
@@ -132,7 +328,7 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
             repository,
             FakeCloud(TournamentRosterCloudReplacementResult.Success(9)),
             queue,
-            upload = RecordingUploadRepository(TournamentCloudUploadResult.NetworkFailure),
+            upload = RecordingUploadRetryAction(TournamentCloudUploadResult.NetworkFailure),
         ) .invoke(TOURNAMENT_ID)
 
         assertEquals(TournamentRosterCloudReplacementResult.NetworkFailure, result.primaryResult)
@@ -226,23 +422,141 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
         repository: TournamentRepository,
         cloud: TournamentRosterCloudReplacementRepository,
         queue: RecordingQueueRepository = RecordingQueueRepository(),
-        upload: TournamentCloudUploadRepository = FakeUploadRepository,
+        upload: TournamentCloudUploadRetryAction = RecordingUploadRetryAction(
+            TournamentCloudUploadResult.Success(7),
+        ),
         restoration: TournamentCloudRestorationRepository = FakeRestorationRepository,
         authRepository: AuthRepository = FakeAuthRepository,
+        localSnapshotRepository: TournamentCloudUploadLocalSnapshotRepository = snapshotRepository(repository),
     ) = ReplaceTournamentRosterInCloudUseCase(
-        repository,
-        authRepository,
-        cloud,
-        upload,
-        restoration,
-        RecordSyncQueueOutcome(queue),
+        tournamentRepository = repository,
+        localSnapshotRepository = localSnapshotRepository,
+        authRepository = authRepository,
+        cloudReplacementRepository = cloud,
+        cloudRestorationRepository = restoration,
+        tournamentUploadRetryAction = upload,
+        queueRecorder = RecordSyncQueueOutcome(queue),
     )
 
-    private object FakeUploadRepository : TournamentCloudUploadRepository {
-        override suspend fun upload(
-            snapshot: TournamentCloudUploadSnapshot,
-            ownerId: String,
-        ): TournamentCloudUploadResult = TournamentCloudUploadResult.Success(7)
+    private class RecordingUploadRetryAction(
+        private val result: TournamentCloudUploadResult,
+    ) : TournamentCloudUploadRetryAction {
+        var calls = 0
+        var onInvoke: (suspend () -> Unit)? = null
+
+        override suspend fun executeForRetry(tournamentId: String): TournamentCloudUploadResult {
+            calls += 1
+            onInvoke?.invoke()
+            return result
+        }
+
+        override suspend fun executeForRetry(
+            tournamentId: String,
+            expectedOwnerUserId: String,
+        ): TournamentCloudUploadResult {
+            calls += 1
+            onInvoke?.invoke()
+            return result
+        }
+    }
+
+    private class RecordingSnapshotRepository(
+        private val snapshots: List<TournamentCloudUploadSnapshot>,
+        private val onRead: (Int) -> Unit = {},
+    ) : TournamentCloudUploadLocalSnapshotRepository {
+        var calls = 0
+
+        override suspend fun readCloudUploadSnapshotByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): TournamentCloudUploadSnapshot? {
+            val index = calls
+            val snapshot = snapshots.getOrNull(index) ?: snapshots.lastOrNull()
+            calls += 1
+            onRead(index)
+            return snapshot
+        }
+    }
+
+    private class GuardedRosterAssemblyRepository(
+        private val delegate: TournamentRepository,
+    ) : TournamentRepository by delegate {
+        override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> =
+            error("Roster replacement must use the atomic cloud-upload snapshot.")
+
+        override fun observeRosterByTournamentId(
+            tournamentId: String,
+        ): Flow<Map<Int, List<RosterPlayer>>> =
+            error("Roster replacement must use the atomic cloud-upload snapshot.")
+
+        override suspend fun readLocalRevisionState(tournamentId: String): LocalRevisionState =
+            error("Roster replacement must use the atomic cloud-upload snapshot.")
+    }
+
+    private fun groupRotationSnapshot(
+        expectedRevision: Int,
+        hasMappings: Boolean,
+    ) = TournamentCloudUploadSnapshot(
+        tournament = Tournament(
+            id = TOURNAMENT_ID,
+            name = "Rotation",
+            stageName = "Stage",
+            organizerContactNumber = "123",
+            status = TournamentStatus.DRAFT,
+            ownerUserId = OWNER_ID,
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 3,
+            selectedGroupPairings = defaultGroupPairings(3),
+        ),
+        slots = Tournament(
+            id = TOURNAMENT_ID,
+            name = "Rotation",
+            stageName = "Stage",
+            organizerContactNumber = "123",
+            status = TournamentStatus.DRAFT,
+            ownerUserId = OWNER_ID,
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 3,
+            selectedGroupPairings = defaultGroupPairings(3),
+        ).formatDerivedSlots(),
+        rosters = emptyMap(),
+        pairingLobbySlots = if (hasMappings) {
+            listOf(GroupRotationPairingLobbySlot(TOURNAMENT_ID, GroupPairing.fromCanonicalKey("A:B"), 1, 1))
+        } else {
+            emptyList()
+        },
+        expectedCloudRevision = expectedRevision,
+    )
+
+    private fun standardSnapshot(expectedRevision: Int) = TournamentCloudUploadSnapshot(
+        tournament = Tournament(
+            id = TOURNAMENT_ID,
+            name = "Roster Cup",
+            stageName = "Stage",
+            organizerContactNumber = "123",
+            status = TournamentStatus.DRAFT,
+            ownerUserId = OWNER_ID,
+        ),
+        slots = TeamSlot.fixedSlotsForTournament(TOURNAMENT_ID),
+        rosters = emptyMap(),
+        expectedCloudRevision = expectedRevision,
+    )
+
+    private fun snapshotRepository(
+        repository: TournamentRepository,
+    ): TournamentCloudUploadLocalSnapshotRepository = object : TournamentCloudUploadLocalSnapshotRepository {
+        override suspend fun readCloudUploadSnapshotByOwner(
+            tournamentId: String,
+            ownerUserId: String,
+        ): TournamentCloudUploadSnapshot? {
+            val tournament = repository.observeByIdAndOwner(tournamentId, ownerUserId).first() ?: return null
+            return TournamentCloudUploadSnapshot(
+                tournament = tournament,
+                slots = repository.observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId).first(),
+                rosters = repository.observeRosterByTournamentIdAndOwner(tournamentId, ownerUserId).first(),
+                expectedCloudRevision = repository.readLocalRevisionState(tournamentId).expectedRevisionForWrite(),
+            )
+        }
     }
 
     private object FakeRestorationRepository : TournamentCloudRestorationRepository {
@@ -253,22 +567,6 @@ class ReplaceTournamentRosterInCloudUseCaseTest {
             TournamentCloudRestorationRemoteResult.Failure(
                 TournamentCloudRestorationFailureCategory.NOT_FOUND,
             )
-    }
-
-    private class RecordingUploadRepository(
-        private val result: TournamentCloudUploadResult,
-    ) : TournamentCloudUploadRepository {
-        var calls = 0
-        var snapshot: TournamentCloudUploadSnapshot? = null
-
-        override suspend fun upload(
-            snapshot: TournamentCloudUploadSnapshot,
-            ownerId: String,
-        ): TournamentCloudUploadResult {
-            calls += 1
-            this.snapshot = snapshot
-            return result
-        }
     }
 
     private class RecordingRestorationRepository(

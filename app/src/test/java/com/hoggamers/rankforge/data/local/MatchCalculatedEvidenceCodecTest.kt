@@ -20,6 +20,7 @@ class MatchCalculatedEvidenceCodecTest {
                     cropRight = 333.75,
                     cropBottom = 444.125,
                     playerNames = listOf("P1", "P2", null, "P4"),
+                    teamSlotNumber = 17,
                 ),
             ),
         )
@@ -85,6 +86,26 @@ class MatchCalculatedEvidenceCodecTest {
             MatchCalculatedEvidenceOrigin.AUTOMATIC,
             codec.decodeResult(payload)?.calculationOrigin,
         )
+    }
+
+    @Test
+    fun legacyLobbyPayloadDefaultsCanonicalTeamIdentityToNull() {
+        val payload = """
+            {
+              "teams": [{
+                "slotNumber": 4,
+                "teamName": "Legacy Team",
+                "sourceScreenshotIndex": 1,
+                "cropLeft": 1.0,
+                "cropTop": 2.0,
+                "cropRight": 3.0,
+                "cropBottom": 4.0,
+                "playerNames": ["P1", null, "P3", null]
+              }]
+            }
+        """.trimIndent()
+
+        assertEquals(null, codec.decodeLobby(payload)?.teams?.single()?.teamSlotNumber)
     }
 
     @Test

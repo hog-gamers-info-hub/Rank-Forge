@@ -3,14 +3,25 @@ package com.hoggamers.rankforge.data.tournament
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.local.GroupRotationPairingLobbySlotEntity
+import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamEntryDraftEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.local.SyncRevisionEntity
+import com.hoggamers.rankforge.domain.sync.CloudRevision
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
+import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RestoredRosterPlayer
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
+import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalWriteResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import java.time.LocalDate
@@ -56,6 +67,100 @@ class RoomTournamentCloudRestorationTest {
     }
 
     @Test
+    fun ownerBoundStandardRestoreAcceptsExpectedOrderedSlots() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-standard-ordered.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val snapshot = tournamentSnapshot("standard-ordered", "owner-a")
+
+            repository.restoreByOwner(snapshot, expectedOwnerUserId = "owner-a")
+
+            assertEquals(
+                (1..12).toList(),
+                repository.observeSlotsByTournamentId("standard-ordered")
+                    .first()
+                    .map { it.slotNumber },
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerBoundStandardRestoreRejectsReorderedSlotsBeforeMutation() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-standard-reordered.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = tournament("standard-reordered", "Local Standard", TournamentStatus.DRAFT)
+                .copy(ownerUserId = "owner-a")
+            repository.create(tournament)
+            val beforeTournament = repository.observeById(tournament.id).first()
+            val beforeSlots = repository.observeSlotsByTournamentId(tournament.id).first()
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            val snapshot = tournamentSnapshot(tournament.id, "owner-a")
+            val reorderedSlots = snapshot.slots.toMutableList().apply {
+                val first = this[0]
+                this[0] = this[1]
+                this[1] = first
+            }
+
+            assertIllegalArgument {
+                repository.restoreByOwner(
+                    snapshot = snapshot.copy(slots = reorderedSlots),
+                    expectedOwnerUserId = "owner-a",
+                )
+            }
+
+            assertEquals(beforeTournament, repository.observeById(tournament.id).first())
+            assertEquals(beforeSlots, repository.observeSlotsByTournamentId(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerBoundStandardRestoreAcceptsBlankRosterDisplayName() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-standard-blank-roster-name.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val snapshot = tournamentSnapshot("standard-blank-roster-name", "owner-a").copy(
+                players = listOf(
+                    RestoredRosterPlayer(
+                        tournamentId = "standard-blank-roster-name",
+                        slotNumber = 1,
+                        rosterPosition = 1,
+                        displayName = "",
+                    ),
+                ),
+            )
+
+            repository.restoreByOwner(snapshot, expectedOwnerUserId = "owner-a")
+
+            assertEquals(
+                listOf(""),
+                repository.observeRosterByTournamentAndSlot(snapshot.tournament.id, 1)
+                    .first()
+                    .map { it.displayName },
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun ownerBoundMatchRestoreRejectsForeignAndNullParentsBeforeWrites() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "cloud-restoration-match-owner-guard.db"
@@ -87,6 +192,379 @@ class RoomTournamentCloudRestorationTest {
             assertTrue(repository.observeMatchesByTournamentId("legacy-match").first().isEmpty())
             assertEquals(foreignRevision, database.syncRevisionDao().readByTournamentId("foreign-match"))
             assertEquals(legacyRevision, database.syncRevisionDao().readByTournamentId("legacy-match"))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun zeroMappingFinalizedGroupRotationRestorePreservesCanonicalHistoricalIdentity() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-historical-finalized.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-historical-finalized", "owner-a")
+            repository.create(tournament)
+            seedRevision(database, tournament.id)
+            val historical = finalizedGroupRotationMatch(
+                tournamentId = tournament.id,
+                pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                teamSlots = listOf(7, 13),
+            )
+
+            val result = repository.replaceMatchesByOwnerAtCloudRevision(
+                tournamentId = tournament.id,
+                expectedOwnerUserId = "owner-a",
+                snapshot = MatchCloudRestorationSnapshot(
+                    tournamentId = tournament.id,
+                    matches = listOf(historical),
+                    cloudRevision = CloudRevision(1),
+                ),
+                expectedParentCloudRevision = CloudRevision(1),
+            )
+
+            assertEquals(MatchRestorationLocalWriteResult.Replaced, result)
+            assertEquals(
+                listOf(historical.id),
+                database.matchDao().observeByTournamentId(tournament.id).first().map { it.id },
+            )
+            assertEquals(
+                listOf(7, 13),
+                database.matchParticipantResultDao()
+                    .observeByMatchId(historical.id)
+                    .first()
+                    .map { it.teamSlotNumber },
+            )
+            assertTrue(
+                database.groupRotationPairingLobbySlotDao()
+                    .readByTournamentId(tournament.id)
+                    .isEmpty(),
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun zeroMappingFinalizedGroupRotationOutsideCapacityPreservesExistingMatches() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-historical-outside-capacity.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-historical-outside-capacity", "owner-a")
+            repository.create(tournament)
+            seedRevision(database, tournament.id)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            val invalid = finalizedGroupRotationMatch(
+                tournamentId = tournament.id,
+                pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                teamSlots = listOf(7, 19),
+            )
+
+            assertIllegalArgument {
+                repository.replaceMatchesByOwnerAtCloudRevision(
+                    tournamentId = tournament.id,
+                    expectedOwnerUserId = "owner-a",
+                    snapshot = MatchCloudRestorationSnapshot(
+                        tournamentId = tournament.id,
+                        matches = listOf(invalid),
+                        cloudRevision = CloudRevision(1),
+                    ),
+                    expectedParentCloudRevision = CloudRevision(1),
+                )
+            }
+
+            assertEquals(
+                listOf(existing.id),
+                database.matchDao().observeByTournamentId(tournament.id).first().map { it.id },
+            )
+            assertEquals(
+                SyncRevisionEntity(tournament.id, 1, 1),
+                database.syncRevisionDao().readByTournamentId(tournament.id),
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun zeroMappingFinalizedGroupRotationUnselectedPairingPreservesExistingMatches() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-historical-unselected-pairing.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-historical-unselected", "owner-a")
+            repository.create(tournament)
+            seedRevision(database, tournament.id)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            val invalid = finalizedGroupRotationMatch(
+                tournamentId = tournament.id,
+                pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B),
+                teamSlots = listOf(7, 13),
+            )
+
+            assertIllegalArgument {
+                repository.replaceMatchesByOwnerAtCloudRevision(
+                    tournamentId = tournament.id,
+                    expectedOwnerUserId = "owner-a",
+                    snapshot = MatchCloudRestorationSnapshot(
+                        tournamentId = tournament.id,
+                        matches = listOf(invalid),
+                        cloudRevision = CloudRevision(1),
+                    ),
+                    expectedParentCloudRevision = CloudRevision(1),
+                )
+            }
+
+            assertEquals(
+                listOf(existing.id),
+                database.matchDao().observeByTournamentId(tournament.id).first().map { it.id },
+            )
+            assertEquals(
+                SyncRevisionEntity(tournament.id, 1, 1),
+                database.syncRevisionDao().readByTournamentId(tournament.id),
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun zeroMappingDraftGroupRotationRestoreFailsClosedBeforeReplacement() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-draft-without-mapping.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-draft-without-mapping", "owner-a")
+            repository.create(tournament)
+            seedRevision(database, tournament.id)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            val draft = match(tournament.id).copy(
+                id = "draft-\${tournament.id}",
+                groupPairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+            )
+
+            assertIllegalArgument {
+                repository.replaceMatchesByOwnerAtCloudRevision(
+                    tournamentId = tournament.id,
+                    expectedOwnerUserId = "owner-a",
+                    snapshot = MatchCloudRestorationSnapshot(
+                        tournamentId = tournament.id,
+                        matches = listOf(draft),
+                        cloudRevision = CloudRevision(1),
+                    ),
+                    expectedParentCloudRevision = CloudRevision(1),
+                )
+            }
+
+            assertEquals(
+                listOf(existing.id),
+                database.matchDao().observeByTournamentId(tournament.id).first().map { it.id },
+            )
+            assertEquals(
+                SyncRevisionEntity(tournament.id, 1, 1),
+                database.syncRevisionDao().readByTournamentId(tournament.id),
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun partialGroupRotationMappingsDoNotUseHistoricalCompatibility() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-partial-mapping.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-partial-mapping", "owner-a")
+            repository.create(tournament)
+            repository.saveTeamNames(
+                tournament.id,
+                (1..18).associateWith { slotNumber -> "Team $slotNumber" },
+            )
+            seedGroupRotationState(database, tournament, listOf(7))
+            seedRevision(database, tournament.id)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            val historical = finalizedGroupRotationMatch(
+                tournamentId = tournament.id,
+                pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                teamSlots = listOf(7, 13),
+            )
+
+            assertIllegalArgument {
+                repository.replaceMatchesByOwnerAtCloudRevision(
+                    tournamentId = tournament.id,
+                    expectedOwnerUserId = "owner-a",
+                    snapshot = MatchCloudRestorationSnapshot(
+                        tournamentId = tournament.id,
+                        matches = listOf(historical),
+                        cloudRevision = CloudRevision(1),
+                    ),
+                    expectedParentCloudRevision = CloudRevision(1),
+                )
+            }
+
+            assertEquals(
+                listOf(existing.id),
+                database.matchDao().observeByTournamentId(tournament.id).first().map { it.id },
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun completeGroupRotationMappingsKeepStrictMatchResolver() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-complete-mapping.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-complete-mapping", "owner-a")
+            repository.create(tournament)
+            repository.saveTeamNames(
+                tournament.id,
+                (1..18).associateWith { slotNumber -> "Team $slotNumber" },
+            )
+            seedGroupRotationState(database, tournament, canonicalExampleMapping())
+            seedRevision(database, tournament.id)
+            val historical = finalizedGroupRotationMatch(
+                tournamentId = tournament.id,
+                pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                teamSlots = listOf(7, 13),
+            )
+
+            val result = repository.replaceMatchesByOwnerAtCloudRevision(
+                tournamentId = tournament.id,
+                expectedOwnerUserId = "owner-a",
+                snapshot = MatchCloudRestorationSnapshot(
+                    tournamentId = tournament.id,
+                    matches = listOf(historical),
+                    cloudRevision = CloudRevision(1),
+                ),
+                expectedParentCloudRevision = CloudRevision(1),
+            )
+
+            assertEquals(MatchRestorationLocalWriteResult.Replaced, result)
+            assertEquals(
+                listOf(historical.id),
+                database.matchDao().observeByTournamentId(tournament.id).first().map { it.id },
+            )
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun parentBoundMatchRestoreFencesBeforeValidationWhenLocalGenerationChanged() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-match-generation-fence.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = tournament("match-generation-fence", "Local", TournamentStatus.DRAFT)
+                .copy(ownerUserId = "owner-a")
+            repository.create(tournament)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            database.syncRevisionDao().upsert(
+                SyncRevisionEntity(
+                    tournamentId = tournament.id,
+                    localRevision = 11,
+                    baseCloudRevision = 10,
+                ),
+            )
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            val replacement = existing.copy(
+                id = "replacement-\${tournament.id}",
+                matchNumber = 2,
+                placements = listOf(MatchPlacement(teamSlotNumber = 999, position = 1)),
+            )
+
+            val result = repository.replaceMatchesByOwnerAtCloudRevision(
+                tournamentId = tournament.id,
+                expectedOwnerUserId = "owner-a",
+                snapshot = MatchCloudRestorationSnapshot(
+                    tournamentId = tournament.id,
+                    matches = listOf(replacement),
+                    cloudRevision = CloudRevision(10),
+                ),
+                expectedParentCloudRevision = CloudRevision(10),
+            )
+
+            assertEquals(MatchRestorationLocalWriteResult.GenerationMismatch, result)
+            assertEquals(listOf(existing), repository.observeMatchesByTournamentId(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun parentBoundMatchRestoreRejectsSnapshotRevisionMismatchBeforeValidation() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-match-snapshot-revision.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = tournament("match-snapshot-revision", "Local", TournamentStatus.DRAFT)
+                .copy(ownerUserId = "owner-a")
+            repository.create(tournament)
+            val existing = match(tournament.id)
+            database.matchDao().upsert(existing.toEntity())
+            database.syncRevisionDao().upsert(
+                SyncRevisionEntity(
+                    tournamentId = tournament.id,
+                    localRevision = 10,
+                    baseCloudRevision = 10,
+                ),
+            )
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+            val invalidReplacement = existing.copy(
+                id = "replacement-\${tournament.id}",
+                matchNumber = 2,
+                placements = listOf(MatchPlacement(teamSlotNumber = 999, position = 1)),
+            )
+
+            val result = repository.replaceMatchesByOwnerAtCloudRevision(
+                tournamentId = tournament.id,
+                expectedOwnerUserId = "owner-a",
+                snapshot = MatchCloudRestorationSnapshot(
+                    tournamentId = tournament.id,
+                    matches = listOf(invalidReplacement),
+                    cloudRevision = CloudRevision(11),
+                ),
+                expectedParentCloudRevision = CloudRevision(10),
+            )
+
+            assertEquals(MatchRestorationLocalWriteResult.GenerationMismatch, result)
+            assertEquals(listOf(existing), repository.observeMatchesByTournamentId(tournament.id).first())
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
         } finally {
             database.close()
             context.deleteDatabase(databaseName)
@@ -225,6 +703,141 @@ class RoomTournamentCloudRestorationTest {
     }
 
     @Test
+    fun ownerBoundGroupRotationRestoreReplacesMappingsAndClearsDraft() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-replace.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-replace", "owner-a")
+            repository.create(tournament)
+            seedGroupRotationState(database, tournament, listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))
+
+            repository.restoreByOwner(
+                snapshot = groupRotationSnapshot(
+                    tournament = tournament.copy(name = "Remote Group Rotation"),
+                    mappingTeamSlots = canonicalExampleMapping(),
+                ),
+                expectedOwnerUserId = "owner-a",
+            )
+
+            assertEquals(
+                canonicalExampleMapping(),
+                database.groupRotationPairingLobbySlotDao()
+                    .readByTournamentId(tournament.id)
+                    .map { it.teamSlotNumber },
+            )
+            assertTrue(database.groupRotationPairingTeamEntryDraftDao().readByTournamentId(tournament.id).isEmpty())
+            assertEquals(9, database.syncRevisionDao().readByTournamentId(tournament.id)!!.localRevision)
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerBoundGroupRotationZeroMappingsClearExistingMappings() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-zero-mappings.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-zero", "owner-a")
+            repository.create(tournament)
+            seedGroupRotationState(database, tournament, listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))
+
+            repository.restoreByOwner(
+                snapshot = groupRotationSnapshot(tournament, mappingTeamSlots = emptyList()),
+                expectedOwnerUserId = "owner-a",
+            )
+
+            assertTrue(database.groupRotationPairingLobbySlotDao().readByTournamentId(tournament.id).isEmpty())
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun ownerBoundGroupRotationMappingPersistsAcrossDatabaseReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-reopen.db"
+        context.deleteDatabase(databaseName)
+        var database: RankForgeDatabase? = null
+        var reopened: RankForgeDatabase? = null
+        try {
+            database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+            val tournament = groupRotationTournament("gr-reopen", "owner-a")
+            val repository = RoomTournamentRepository(database!!)
+            repository.create(tournament)
+            repository.restoreByOwner(
+                snapshot = groupRotationSnapshot(tournament, canonicalExampleMapping()),
+                expectedOwnerUserId = "owner-a",
+            )
+            database!!.close()
+            database = null
+
+            reopened = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+            val lobbyThree = reopened!!.groupRotationPairingLobbySlotDao()
+                .readByTournamentAndPairing(tournament.id, "A:C")
+                .single { it.lobbySlotNumber == 3 }
+            assertEquals(18, lobbyThree.teamSlotNumber)
+        } finally {
+            database?.close()
+            reopened?.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun invalidOwnerBoundGroupRotationRestoreLeavesAllExistingStateUntouched() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "cloud-restoration-group-rotation-invalid.db"
+        context.deleteDatabase(databaseName)
+        val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName).build()
+        try {
+            val repository = RoomTournamentRepository(database)
+            val tournament = groupRotationTournament("gr-invalid", "owner-a")
+            repository.create(tournament)
+            seedGroupRotationState(database, tournament, canonicalExampleMapping())
+            val beforeTournament = repository.observeById(tournament.id).first()!!
+            val beforeSlots = repository.observeSlotsByTournamentId(tournament.id).first()
+            val beforeRoster = database.rosterPlayerDao().readByTournamentId(tournament.id)
+            val beforePairings = database.tournamentGroupPairingDao().readByTournamentId(tournament.id)
+            val beforeMappings = database.groupRotationPairingLobbySlotDao().readByTournamentId(tournament.id)
+            val beforeDraft = database.groupRotationPairingTeamEntryDraftDao().readByTournamentId(tournament.id)
+            val beforeRevision = database.syncRevisionDao().readByTournamentId(tournament.id)
+
+            val validSnapshot = groupRotationSnapshot(
+                tournament = tournament.copy(name = "Invalid Remote"),
+                mappingTeamSlots = canonicalExampleMapping(),
+            )
+            val invalidMappings = validSnapshot.pairingLobbySlots.toMutableList().apply {
+                this[1] = this[0].copy(lobbySlotNumber = 1, teamSlotNumber = 13)
+            }
+            assertIllegalArgument {
+                repository.restoreByOwner(
+                    snapshot = validSnapshot.copy(pairingLobbySlots = invalidMappings),
+                    expectedOwnerUserId = "owner-a",
+                )
+            }
+
+            assertEquals(beforeTournament, repository.observeById(tournament.id).first())
+            assertEquals(beforeSlots, repository.observeSlotsByTournamentId(tournament.id).first())
+            assertEquals(beforeRoster, database.rosterPlayerDao().readByTournamentId(tournament.id))
+            assertEquals(beforePairings, database.tournamentGroupPairingDao().readByTournamentId(tournament.id))
+            assertEquals(beforeMappings, database.groupRotationPairingLobbySlotDao().readByTournamentId(tournament.id))
+            assertEquals(beforeDraft, database.groupRotationPairingTeamEntryDraftDao().readByTournamentId(tournament.id))
+            assertEquals(beforeRevision, database.syncRevisionDao().readByTournamentId(tournament.id))
+        } finally {
+            database.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun restoringNewTournamentAppendsItAfterExistingCreationOrder() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "cloud-restoration-creation-order.db"
@@ -284,7 +897,136 @@ class RoomTournamentCloudRestorationTest {
             tournament = tournament(id, "Restored", TournamentStatus.DRAFT).copy(ownerUserId = ownerUserId),
             slots = TeamSlot.fixedSlotsForTournament(id),
             players = emptyList(),
+            cloudRevision = CloudRevision(1),
         )
+
+    private suspend fun seedRevision(database: RankForgeDatabase, tournamentId: String) {
+        database.syncRevisionDao().upsert(
+            SyncRevisionEntity(
+                tournamentId = tournamentId,
+                localRevision = 1,
+                baseCloudRevision = 1,
+            ),
+        )
+    }
+
+    private fun finalizedGroupRotationMatch(
+        tournamentId: String,
+        pairing: GroupPairing,
+        teamSlots: List<Int>,
+    ): Match {
+        val placements = teamSlots.mapIndexed { index, teamSlotNumber ->
+            MatchPlacement(teamSlotNumber = teamSlotNumber, position = index + 1)
+        }
+        val kills = teamSlots.mapIndexed { index, teamSlotNumber ->
+            com.hoggamers.rankforge.domain.tournament.MatchKill(
+                teamSlotNumber = teamSlotNumber,
+                kills = index + 1,
+            )
+        }
+        return Match(
+            id = "finalized-\${tournamentId}-\${pairing.canonicalKey.replace(':', '-')}",
+            tournamentId = tournamentId,
+            matchNumber = 1,
+            date = LocalDate.of(2026, 7, 24),
+            mapName = "Bermuda",
+            status = MatchStatus.FINALIZED,
+            placements = placements,
+            kills = kills,
+            participantResults = teamSlots.mapIndexed { index, teamSlotNumber ->
+                MatchParticipantResult(
+                    teamSlotNumber = teamSlotNumber,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = index + 1,
+                    kills = index + 1,
+                )
+            },
+            groupPairing = pairing,
+        )
+    }
+
+    private fun groupRotationTournament(id: String, ownerUserId: String) = Tournament(
+        id = id,
+        name = "Local Group Rotation",
+        stageName = "Organizer",
+        organizerContactNumber = "123",
+        status = TournamentStatus.CONFIRMED,
+        ownerUserId = ownerUserId,
+        format = com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION,
+        groupCount = 3,
+        selectedGroupPairings = listOf(GroupPairing(TournamentGroup.A, TournamentGroup.C)),
+    )
+
+    private fun groupRotationSnapshot(
+        tournament: Tournament,
+        mappingTeamSlots: List<Int>,
+    ) = TournamentCloudRestorationSnapshot(
+        tournament = tournament,
+        slots = (1..18).map { slotNumber ->
+            TeamSlot.create(
+                tournamentId = tournament.id,
+                slotNumber = slotNumber,
+                teamName = "Remote Team $slotNumber",
+                group = TournamentGroup.entries[(slotNumber - 1) / 6],
+            )
+        },
+        players = listOf(RestoredRosterPlayer(tournament.id, 1, 1, "Remote Player")),
+        cloudRevision = CloudRevision(9),
+        pairingLobbySlots = mappingTeamSlots.mapIndexed { index, teamSlotNumber ->
+            GroupRotationPairingLobbySlotEntity(
+                tournamentId = tournament.id,
+                pairingKey = "A:C",
+                lobbySlotNumber = index + 1,
+                teamSlotNumber = teamSlotNumber,
+            ).let { entity ->
+                GroupRotationPairingLobbySlot(
+                    tournamentId = entity.tournamentId,
+                    pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                    lobbySlotNumber = entity.lobbySlotNumber,
+                    teamSlotNumber = entity.teamSlotNumber,
+                )
+            }
+        },
+    )
+
+    private suspend fun seedGroupRotationState(
+        database: RankForgeDatabase,
+        tournament: Tournament,
+        mappingTeamSlots: List<Int>,
+    ) {
+        database.groupRotationPairingLobbySlotDao().upsertAll(
+            mappingTeamSlots.mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlotEntity(
+                    tournamentId = tournament.id,
+                    pairingKey = "A:C",
+                    lobbySlotNumber = index + 1,
+                    teamSlotNumber = teamSlotNumber,
+                )
+            },
+        )
+        database.rosterPlayerDao().upsertAll(
+            listOf(
+                com.hoggamers.rankforge.data.local.RosterPlayerEntity(
+                    tournamentId = tournament.id,
+                    slotNumber = 1,
+                    rosterPosition = 1,
+                    displayName = "Old Player",
+                ),
+            ),
+        )
+        database.groupRotationPairingTeamEntryDraftDao().upsertAll(
+            listOf(
+                GroupRotationPairingTeamEntryDraftEntity(
+                    tournamentId = tournament.id,
+                    pairingKey = "A:C",
+                    lobbySlotNumber = 1,
+                    rawTeamName = "Old Draft",
+                ),
+            ),
+        )
+    }
+
+    private fun canonicalExampleMapping() = listOf(14, 3, 18, 7, 1, 2, 4, 5, 6, 13, 15, 16)
 
     private fun match(tournamentId: String) = Match(
         id = "match-$tournamentId",
@@ -300,6 +1042,16 @@ class RoomTournamentCloudRestorationTest {
         try {
             block()
         } catch (_: SecurityException) {
+            rejected = true
+        }
+        assertTrue(rejected)
+    }
+
+    private suspend fun assertIllegalArgument(block: suspend () -> Unit) {
+        var rejected = false
+        try {
+            block()
+        } catch (_: IllegalArgumentException) {
             rejected = true
         }
         assertTrue(rejected)

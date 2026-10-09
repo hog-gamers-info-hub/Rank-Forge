@@ -7,6 +7,8 @@ data class DraftMatchCloudSyncSnapshot(
     val tournament: Tournament,
     val matches: List<Match>,
     val expectedCloudRevision: Int? = null,
+    val teamSlots: List<TeamSlot> = emptyList(),
+    val identityContextsByMatchId: Map<String, MatchTeamIdentityContext> = emptyMap(),
 )
 
 enum class DraftMatchCloudSyncStage {

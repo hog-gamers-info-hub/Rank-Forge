@@ -47,16 +47,33 @@ import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadLocalSnapshotRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalRepository
+import com.hoggamers.rankforge.domain.tournament.MatchRestorationLocalWriteResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupCandidate
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalSaveResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupPlanner
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupPlanningResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidator
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationRestorationValidator
+import com.hoggamers.rankforge.domain.tournament.LegacyGroupRotationFinalizedRestorationValidator
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.DeletionBlockedException
 import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.LegacyTournamentOwnerAssignmentResult
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 import com.hoggamers.rankforge.data.local.TournamentSummaryProjection
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
@@ -67,6 +84,7 @@ import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.domain.sync.detectDivergence
+import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
 import java.time.LocalDate
 import java.time.Clock
 import javax.inject.Inject
@@ -104,7 +122,8 @@ class RoomTournamentRepository @Inject constructor(
     private val localImagePreserver: LocalImagePreserver,
     private val clock: Clock,
 ) : TournamentRepository, TournamentRestorationLocalRepository, MatchRestorationLocalRepository,
-    LocalDeletionRepository, AccountDeletionLocalCleanupRepository {
+    LocalDeletionRepository, AccountDeletionLocalCleanupRepository, GroupRotationTeamSetupLocalRepository,
+    MatchTeamIdentityContextRepository, TournamentCloudUploadLocalSnapshotRepository {
     constructor(database: RankForgeDatabase) : this(
         database = database,
         localImagePreserver = LocalImagePreserver(
@@ -139,6 +158,8 @@ class RoomTournamentRepository @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
     private val json = Json { ignoreUnknownKeys = true }
+    private val groupRotationTeamSetupValidator = GroupRotationTeamSetupValidator()
+    private val groupRotationTeamSetupPlanner = GroupRotationTeamSetupPlanner()
 
     init {
         scope.launch {
@@ -347,6 +368,57 @@ class RoomTournamentRepository @Inject constructor(
         awaitState()
         return database.syncRevisionDao().readByTournamentId(tournamentId)?.toDomain()
             ?: LocalRevisionState.Missing
+    }
+
+    override suspend fun readCloudUploadSnapshotByOwner(
+        tournamentId: String,
+        ownerUserId: String,
+    ): TournamentCloudUploadSnapshot? {
+        awaitState()
+        return database.withTransaction {
+            val tournamentEntity = database.tournamentDao()
+                .readByIdAndOwner(tournamentId, ownerUserId)
+                ?: return@withTransaction null
+            val pairings = database.tournamentGroupPairingDao()
+                .readByTournamentId(tournamentId)
+                .map { it.toDomain() }
+            val tournament = runCatching { tournamentEntity.toDomain(pairings) }
+                .getOrNull()
+                ?: return@withTransaction null
+            val slots = database.teamSlotDao()
+                .readByTournamentId(tournamentId)
+                .map { it.toDomain() }
+            val rosters = database.rosterPlayerDao()
+                .readByTournamentId(tournamentId)
+                .map { it.toDomain() }
+                .groupBy { it.slotNumber }
+            val mappingEntities = database.groupRotationPairingLobbySlotDao()
+                .readByTournamentId(tournamentId)
+            val pairingLobbySlots = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                val pairingsByKey = tournament.selectedGroupPairings.associateBy { it.canonicalKey }
+                buildList {
+                    for (entity in mappingEntities) {
+                        val pairing = pairingsByKey[entity.pairingKey]
+                            ?: return@withTransaction null
+                        add(entity.toDomain(pairing))
+                    }
+                }
+            } else {
+                if (mappingEntities.isNotEmpty()) return@withTransaction null
+                emptyList()
+            }
+            val expectedCloudRevision = database.syncRevisionDao()
+                .readByTournamentId(tournamentId)
+                ?.toDomain()
+                ?.expectedRevisionForWrite()
+            TournamentCloudUploadSnapshot(
+                tournament = tournament,
+                slots = slots,
+                rosters = rosters,
+                pairingLobbySlots = pairingLobbySlots,
+                expectedCloudRevision = expectedCloudRevision,
+            )
+        }
     }
 
     override suspend fun confirmCloudRevision(tournamentId: String, cloudRevision: Int) {
@@ -866,9 +938,28 @@ class RoomTournamentRepository @Inject constructor(
     ) {
         require(expectedOwnerUserId.isNotBlank())
         require(snapshot.tournament.ownerUserId == expectedOwnerUserId)
+        require(snapshot.cloudRevision?.value?.let { it > 0 } == true)
         val expectedSlots = snapshot.tournament.formatDerivedSlots()
-        require(snapshot.slots.map { it.slotNumber } == expectedSlots.map { it.slotNumber })
-        require(snapshot.slots.map { it.group } == expectedSlots.map { it.group })
+        when (snapshot.tournament.format) {
+            TournamentFormat.STANDARD -> {
+                require(snapshot.pairingLobbySlots.isEmpty())
+                require(snapshot.slots.map { it.slotNumber } == expectedSlots.map { it.slotNumber })
+                require(snapshot.slots.map { it.group } == expectedSlots.map { it.group })
+            }
+
+            TournamentFormat.GROUP_ROTATION -> {
+                require(
+                    GroupRotationRestorationValidator.isValid(
+                        snapshot.tournament,
+                        snapshot.slots,
+                        snapshot.pairingLobbySlots,
+                    ),
+                )
+                require(snapshot.slots.map { it.slotNumber }.toSet() == expectedSlots.map { it.slotNumber }.toSet())
+                require(snapshot.slots.size == expectedSlots.size)
+                require(snapshot.slots.map { it.slotNumber }.distinct().size == snapshot.slots.size)
+            }
+        }
         require(snapshot.slots.all { it.tournamentId == snapshot.tournament.id })
         require(snapshot.players.all {
             it.tournamentId == snapshot.tournament.id &&
@@ -910,6 +1001,7 @@ class RoomTournamentRepository @Inject constructor(
                                 }
                             },
                     ),
+                teamEntryDrafts = current.teamEntryDrafts - snapshot.tournament.id,
             )
             database.withTransaction {
                 val existingTournament = database.tournamentDao()
@@ -932,6 +1024,9 @@ class RoomTournamentRepository @Inject constructor(
                         },
                     ),
                 )
+                database.groupRotationPairingLobbySlotDao()
+                    .deleteByTournamentId(snapshot.tournament.id)
+                database.rosterPlayerDao().deleteByTournamentId(snapshot.tournament.id)
                 database.teamSlotDao().deleteByTournamentId(snapshot.tournament.id)
                 database.teamSlotDao().upsertAll(snapshot.slots.map { it.toEntity() })
                 database.tournamentGroupPairingDao().deleteByTournamentId(snapshot.tournament.id)
@@ -939,15 +1034,19 @@ class RoomTournamentRepository @Inject constructor(
                     snapshot.tournament.selectedGroupPairings.map { it.toEntity(snapshot.tournament.id) },
                 )
                 database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
-                snapshot.cloudRevision?.let { revision ->
-                    database.syncRevisionDao().upsert(
-                        com.hoggamers.rankforge.data.local.SyncRevisionEntity(
-                            snapshot.tournament.id,
-                            revision.value,
-                            revision.value,
-                        ),
-                    )
-                }
+                database.groupRotationPairingLobbySlotDao().upsertAll(
+                    snapshot.pairingLobbySlots.map { it.toEntity() },
+                )
+                database.groupRotationPairingTeamEntryDraftDao()
+                    .deleteByTournamentId(snapshot.tournament.id)
+                val revision = requireNotNull(snapshot.cloudRevision)
+                database.syncRevisionDao().upsert(
+                    com.hoggamers.rankforge.data.local.SyncRevisionEntity(
+                        snapshot.tournament.id,
+                        revision.value,
+                        revision.value,
+                    ),
+                )
                 saveLegacyState(next)
             }
             state.value = next
@@ -990,6 +1089,32 @@ class RoomTournamentRepository @Inject constructor(
         expectedOwnerUserId: String,
         snapshot: MatchCloudRestorationSnapshot,
     ) {
+        replaceMatchesByOwnerInternal(
+            tournamentId = tournamentId,
+            expectedOwnerUserId = expectedOwnerUserId,
+            snapshot = snapshot,
+            expectedParentCloudRevision = null,
+        )
+    }
+
+    override suspend fun replaceMatchesByOwnerAtCloudRevision(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+        expectedParentCloudRevision: CloudRevision,
+    ): MatchRestorationLocalWriteResult = replaceMatchesByOwnerInternal(
+        tournamentId = tournamentId,
+        expectedOwnerUserId = expectedOwnerUserId,
+        snapshot = snapshot,
+        expectedParentCloudRevision = expectedParentCloudRevision,
+    )
+
+    private suspend fun replaceMatchesByOwnerInternal(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+        snapshot: MatchCloudRestorationSnapshot,
+        expectedParentCloudRevision: CloudRevision?,
+    ): MatchRestorationLocalWriteResult {
         require(expectedOwnerUserId.isNotBlank())
         require(snapshot.tournamentId == tournamentId)
         require(snapshot.matches.all { it.tournamentId == tournamentId })
@@ -997,14 +1122,29 @@ class RoomTournamentRepository @Inject constructor(
         awaitState()
         writeMutex.withLock {
             val next = state.value.copy(matches = state.value.matches + (tournamentId to snapshot.matches))
-            database.withTransaction {
+            val result = database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
                     throw SecurityException("Tournament is not owned by the expected restoration owner.")
                 }
                 if (database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, expectedOwnerUserId)) {
                     throw DeletionBlockedException(tournamentId)
                 }
-                validateRestoredMatches(state.value, tournamentId, snapshot.matches)
+                if (
+                    expectedParentCloudRevision != null &&
+                    database.syncRevisionDao().readByTournamentId(tournamentId)?.let { revision ->
+                        revision.localRevision == expectedParentCloudRevision.value &&
+                            revision.baseCloudRevision == expectedParentCloudRevision.value
+                    } != true
+                ) {
+                    return@withTransaction MatchRestorationLocalWriteResult.GenerationMismatch
+                }
+                if (
+                    expectedParentCloudRevision != null &&
+                    snapshot.cloudRevision != expectedParentCloudRevision
+                ) {
+                    return@withTransaction MatchRestorationLocalWriteResult.GenerationMismatch
+                }
+                validateRestoredMatches(state.value, tournamentId, snapshot.matches, database)
                 database.matchDao().deleteByTournamentId(tournamentId)
                 snapshot.matches.forEach { match ->
                     database.matchDao().upsert(match.toEntity())
@@ -1024,8 +1164,12 @@ class RoomTournamentRepository @Inject constructor(
                     )
                 }
                 saveLegacyState(next)
+                MatchRestorationLocalWriteResult.Replaced
             }
-            state.value = next
+            if (result == MatchRestorationLocalWriteResult.Replaced) {
+                state.value = next
+            }
+            return result
         }
     }
 
@@ -1038,7 +1182,7 @@ class RoomTournamentRepository @Inject constructor(
                 .filter { it.status == MatchStatus.FINALIZED }
             val next = state.value.copy(matches = state.value.matches + (snapshot.tournamentId to (finalized + snapshot.matches)))
             database.withTransaction {
-                validateRestoredMatches(state.value, snapshot.tournamentId, snapshot.matches)
+                validateRestoredMatches(state.value, snapshot.tournamentId, snapshot.matches, database)
                 database.matchDao().deleteDraftByTournamentId(snapshot.tournamentId)
                 snapshot.matches.forEach { match ->
                     database.matchDao().upsert(match.toEntity())
@@ -1184,6 +1328,110 @@ class RoomTournamentRepository @Inject constructor(
         teamNamesBySlotNumber: Map<Int, String>,
     ): OwnerScopedTournamentMutationResult =
         saveTeamNamesInternal(tournamentId, teamNamesBySlotNumber, ownerUserId)
+
+    override suspend fun saveGroupRotationTeamSetup(
+        candidate: GroupRotationTeamSetupCandidate,
+        ownerUserId: String,
+    ): GroupRotationTeamSetupLocalSaveResult {
+        awaitState()
+        return writeMutex.withLock {
+            var updatedState: RepositoryState? = null
+            val result = database.withTransaction {
+                if (!database.tournamentDao().existsByIdAndOwner(candidate.tournamentId, ownerUserId)) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.TournamentNotFound
+                }
+                if (database.deletionIntentDao().isLocalMutationBlocked(candidate.tournamentId, null, ownerUserId)) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.TournamentNotFound
+                }
+                val tournament = readTournament(candidate.tournamentId)
+                    ?: return@withTransaction GroupRotationTeamSetupLocalSaveResult.TournamentNotFound
+                val validation = groupRotationTeamSetupValidator.validate(tournament, candidate)
+                val validated = when (validation) {
+                    is com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidationResult.Invalid -> {
+                        return@withTransaction GroupRotationTeamSetupLocalSaveResult.InvalidSetup(validation.issues)
+                    }
+                    is com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidationResult.Valid -> validation
+                }
+                val submittedPairingKeys = validated.entries
+                    .map { it.pairing.canonicalKey }
+                    .toSet()
+                val selectedPairingKeys = tournament.selectedGroupPairings
+                    .map { it.canonicalKey }
+                    .toSet()
+                if (database.matchDao().observeByTournamentId(candidate.tournamentId).first().any { match ->
+                        match.groupPairingKey == null ||
+                            match.groupPairingKey !in selectedPairingKeys ||
+                            match.groupPairingKey in submittedPairingKeys
+                    }
+                ) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.ProtectedHistory
+                }
+                val existingSlots = database.teamSlotDao()
+                    .observeByTournamentId(candidate.tournamentId)
+                    .first()
+                    .map { it.toDomain() }
+                val plan = when (val planning = groupRotationTeamSetupPlanner.plan(tournament, existingSlots, validated)) {
+                    is GroupRotationTeamSetupPlanningResult.Invalid -> {
+                        return@withTransaction GroupRotationTeamSetupLocalSaveResult.InvalidSetup(planning.issues)
+                    }
+                    is GroupRotationTeamSetupPlanningResult.Planned -> planning.plan
+                }
+                val existingMappings = database.groupRotationPairingLobbySlotDao()
+                    .observeByTournamentId(candidate.tournamentId)
+                    .first()
+                    .sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
+                val plannedMappings = plan.lobbySlotMappings
+                    .map { it.toEntity() }
+                    .sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
+                val mergedMappings = (
+                    existingMappings.filterNot { it.pairingKey in submittedPairingKeys } + plannedMappings
+                    ).sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
+                val existingSlotEntities = database.teamSlotDao()
+                    .observeByTournamentId(candidate.tournamentId)
+                    .first()
+                    .sortedBy { it.slotNumber }
+                val plannedSlotEntities = plan.teamSlots.map { it.toEntity() }.sortedBy { it.slotNumber }
+                val teamSlotsChanged = existingSlotEntities != plannedSlotEntities
+                val mappingsChanged = existingMappings != mergedMappings
+                val current = state.value
+                val nextTournament = if (tournament.status == TournamentStatus.CONFIRMED &&
+                    (teamSlotsChanged || mappingsChanged)
+                ) {
+                    tournament.copy(status = TournamentStatus.DRAFT)
+                } else {
+                    tournament
+                }
+                val statusChanged = tournament.status != nextTournament.status
+                if (!teamSlotsChanged && !mappingsChanged && !statusChanged) {
+                    return@withTransaction GroupRotationTeamSetupLocalSaveResult.Saved
+                }
+                val next = current.copy(
+                    tournaments = current.tournaments.map { existing ->
+                        if (existing.id == tournament.id) nextTournament else existing
+                    },
+                    slots = current.slots + (tournament.id to plan.teamSlots),
+                )
+                database.teamSlotDao().upsertAll(plannedSlotEntities)
+                submittedPairingKeys.sorted().forEach { pairingKey ->
+                    database.groupRotationPairingLobbySlotDao().replaceForTournamentAndPairing(
+                        tournamentId = candidate.tournamentId,
+                        pairingKey = pairingKey,
+                        assignments = plannedMappings.filter { it.pairingKey == pairingKey },
+                    )
+                }
+                persistTournamentStatusChanges(current, next)
+                touchTournament(candidate.tournamentId)
+                saveLegacyState(next)
+                markLocalRevisionChanged(candidate.tournamentId)
+                updatedState = next
+                GroupRotationTeamSetupLocalSaveResult.Saved
+            }
+            if (result is GroupRotationTeamSetupLocalSaveResult.Saved && updatedState != null) {
+                state.value = checkNotNull(updatedState)
+            }
+            result
+        }
+    }
 
     private suspend fun saveTeamNamesInternal(
         tournamentId: String,
@@ -1611,6 +1859,104 @@ class RoomTournamentRepository @Inject constructor(
         )
     }
 
+    override suspend fun readForMatch(
+        matchId: String,
+        ownerUserId: String,
+    ): MatchTeamIdentityContextReadResult = database.withTransaction {
+        val aggregate = database.matchDao().readResultAggregateByIdAndOwner(matchId, ownerUserId)
+            ?: return@withTransaction MatchTeamIdentityContextReadResult.MatchNotFound
+        val tournamentEntity = database.groupRotationTeamSetupReadDao()
+            .readOwnedTournament(aggregate.match.tournamentId, ownerUserId)
+            ?: return@withTransaction MatchTeamIdentityContextReadResult.TournamentNotFound
+        val tournament = runCatching {
+            tournamentEntity.toDomain(
+                database.groupRotationTeamSetupReadDao()
+                    .readPairings(aggregate.match.tournamentId)
+                    .map { it.toDomain() },
+            )
+        }.getOrNull() ?: return@withTransaction MatchTeamIdentityContextReadResult.InvalidMapping
+        val match = aggregate.toMatchWithConfirmation(json) {
+            database.matchDao().readResultAggregateByIdAndOwner(matchId, ownerUserId)
+        } ?: return@withTransaction MatchTeamIdentityContextReadResult.MatchNotFound
+        val pairing = match.groupPairing
+        if (tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION && pairing == null) {
+            return@withTransaction MatchTeamIdentityContextReadResult.PairingRequired
+        }
+        if (pairing != null && pairing !in tournament.selectedGroupPairings) {
+            return@withTransaction MatchTeamIdentityContextReadResult.PairingNotSelected
+        }
+        readMatchIdentityContext(
+            tournament = tournament,
+            match = match,
+            pairing = pairing,
+            teamSlots = database.groupRotationTeamSetupReadDao()
+                .readTeamSlots(tournament.id)
+                .map { it.toDomain() },
+        )
+    }
+
+    override suspend fun readForPairing(
+        tournamentId: String,
+        pairing: GroupPairing,
+        ownerUserId: String,
+    ): MatchTeamIdentityContextReadResult = database.withTransaction {
+        val readDao = database.groupRotationTeamSetupReadDao()
+        val tournamentEntity = readDao.readOwnedTournament(tournamentId, ownerUserId)
+            ?: return@withTransaction MatchTeamIdentityContextReadResult.TournamentNotFound
+        val tournament = runCatching {
+            tournamentEntity.toDomain(readDao.readPairings(tournamentId).map { it.toDomain() })
+        }.getOrNull() ?: return@withTransaction MatchTeamIdentityContextReadResult.InvalidMapping
+        if (pairing !in tournament.selectedGroupPairings) {
+            return@withTransaction MatchTeamIdentityContextReadResult.PairingNotSelected
+        }
+        val provisionalMatch = Match(
+            id = "identity-context",
+            tournamentId = tournamentId,
+            matchNumber = 1,
+            date = LocalDate.of(1970, 1, 1),
+            mapName = "",
+            status = MatchStatus.DRAFT,
+            groupPairing = pairing,
+        )
+        readMatchIdentityContext(
+            tournament = tournament,
+            match = provisionalMatch,
+            pairing = pairing,
+            teamSlots = readDao.readTeamSlots(tournamentId).map { it.toDomain() },
+        )
+    }
+
+    private suspend fun readMatchIdentityContext(
+        tournament: Tournament,
+        match: Match,
+        pairing: GroupPairing?,
+        teamSlots: List<TeamSlot>,
+    ): MatchTeamIdentityContextReadResult {
+        val mappings = if (pairing == null) {
+            emptyList()
+        } else {
+            database.groupRotationPairingLobbySlotDao()
+                .readByTournamentAndPairing(tournament.id, pairing.canonicalKey)
+                .map { it.toDomain(pairing) }
+        }
+        val context = runCatching {
+            MatchEligibleTeamSlotResolver().resolveContext(
+                tournament = tournament,
+                persistedTeamSlots = teamSlots,
+                match = match,
+                persistedMappings = mappings,
+            )
+        }.getOrNull() ?: return if (
+            tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION &&
+                mappings.isEmpty()
+        ) {
+            MatchTeamIdentityContextReadResult.SetupRequired
+        } else {
+            MatchTeamIdentityContextReadResult.InvalidMapping
+        }
+        return MatchTeamIdentityContextReadResult.Loaded(context)
+    }
+
     override suspend fun readPreservedMatchOcrEvidence(
         tournamentId: String,
         matchId: String,
@@ -1727,7 +2073,7 @@ class RoomTournamentRepository @Inject constructor(
                         MatchCreationFailure.TOURNAMENT_NOT_FOUND,
                     )
                 }
-                val eligibleSlotNumbers = current.eligibleSlotNumbersForMatch(match)
+                val eligibleSlotNumbers = eligibleSlotNumbersForMatch(current, match, database)
                     ?: return@withTransaction CreateMatchRepositoryResult.Rejected(
                         MatchCreationFailure.INVALID_GROUP_PAIRING,
                     )
@@ -1824,7 +2170,7 @@ class RoomTournamentRepository @Inject constructor(
                         SaveMatchPlacementsFailure.MATCH_NOT_DRAFT,
                     )
                 }
-                val eligibleSlotNumbers = current.eligibleSlotNumbersForMatch(match)
+                val eligibleSlotNumbers = eligibleSlotNumbersForMatch(current, match, database)
                 if (eligibleSlotNumbers == null || placements.any { it.teamSlotNumber !in eligibleSlotNumbers }) {
                     return@withTransaction SaveMatchPlacementsRepositoryResult.Rejected(
                         SaveMatchPlacementsFailure.INVALID_TEAM_SLOT,
@@ -1912,7 +2258,7 @@ class RoomTournamentRepository @Inject constructor(
                         SaveMatchKillsFailure.MATCH_NOT_DRAFT,
                     )
                 }
-                val eligibleSlotNumbers = current.eligibleSlotNumbersForMatch(match)
+                val eligibleSlotNumbers = eligibleSlotNumbersForMatch(current, match, database)
                 if (eligibleSlotNumbers == null || kills.any { it.teamSlotNumber !in eligibleSlotNumbers }) {
                     return@withTransaction SaveMatchKillsRepositoryResult.Rejected(
                         SaveMatchKillsFailure.INVALID_TEAM_SLOT,
@@ -2064,7 +2410,7 @@ class RoomTournamentRepository @Inject constructor(
                         .observeByTournamentId(match.tournamentId)
                         .first()
                         .map { it.toDomain() }
-                    val eligibleSlotNumbers = current.eligibleSlotNumbersForMatch(match)
+                    val eligibleSlotNumbers = eligibleSlotNumbersForMatch(current, match, database)
                         ?: return@withTransaction FinalizeMatchRepositoryResult.Rejected(
                             FinalizeMatchFailure.INVALID_DATA,
                         )
@@ -2207,7 +2553,7 @@ class RoomTournamentRepository @Inject constructor(
                             ?: 0,
                     )
                 }
-                val eligibleSlotNumbers = current.eligibleSlotNumbersForMatch(match)
+                val eligibleSlotNumbers = eligibleSlotNumbersForMatch(current, match, database)
                 if (!isValidCorrectionSnapshot(previousParticipantResults, correctedParticipantResults) ||
                     eligibleSlotNumbers == null ||
                     correctedParticipantResults.any { it.teamSlotNumber !in eligibleSlotNumbers }
@@ -2349,8 +2695,8 @@ class RoomTournamentRepository @Inject constructor(
                 val current = state.value
                 val match = current.matches[tournamentId].orEmpty().firstOrNull { it.id == matchId }
                     ?: return@withTransaction OwnerScopedMatchMutationResult.MatchNotFound
-                require(current.eligibleSlotNumbersForMatch(match)?.contains(teamSlotNumber) == true) {
-                    "Team slot number is not eligible for this match."
+                if (eligibleSlotNumbersForMatch(current, match, database)?.contains(teamSlotNumber) != true) {
+                    return@withTransaction OwnerScopedMatchMutationResult.InvalidData
                 }
                 val key = DraftKey(tournamentId, matchId)
                 val old = current.draftValues[key]?.get(teamSlotNumber) ?: MatchDraftFieldValues()
@@ -2830,7 +3176,7 @@ class RoomTournamentRepository @Inject constructor(
                 row.originalKills == null || row.originalKills >= 0
             } &&
             rows.all { row ->
-                row.originalSuggestedTeamSlot == null || row.originalSuggestedTeamSlot in TeamSlot.SLOT_NUMBERS
+                row.originalSuggestedTeamSlot == null || row.originalSuggestedTeamSlot in expectedTeamSlots
             } &&
             placements.map { it.teamSlotNumber }.toSet() == expectedTeamSlots &&
             kills.map { it.teamSlotNumber }.toSet() == expectedTeamSlots &&
@@ -3096,23 +3442,75 @@ private data class RepositoryState(
     val teamEntryDrafts: Map<String, Map<Int, String>> = emptyMap(),
 )
 
-private fun RepositoryState.eligibleSlotNumbersForMatch(match: Match): Set<Int>? {
-    val tournament = tournaments.firstOrNull { it.id == match.tournamentId } ?: return null
+private suspend fun eligibleSlotNumbersForMatch(
+    state: RepositoryState,
+    match: Match,
+    database: RankForgeDatabase,
+): Set<Int>? {
+    val tournament = state.tournaments.firstOrNull { it.id == match.tournamentId } ?: return null
+    val mappings = match.groupPairing?.let { pairing ->
+        database.groupRotationPairingLobbySlotDao()
+            .readByTournamentAndPairing(match.tournamentId, pairing.canonicalKey)
+            .map { it.toDomain(pairing) }
+    }.orEmpty()
     return runCatching {
-        MatchEligibleTeamSlotResolver().resolve(tournament, slots[match.tournamentId].orEmpty(), match)
+        MatchEligibleTeamSlotResolver().resolve(
+            tournament = tournament,
+            persistedTeamSlots = state.slots[match.tournamentId].orEmpty(),
+            match = match,
+            persistedMappings = mappings,
+        )
     }.getOrNull()
 }
 
-private fun validateRestoredMatches(
+private suspend fun validateRestoredMatches(
     state: RepositoryState,
     tournamentId: String,
     matches: List<Match>,
+    database: RankForgeDatabase,
 ) {
     val tournament = state.tournaments.firstOrNull { it.id == tournamentId }
         ?: throw IllegalArgumentException("Tournament is not available for match restoration.")
     val persistedSlots = state.slots[tournamentId].orEmpty()
+    val persistedMappings = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+        database.groupRotationPairingLobbySlotDao()
+            .readByTournamentId(tournamentId)
+            .map { entity ->
+                val pairing = runCatching {
+                    GroupPairing.fromCanonicalKey(entity.pairingKey)
+                }.getOrElse {
+                    throw IllegalArgumentException("Invalid persisted Group Rotation pairing key.")
+                }
+                entity.toDomain(pairing)
+            }
+    } else {
+        emptyList()
+    }
+    if (
+        tournament.format == TournamentFormat.GROUP_ROTATION &&
+        persistedMappings.isEmpty()
+    ) {
+        require(
+            LegacyGroupRotationFinalizedRestorationValidator.isValid(
+                tournament = tournament,
+                persistedTeamSlots = persistedSlots,
+                matches = matches,
+            ),
+        )
+        return
+    }
     matches.forEach { match ->
-        val eligible = MatchEligibleTeamSlotResolver().resolve(tournament, persistedSlots, match)
+        val mappings = match.groupPairing?.let { pairing ->
+            database.groupRotationPairingLobbySlotDao()
+                .readByTournamentAndPairing(tournamentId, pairing.canonicalKey)
+                .map { it.toDomain(pairing) }
+        }.orEmpty()
+        val eligible = MatchEligibleTeamSlotResolver().resolve(
+            tournament = tournament,
+            persistedTeamSlots = persistedSlots,
+            match = match,
+            persistedMappings = mappings,
+        )
         require(match.placements.all { it.teamSlotNumber in eligible })
         require(match.kills.all { it.teamSlotNumber in eligible })
         require(match.participantResults.all { it.teamSlotNumber in eligible })

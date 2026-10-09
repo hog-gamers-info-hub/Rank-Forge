@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.KillGlobalError
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -17,6 +18,8 @@ import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsInput
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsResult
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
+import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -38,6 +41,8 @@ class MatchKillViewModel @Inject constructor(
     private val saveMatchKills: SaveMatchKillsUseCase,
     private val saveDraftValue: SaveMatchDraftValueUseCase,
     private val clearDraftMatch: ClearDraftMatchUseCase,
+    private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
+        ReadMatchTeamIdentityContextUseCase(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchKillUiState())
     val uiState: StateFlow<MatchKillUiState> = _uiState.asStateFlow()
@@ -75,6 +80,25 @@ class MatchKillViewModel @Inject constructor(
                         matchId = matchId,
                     )
                 } else {
+                    val identityContext = (readMatchTeamIdentityContext.forMatch(match.id)
+                        as? MatchTeamIdentityContextReadResult.Loaded)?.context
+                    if ((match.groupPairing != null || slots.any { it.slotNumber !in TeamSlot.SLOT_NUMBERS }) &&
+                        identityContext == null
+                    ) {
+                        return@combine MatchKillUiState(
+                            isLoading = false,
+                            isAvailable = false,
+                            tournamentId = tournamentId,
+                            matchId = matchId,
+                        )
+                    }
+                    val identities = identityContext?.orderedTeams
+                        ?: slots.sortedBy { it.slotNumber }.map { slot ->
+                            com.hoggamers.rankforge.domain.tournament.MatchLobbyTeamIdentity(
+                                lobbySlotNumber = slot.slotNumber,
+                                teamSlotNumber = slot.slotNumber,
+                            )
+                        }
                     val savedKills = match.kills.associateBy { it.teamSlotNumber }
                     MatchKillUiState(
                         isLoading = false,
@@ -82,13 +106,16 @@ class MatchKillViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         matchNumber = match.matchNumber,
-                        rows = slots.sortedBy { it.slotNumber }.map { slot ->
+                        rows = identities.mapNotNull { identity ->
+                            val slot = slots.firstOrNull { it.slotNumber == identity.teamSlotNumber }
+                                ?: return@mapNotNull null
                             MatchKillRowUiState(
                                 teamSlotNumber = slot.slotNumber,
                                 teamName = slot.teamName,
                                 killsInput = draftValues[slot.slotNumber]?.killsInput
                                     ?: savedKills[slot.slotNumber]?.kills?.toString().orEmpty(),
                                 playerNames = rosters[slot.slotNumber].orEmpty().map { it.displayName },
+                                lobbySlotNumber = identity.lobbySlotNumber,
                             )
                         },
                     )
@@ -234,6 +261,7 @@ class MatchKillViewModel @Inject constructor(
                     SaveMatchDraftValueResult.Saved -> draftWriteError
                     SaveMatchDraftValueResult.AuthenticationRequired -> KillGlobalError.AUTHENTICATION_REQUIRED
                     SaveMatchDraftValueResult.MatchNotFound -> KillGlobalError.MATCH_NOT_FOUND
+                    SaveMatchDraftValueResult.InvalidData -> KillGlobalError.INVALID_DATA
                 }
             }
         }

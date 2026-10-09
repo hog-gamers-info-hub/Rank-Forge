@@ -8,6 +8,7 @@ data class FinalizedMatchCloudSyncSnapshot(
     val teamSlots: List<TeamSlot>,
     val matches: List<Match>,
     val expectedCloudRevision: Int? = null,
+    val identityContextsByMatchId: Map<String, MatchTeamIdentityContext> = emptyMap(),
 )
 
 enum class FinalizedMatchCloudSyncStage {
