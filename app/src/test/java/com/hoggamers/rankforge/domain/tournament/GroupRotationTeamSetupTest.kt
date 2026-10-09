@@ -19,6 +19,55 @@ class GroupRotationTeamSetupTest {
     }
 
     @Test
+    fun groupRotationDerivedSlotsAreSequentialAndUnguardedByGroupMetadata() {
+        val groupRotation = tournament(groupCount = 3, pairings = listOf("A:B"))
+        val standard = Tournament(
+            id = TOURNAMENT_ID,
+            name = "Standard",
+            stageName = "Stage",
+            organizerContactNumber = "123",
+            status = TournamentStatus.DRAFT,
+        )
+
+        assertEquals((1..18).toList(), groupRotation.formatDerivedSlots().map { it.slotNumber })
+        assertTrue(groupRotation.formatDerivedSlots().all { it.group == null })
+        assertEquals(12, standard.formatDerivedSlots().size)
+        assertTrue(TeamSlot.create(TOURNAMENT_ID, 18).group == null)
+    }
+
+    @Test
+    fun validatorAcceptsOneSubmittedSelectedPairingWithoutRequiringOtherSelectedPairings() {
+        val tournament = tournament(groupCount = 3, pairings = listOf("A:B", "A:C"))
+
+        val result = validator.validate(
+            tournament,
+            completeCandidate(tournament, "A:B"),
+        )
+
+        assertTrue(result is GroupRotationTeamSetupValidationResult.Valid)
+        assertEquals(
+            setOf("A:B"),
+            (result as GroupRotationTeamSetupValidationResult.Valid)
+                .entries
+                .map { it.pairing.canonicalKey }
+                .toSet(),
+        )
+    }
+
+    @Test
+    fun validatorRejectsAnEntirelyEmptyCandidate() {
+        val tournament = tournament(groupCount = 3, pairings = listOf("A:B", "A:C"))
+
+        val result = validator.validate(
+            tournament,
+            GroupRotationTeamSetupCandidate(TOURNAMENT_ID, emptyList()),
+        ) as GroupRotationTeamSetupValidationResult.Invalid
+
+        assertTrue(result.issues.any { it.code == GroupRotationTeamSetupIssueCode.EMPTY_CANDIDATE })
+        assertTrue(result.issues.none { it.code == GroupRotationTeamSetupIssueCode.MISSING_PAIRING })
+    }
+
+    @Test
     fun threeGroupPairingCandidateValidatesAtEighteenUniqueTeams() {
         val tournament = tournament(groupCount = 3, pairings = listOf("A:B", "A:C", "B:C"))
         val candidate = GroupRotationTeamSetupCandidate(
@@ -118,12 +167,12 @@ class GroupRotationTeamSetupTest {
     }
 
     @Test
-    fun newIdentitiesUseLowestAvailableCanonicalSlotsAndObsoleteNamesAreCleared() {
+    fun newIdentitiesUseLowestAvailableCanonicalSlotsAndPreservesAbsentIdentities() {
         val tournament = tournament(groupCount = 3, pairings = listOf("A:B"))
         val existing = tournament.formatDerivedSlots().map { slot ->
             when (slot.slotNumber) {
                 5 -> slot.copy(teamName = "Existing")
-                18 -> slot.copy(teamName = "Obsolete")
+                18 -> slot.copy(teamName = "Obsolete", group = TournamentGroup.C)
                 else -> slot
             }
         }
@@ -134,7 +183,8 @@ class GroupRotationTeamSetupTest {
         assertEquals(5, plan.plan.lobbySlotMappings.first().teamSlotNumber)
         assertEquals("Team 2", plan.plan.teamSlots.first { it.slotNumber == 1 }.teamName)
         assertEquals("Existing", plan.plan.teamSlots.first { it.slotNumber == 5 }.teamName)
-        assertEquals("", plan.plan.teamSlots.first { it.slotNumber == 18 }.teamName)
+        assertEquals("Obsolete", plan.plan.teamSlots.first { it.slotNumber == 18 }.teamName)
+        assertEquals(TournamentGroup.C, plan.plan.teamSlots.first { it.slotNumber == 18 }.group)
         assertEquals(
             listOf(5, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12),
             plan.plan.lobbySlotMappings.map { it.teamSlotNumber },
@@ -147,7 +197,7 @@ class GroupRotationTeamSetupTest {
         val existing = tournament.formatDerivedSlots().map { slot ->
             when (slot.slotNumber) {
                 2 -> slot.copy(teamName = "Lobby One Team")
-                13 -> slot.copy(teamName = "Lobby Seven Team")
+                13 -> slot.copy(teamName = "Lobby Seven Team", group = TournamentGroup.C)
                 else -> slot
             }
         }
@@ -164,6 +214,10 @@ class GroupRotationTeamSetupTest {
 
         assertEquals(2, plan.plan.lobbySlotMappings.first { it.lobbySlotNumber == 1 }.teamSlotNumber)
         assertEquals(13, plan.plan.lobbySlotMappings.first { it.lobbySlotNumber == 7 }.teamSlotNumber)
+        assertEquals(
+            TournamentGroup.C,
+            plan.plan.teamSlots.first { it.slotNumber == 13 }.group,
+        )
     }
 
     @Test
@@ -199,6 +253,27 @@ class GroupRotationTeamSetupTest {
 
         assertEquals(firstPlan.plan, secondPlan.plan)
         assertEquals(9, firstPlan.plan.lobbySlotMappings.first().teamSlotNumber)
+    }
+
+    @Test
+    fun plannerRejectsNewIdentityWhenAllCanonicalSlotsAreOccupied() {
+        val tournament = tournament(groupCount = 3, pairings = listOf("A:B"))
+        val existing = tournament.formatDerivedSlots().map { slot ->
+            slot.copy(teamName = "Existing " + slot.slotNumber)
+        }
+        val validated = validator.validate(
+            tournament,
+            completeCandidate(tournament, "A:B"),
+        ) as GroupRotationTeamSetupValidationResult.Valid
+
+        val result = planner.plan(tournament, existing, validated)
+            as GroupRotationTeamSetupPlanningResult.Invalid
+
+        assertTrue(
+            result.issues.any {
+                it.code == GroupRotationTeamSetupIssueCode.NO_AVAILABLE_CANONICAL_SLOT
+            },
+        )
     }
 
     @Test

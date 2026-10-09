@@ -37,7 +37,13 @@ class RoomGroupRotationTeamSetupDraftRepository @Inject constructor(
         }
         database.withTransaction {
             val dao = database.groupRotationPairingTeamEntryDraftDao()
-            dao.deleteByTournamentId(tournament.id)
+            candidate.entries
+                .map { it.pairing.canonicalKey }
+                .toSet()
+                .sorted()
+                .forEach { pairingKey ->
+                    dao.deleteByTournamentAndPairing(tournament.id, pairingKey)
+                }
             dao.upsertAll(candidate.entries.map { it.toEntity(tournament.id) })
         }
         return GroupRotationTeamSetupDraftSaveResult.Saved
@@ -46,6 +52,13 @@ class RoomGroupRotationTeamSetupDraftRepository @Inject constructor(
     override suspend fun clearDraft(tournamentId: String) {
         database.withTransaction {
             database.groupRotationPairingTeamEntryDraftDao().deleteByTournamentId(tournamentId)
+        }
+    }
+
+    override suspend fun clearDraftForPairing(tournamentId: String, pairing: GroupPairing) {
+        database.withTransaction {
+            database.groupRotationPairingTeamEntryDraftDao()
+                .deleteByTournamentAndPairing(tournamentId, pairing.canonicalKey)
         }
     }
 }

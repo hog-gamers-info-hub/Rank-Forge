@@ -26,6 +26,12 @@ interface GroupRotationPairingTeamEntryDraftDao {
 
     @Query(
         "DELETE FROM group_rotation_pairing_team_entry_drafts " +
+            "WHERE tournament_id = :tournamentId AND pairing_key = :pairingKey",
+    )
+    suspend fun deleteByTournamentAndPairing(tournamentId: String, pairingKey: String)
+
+    @Query(
+        "DELETE FROM group_rotation_pairing_team_entry_drafts " +
             "WHERE tournament_id = :tournamentId",
     )
     suspend fun deleteByTournamentId(tournamentId: String)

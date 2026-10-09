@@ -109,6 +109,41 @@ class GroupRotationTeamEntryViewModelTest {
     }
 
     @Test
+    fun partialDraftOverlaysOnlyItsPairingAndBlankOverridesSavedValue() = runTest {
+        readRepository.result = GroupRotationTeamSetupReadResult.Loaded(
+            com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupRead(
+                tournament(),
+                completeCandidate("Saved"),
+            ),
+        )
+        draftRepository.raw = pairingCandidate("A:C", "Draft", blankSlots = setOf(1)).entries
+        val viewModel = viewModel()
+
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+
+        assertEquals("Saved 1", viewModel.uiState.value.pairingSections[0].rows[0].teamName)
+        assertEquals("", viewModel.uiState.value.pairingSections[1].rows[0].teamName)
+        assertEquals("Draft 2", viewModel.uiState.value.pairingSections[1].rows[1].teamName)
+    }
+
+    @Test
+    fun savingOnePairingLeavesOtherPairingsBlankAndSubmitsOnlyTwelveRows() = runTest {
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = pairingCandidate("A:B", "Team").entries
+        val viewModel = viewModel()
+
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(12, saveRepository.savedCandidate?.entries?.size)
+        assertTrue(saveRepository.savedCandidate?.entries.orEmpty().all { it.pairing.canonicalKey == "A:B" })
+        assertTrue(viewModel.uiState.value.pairingSections[1].rows.all { it.teamName.isEmpty() })
+    }
+
+    @Test
     fun invalidNonEmptyDraftShowsErrorInsteadOfFallingBack() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.Loaded(
             com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupRead(
@@ -130,7 +165,7 @@ class GroupRotationTeamEntryViewModelTest {
     }
 
     @Test
-    fun editingOneLocalRowWritesCompleteDraftAcrossAllSelectedPairings() = runTest {
+    fun editingOneLocalRowWritesOnlyTheEditedPairingDraft() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         val viewModel = viewModel()
         viewModel.load(TOURNAMENT_ID)
@@ -139,10 +174,9 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.onTeamNameChanged(GroupPairing.fromCanonicalKey("A:B"), 1, "Alpha")
         advanceUntilIdle()
 
-        assertEquals(24, draftRepository.raw.size)
+        assertEquals(12, draftRepository.raw.size)
         assertEquals("Alpha", draftRepository.raw.single { it.pairing.canonicalKey == "A:B" && it.lobbySlotNumber == 1 }.teamName)
-        assertEquals(12, draftRepository.raw.count { it.pairing.canonicalKey == "A:C" })
-        assertTrue(draftRepository.raw.filter { it.pairing.canonicalKey == "A:C" }.all { it.teamName.isEmpty() })
+        assertTrue(draftRepository.raw.none { it.pairing.canonicalKey == "A:C" })
     }
 
     @Test
@@ -179,7 +213,7 @@ class GroupRotationTeamEntryViewModelTest {
     }
 
     @Test
-    fun validSetupSavesLocallyClearsDraftAndNavigates() = runTest {
+    fun validSetupSavesLocallyClearsOnlyTheSavedPairingDraftAndNavigates() = runTest {
         val complete = completeCandidate("Team")
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         draftRepository.raw = complete.entries
@@ -192,14 +226,18 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        assertEquals(complete.entries, saveRepository.savedCandidate?.entries)
-        assertTrue(draftRepository.cleared)
+        assertEquals(
+            complete.entries.filter { it.pairing.canonicalKey == "A:B" },
+            saveRepository.savedCandidate?.entries,
+        )
+        assertEquals(listOf("A:B"), draftRepository.clearedPairings)
+        assertTrue(draftRepository.raw.any { it.pairing.canonicalKey == "A:C" })
         assertEquals(
             GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails,
             navigation.await(),
         )
         assertEquals(1, uploadAction.calls)
-        assertEquals(listOf("cloud-upload", "draft-cleared"), draftRepository.events)
+        assertEquals(listOf("cloud-upload", "draft-cleared:A:B"), draftRepository.events)
     }
 
     @Test
@@ -222,8 +260,8 @@ class GroupRotationTeamEntryViewModelTest {
         assertEquals(GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails, navigation.await())
         assertEquals(null, viewModel.uiState.value.saveError)
         assertEquals(null, viewModel.uiState.value.cloudSyncError)
-        assertTrue(draftRepository.cleared)
-        assertEquals(listOf("cloud-upload", "draft-cleared"), draftRepository.events)
+        assertEquals(listOf("A:B"), draftRepository.clearedPairings)
+        assertEquals(listOf("cloud-upload", "draft-cleared:A:B"), draftRepository.events)
     }
 
     @Test
@@ -267,7 +305,10 @@ class GroupRotationTeamEntryViewModelTest {
 
         assertEquals(GroupRotationTeamEntryCloudSyncError.ValidationFailure, viewModel.uiState.value.cloudSyncError)
         assertEquals(null, viewModel.uiState.value.saveError)
-        assertFalse(draftRepository.cleared)
+        assertTrue(draftRepository.clearedPairings.isEmpty())
+        assertTrue(draftRepository.raw.any { it.pairing.canonicalKey == "A:B" })
+        assertTrue(draftRepository.raw.any { it.pairing.canonicalKey == "A:C" })
+        assertTrue(viewModel.uiState.value.pairingSections[1].rows.first().teamName.isNotEmpty())
         assertFalse(navigation.isCompleted)
         navigation.cancel()
     }
@@ -406,6 +447,7 @@ class GroupRotationTeamEntryViewModelTest {
         val viewModel = viewModel()
         viewModel.load(TOURNAMENT_ID)
         advanceUntilIdle()
+        viewModel.onPairingSelected(GroupPairing.fromCanonicalKey("A:C"))
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
@@ -414,21 +456,6 @@ class GroupRotationTeamEntryViewModelTest {
         })
         assertEquals("A:C", viewModel.uiState.value.selectedPairingKey)
         assertEquals(null, saveRepository.savedCandidate)
-
-        val tooMany = GroupRotationTeamSetupCandidate(
-            TOURNAMENT_ID,
-            (1..12).map { entry("A:B", it, "Unique $it") } +
-                (1..12).map { entry("A:C", it, "Unique ${it + 12}") },
-        )
-        draftRepository.raw = tooMany.entries
-        val tooManyViewModel = viewModel()
-        tooManyViewModel.load(TOURNAMENT_ID)
-        advanceUntilIdle()
-        tooManyViewModel.saveTeamNames()
-        advanceUntilIdle()
-        assertTrue(tooManyViewModel.uiState.value.validationIssues.any {
-            it.code == com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssueCode.TOO_MANY_UNIQUE_TEAMS
-        })
     }
 
     @Test
@@ -456,7 +483,11 @@ class GroupRotationTeamEntryViewModelTest {
             "Alpha Team",
             viewModel.uiState.value.pairingSections.first().rows.first().teamName,
         )
-        assertTrue(draftRepository.cleared)
+        assertEquals(
+            " alpha team ",
+            viewModel.uiState.value.pairingSections[1].rows.first().teamName,
+        )
+        assertEquals(listOf("A:B"), draftRepository.clearedPairings)
     }
 
     @Test
@@ -711,6 +742,17 @@ class GroupRotationTeamEntryViewModelTest {
                 },
         )
 
+    private fun pairingCandidate(
+        pairingKey: String,
+        prefix: String,
+        blankSlots: Set<Int> = emptySet(),
+    ): GroupRotationTeamSetupCandidate = GroupRotationTeamSetupCandidate(
+        tournamentId = TOURNAMENT_ID,
+        entries = (1..12).map { slot ->
+            entry(pairingKey, slot, if (slot in blankSlots) "" else "$prefix $slot")
+        },
+    )
+
     private fun entry(pairingKey: String, lobbySlot: Int, teamName: String): GroupRotationPairingTeamEntry =
         GroupRotationPairingTeamEntry(GroupPairing.fromCanonicalKey(pairingKey), lobbySlot, teamName)
 
@@ -748,6 +790,7 @@ class GroupRotationTeamEntryViewModelTest {
     private class FakeDraftRepository : GroupRotationTeamSetupDraftRepository {
         var raw: List<GroupRotationPairingTeamEntry> = emptyList()
         var cleared = false
+        val clearedPairings = mutableListOf<String>()
         val events = mutableListOf<String>()
         var replaceCalls = 0
         var blockedTournamentId: String? = null
@@ -769,15 +812,30 @@ class GroupRotationTeamEntryViewModelTest {
                 writeStarted.complete(Unit)
                 releaseWrite.await()
             }
-            persistedByTournament[tournament.id] = candidate.entries
-            if (tournament.id == TOURNAMENT_ID) raw = candidate.entries
+            val submittedPairingKeys = candidate.entries.map { it.pairing.canonicalKey }.toSet()
+            val existing = persistedByTournament[tournament.id] ?: raw
+            val merged = existing.filterNot {
+                it.pairing.canonicalKey in submittedPairingKeys
+            } + candidate.entries
+            persistedByTournament[tournament.id] = merged
+            if (tournament.id == TOURNAMENT_ID) raw = merged
             return GroupRotationTeamSetupDraftSaveResult.Saved
         }
 
         override suspend fun clearDraft(tournamentId: String) {
             raw = emptyList()
+            persistedByTournament[tournamentId] = emptyList()
             cleared = true
             events += "draft-cleared"
+        }
+
+        override suspend fun clearDraftForPairing(tournamentId: String, pairing: GroupPairing) {
+            val existing = persistedByTournament[tournamentId] ?: raw
+            val retained = existing.filterNot { it.pairing == pairing }
+            persistedByTournament[tournamentId] = retained
+            if (tournamentId == TOURNAMENT_ID) raw = retained
+            clearedPairings += pairing.canonicalKey
+            events += "draft-cleared:${pairing.canonicalKey}"
         }
     }
 

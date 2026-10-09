@@ -33,6 +33,7 @@ data class GroupRotationTeamSetupValidatedEntry(
 
 enum class GroupRotationTeamSetupIssueCode {
     NOT_GROUP_ROTATION,
+    EMPTY_CANDIDATE,
     TOURNAMENT_ID_MISMATCH,
     MISSING_PAIRING,
     EXTRA_PAIRING,
@@ -82,17 +83,13 @@ class GroupRotationTeamSetupValidator(
         if (candidate.tournamentId != tournament.id) {
             issues += GroupRotationTeamSetupIssue(GroupRotationTeamSetupIssueCode.TOURNAMENT_ID_MISMATCH)
         }
+        if (candidate.entries.isEmpty()) {
+            issues += GroupRotationTeamSetupIssue(GroupRotationTeamSetupIssueCode.EMPTY_CANDIDATE)
+        }
 
-        val expectedPairings = tournament.selectedGroupPairings.sortedBy { it.canonicalKey }
-        val expectedKeys = expectedPairings.map { it.canonicalKey }.toSet()
+        val expectedKeys = tournament.selectedGroupPairings.map { it.canonicalKey }.toSet()
         val entriesByPairing = candidate.entries.groupBy { it.pairing.canonicalKey }
         val actualKeys = entriesByPairing.keys
-        expectedKeys.minus(actualKeys).sorted().forEach { pairingKey ->
-            issues += GroupRotationTeamSetupIssue(
-                code = GroupRotationTeamSetupIssueCode.MISSING_PAIRING,
-                pairingKey = pairingKey,
-            )
-        }
         actualKeys.minus(expectedKeys).sorted().forEach { pairingKey ->
             issues += GroupRotationTeamSetupIssue(
                 code = GroupRotationTeamSetupIssueCode.EXTRA_PAIRING,
@@ -112,9 +109,9 @@ class GroupRotationTeamSetupValidator(
             }
 
         val validatedEntries = mutableListOf<GroupRotationTeamSetupValidatedEntry>()
-        expectedPairings.forEach { pairing ->
-            val pairingKey = pairing.canonicalKey
-            val entries = entriesByPairing[pairingKey].orEmpty()
+        entriesByPairing.toSortedMap().forEach { (pairingKey, entries) ->
+            val pairing = entries.first().pairing
+            val isSelectedPairing = pairingKey in expectedKeys
             if (entries.size != GroupRotationPairingLobbySlot.MAX_LOBBY_SLOT_NUMBER) {
                 issues += GroupRotationTeamSetupIssue(
                     code = GroupRotationTeamSetupIssueCode.INVALID_PAIRING_ENTRY_COUNT,
@@ -173,7 +170,11 @@ class GroupRotationTeamSetupValidator(
                         lobbySlotNumber = entry.lobbySlotNumber,
                     )
                 }
-                if (entry.lobbySlotNumber in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS && displayName.isNotBlank()) {
+                if (
+                    isSelectedPairing &&
+                    entry.lobbySlotNumber in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS &&
+                    displayName.isNotBlank()
+                ) {
                     validatedEntries += GroupRotationTeamSetupValidatedEntry(
                         pairing = pairing,
                         lobbySlotNumber = entry.lobbySlotNumber,
@@ -257,9 +258,9 @@ class GroupRotationTeamSetupPlanner(
             )
         }
 
-        val existingByIdentity = existingBySlot.values
-            .map { it.single() }
-            .filter { it.teamName.isNotBlank() }
+        val existingSlots = existingBySlot.values.map { it.single() }
+        val existingByIdentity = existingSlots
+            .filter { normalizer.normalize(it.teamName).isNotBlank() }
             .groupBy { normalizer.normalize(it.teamName) }
         val ambiguousIdentity = existingByIdentity
             .filterValues { slots -> slots.size > 1 }
@@ -281,12 +282,17 @@ class GroupRotationTeamSetupPlanner(
         val assignedSlotByIdentity = linkedMapOf<String, Int>()
         val displayNameByIdentity = linkedMapOf<String, String>()
         val existingSlotByIdentity = existingByIdentity.mapValues { (_, slots) -> slots.single().slotNumber }
-        val usedSlotNumbers = validated.normalizedIdentities
-            .mapNotNull(existingSlotByIdentity::get)
+        val existingDisplayNameByIdentity = existingByIdentity.mapValues { (_, slots) -> slots.single().teamName }
+        val usedSlotNumbers = existingSlots
+            .filter { normalizer.normalize(it.teamName).isNotBlank() }
+            .map { it.slotNumber }
             .toMutableSet()
         val availableSlotNumbers = expectedSlotNumbers.sorted().toMutableList()
         validated.entries.forEach { entry ->
-            displayNameByIdentity.putIfAbsent(entry.normalizedTeamIdentity, entry.displayTeamName)
+            displayNameByIdentity.putIfAbsent(
+                entry.normalizedTeamIdentity,
+                existingDisplayNameByIdentity[entry.normalizedTeamIdentity] ?: entry.displayTeamName,
+            )
             if (entry.normalizedTeamIdentity in assignedSlotByIdentity) return@forEach
             val reusedSlot = existingSlotByIdentity[entry.normalizedTeamIdentity]
             val slotNumber = reusedSlot ?: availableSlotNumbers.firstOrNull { it !in usedSlotNumbers }
@@ -307,12 +313,14 @@ class GroupRotationTeamSetupPlanner(
         val identityBySlot = assignedSlotByIdentity.entries.associate { (identity, slot) -> slot to identity }
         val teamSlots = expectedSlots.map { expectedSlot ->
             val existing = existingBySlot[expectedSlot.slotNumber]?.single()
-            val baseSlot = existing ?: expectedSlot
-            baseSlot.copy(
-                teamName = identityBySlot[expectedSlot.slotNumber]
-                    ?.let(displayNameByIdentity::get)
-                    .orEmpty(),
-            )
+            val assignedIdentity = identityBySlot[expectedSlot.slotNumber]
+            when {
+                assignedIdentity == null -> existing ?: expectedSlot
+                existing != null && normalizer.normalize(existing.teamName).isNotBlank() -> existing
+                else -> (existing ?: expectedSlot).copy(
+                    teamName = displayNameByIdentity.getValue(assignedIdentity),
+                )
+            }
         }
         val mappings = validated.entries.map { entry ->
             GroupRotationPairingLobbySlot(

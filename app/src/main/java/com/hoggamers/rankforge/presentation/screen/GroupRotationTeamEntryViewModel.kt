@@ -52,6 +52,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
 
         data class ClearIfUnchanged(
             val tournamentId: String,
+            val pairing: GroupPairing,
             val expectedLoadGeneration: Long,
             val expectedEditGeneration: Long,
             val completion: CompletableDeferred<Unit>,
@@ -92,7 +93,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                                 loadGeneration == command.expectedLoadGeneration &&
                                 editGeneration == command.expectedEditGeneration
                             ) {
-                                draftRepository.clearDraft(command.tournamentId)
+                                draftRepository.clearDraftForPairing(command.tournamentId, command.pairing)
                             }
                         } catch (throwable: Throwable) {
                             if (throwable is kotlinx.coroutines.CancellationException) throw throwable
@@ -168,7 +169,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
             cloudSyncError = null,
         )
         _uiState.value = updated.copy(uniqueTeamCount = updated.uniqueNormalizedTeamCount())
-        enqueueDraftSave()
+        enqueueDraftSave(pairing)
     }
 
     fun onBulkTeamNamesApplied(teamNames: List<String>) {
@@ -193,13 +194,15 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
             cloudSyncError = null,
         )
         _uiState.value = updated.copy(uniqueTeamCount = updated.uniqueNormalizedTeamCount())
-        enqueueDraftSave()
+        enqueueDraftSave(selectedPairing.pairing)
     }
 
     fun saveTeamNames() {
         if (_uiState.value.isSaving) return
         val tournament = loadedTournament ?: return
-        val candidate = candidateFromState(tournament)
+        val selectedPairing = _uiState.value.selectedPairing ?: return
+        val savePairing = selectedPairing.pairing
+        val candidate = candidateFromState(tournament, savePairing)
         val saveTournamentId = tournament.id
         val saveLoadGeneration = loadGeneration
         val saveEditGeneration = editGeneration
@@ -249,6 +252,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                         if (cloudResult.shouldNavigateAfterLocalSave()) {
                             clearDraftIfUnchanged(
                                 tournamentId = saveTournamentId,
+                                pairing = savePairing,
                                 expectedLoadGeneration = saveLoadGeneration,
                                 expectedEditGeneration = saveEditGeneration,
                             )
@@ -256,12 +260,12 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                                 return@launch
                             }
                             val cleanedSections = _uiState.value.pairingSections.map { section ->
-                                section.copy(
+                                if (section.pairing != savePairing) section else section.copy(
                                     rows = section.rows.map { row ->
                                         row.copy(
-                                            teamName = cleanedNames[
-                                                section.pairing.canonicalKey to row.lobbySlotNumber
-                                            ].orEmpty(),
+                                            teamName = cleanedNames.getValue(
+                                                section.pairing.canonicalKey to row.lobbySlotNumber,
+                                            ),
                                         )
                                     },
                                 )
@@ -282,12 +286,12 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                             )
                         } else {
                             val cleanedSections = _uiState.value.pairingSections.map { section ->
-                                section.copy(
+                                if (section.pairing != savePairing) section else section.copy(
                                     rows = section.rows.map { row ->
                                         row.copy(
-                                            teamName = cleanedNames[
-                                                section.pairing.canonicalKey to row.lobbySlotNumber
-                                            ].orEmpty(),
+                                            teamName = cleanedNames.getValue(
+                                                section.pairing.canonicalKey to row.lobbySlotNumber,
+                                            ),
                                         )
                                     },
                                 )
@@ -358,7 +362,21 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                 return
             }
         }
-        publishLoadedState(tournament, draftCandidate ?: authoritativeCandidate ?: blankCandidate(tournament))
+        val authoritative = authoritativeCandidate ?: blankCandidate(tournament)
+        val hydratedCandidate = if (draftCandidate == null) {
+            authoritative
+        } else {
+            val draftedPairingKeys = draftCandidate.entries
+                .map { it.pairing.canonicalKey }
+                .toSet()
+            GroupRotationTeamSetupCandidate(
+                tournamentId = tournament.id,
+                entries = authoritative.entries.filterNot {
+                    it.pairing.canonicalKey in draftedPairingKeys
+                } + draftCandidate.entries,
+            )
+        }
+        publishLoadedState(tournament, hydratedCandidate)
     }
 
     private fun publishLoadedState(
@@ -425,22 +443,27 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
             },
         )
 
-    private fun candidateFromState(tournament: Tournament): GroupRotationTeamSetupCandidate =
+    private fun candidateFromState(
+        tournament: Tournament,
+        pairing: GroupPairing,
+    ): GroupRotationTeamSetupCandidate =
         GroupRotationTeamSetupCandidate(
             tournamentId = tournament.id,
-            entries = _uiState.value.pairingSections.flatMap { section ->
-                section.rows.map { row ->
-                    GroupRotationPairingTeamEntry(section.pairing, row.lobbySlotNumber, row.teamName)
-                }
-            },
+            entries = _uiState.value.pairingSections
+                .firstOrNull { it.pairing == pairing }
+                ?.rows
+                .orEmpty()
+                .map { row ->
+                    GroupRotationPairingTeamEntry(pairing, row.lobbySlotNumber, row.teamName)
+                },
         )
 
-    private fun enqueueDraftSave() {
+    private fun enqueueDraftSave(pairing: GroupPairing) {
         val tournament = loadedTournament ?: return
         draftWriteChannel.trySend(
             DraftWriteCommand.Save(
                 tournament = tournament,
-                candidate = candidateFromState(tournament),
+                candidate = candidateFromState(tournament, pairing),
             ),
         )
     }
@@ -453,6 +476,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
 
     private suspend fun clearDraftIfUnchanged(
         tournamentId: String,
+        pairing: GroupPairing,
         expectedLoadGeneration: Long,
         expectedEditGeneration: Long,
     ) {
@@ -460,6 +484,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
         draftWriteChannel.send(
             DraftWriteCommand.ClearIfUnchanged(
                 tournamentId = tournamentId,
+                pairing = pairing,
                 expectedLoadGeneration = expectedLoadGeneration,
                 expectedEditGeneration = expectedEditGeneration,
                 completion = completion,

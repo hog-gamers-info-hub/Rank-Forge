@@ -39,12 +39,15 @@ class RoomGroupRotationTeamSetupReadRepository @Inject constructor(
         val teamSlots = readDao.readTeamSlots(tournamentId)
         val expectedTeamSlots = tournament.formatDerivedSlots()
             .associateBy { it.slotNumber }
+        val teamSlotsByNumber = runCatching {
+            require(teamSlots.all { it.tournamentId == tournamentId })
+            teamSlots.map { it.toDomain() }.associateBy { it.slotNumber }
+        }.getOrElse {
+            return@withTransaction GroupRotationTeamSetupReadResult.InvalidStoredSetup
+        }
         if (
             teamSlots.size != expectedTeamSlots.size ||
-            teamSlots.any { storedSlot ->
-                val expectedSlot = expectedTeamSlots[storedSlot.slotNumber]
-                expectedSlot == null || storedSlot.group != expectedSlot.group?.name
-            }
+            teamSlotsByNumber.keys != expectedTeamSlots.keys
         ) {
             return@withTransaction GroupRotationTeamSetupReadResult.InvalidStoredSetup
         }
@@ -54,7 +57,14 @@ class RoomGroupRotationTeamSetupReadRepository @Inject constructor(
         }
         val expectedPairingKeys = tournament.selectedGroupPairings.map { it.canonicalKey }.toSet()
         val storedPairingKeys = rows.map { it.pairingKey }.toSet()
-        if (storedPairingKeys != expectedPairingKeys || rows.any { it.tournamentId != tournamentId }) {
+        if (rows.any { it.tournamentId != tournamentId } ||
+            storedPairingKeys.any { it !in expectedPairingKeys } ||
+            rows.groupBy { it.pairingKey }.any { (_, pairingRows) ->
+                pairingRows.size != 12 ||
+                    pairingRows.map { it.lobbySlotNumber }.toSet().size != 12 ||
+                    pairingRows.any { it.lobbySlotNumber !in 1..12 }
+            }
+        ) {
             return@withTransaction GroupRotationTeamSetupReadResult.InvalidStoredSetup
         }
 
@@ -63,6 +73,8 @@ class RoomGroupRotationTeamSetupReadRepository @Inject constructor(
                 val pairing = tournament.selectedGroupPairings
                     .first { it.canonicalKey == row.pairingKey }
                 require(row.resolvedTeamSlotNumber == row.teamSlotNumber)
+                val referencedTeamSlot = teamSlotsByNumber[row.teamSlotNumber] ?: error("Missing team slot")
+                require(referencedTeamSlot.teamName.isNotBlank())
                 require(!row.teamName.isNullOrBlank())
                 GroupRotationPairingTeamEntry(
                     pairing = pairing,

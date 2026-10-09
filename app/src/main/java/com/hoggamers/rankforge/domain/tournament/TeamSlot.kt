@@ -11,11 +11,6 @@ data class TeamSlot(
         require(slotNumber in TOURNAMENT_SLOT_NUMBERS) {
             "Team slot number must be between 1 and 24."
         }
-        if (slotNumber > STANDARD_TOURNAMENT_SLOT_CAPACITY) {
-            require(group != null) {
-                "Group tournament slots above 12 require a group identity."
-            }
-        }
         group?.let { selectedGroup ->
             require(slotNumber in selectedGroup.slotNumbers) {
                 "Team slot number does not belong to its group."

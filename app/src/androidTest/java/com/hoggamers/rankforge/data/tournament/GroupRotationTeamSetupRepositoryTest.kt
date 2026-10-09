@@ -53,7 +53,7 @@ class GroupRotationTeamSetupRepositoryTest {
     }
 
     @Test
-    fun saveReplacesCompleteMappingSetAndUsesOwnerScopedUseCase() = runBlocking {
+    fun saveKeepsExistingIdentityPoolWhenSubmittedSetupIsRepeated() = runBlocking {
         val tournament = createTournament(TournamentStatus.DRAFT)
         val repository = RoomTournamentRepository(database)
         repository.create(tournament)
@@ -73,10 +73,12 @@ class GroupRotationTeamSetupRepositoryTest {
 
         assertEquals(
             SaveGroupRotationTeamSetupResult.Saved,
-            useCase(candidate(teamNamePrefix = "Second")),
+            useCase(candidate(teamNamePrefix = "First")),
         )
         assertEquals(
-            (1..12).map { "Second $it" },
+            (1..18).map { slotNumber ->
+                if (slotNumber <= 12) "First $slotNumber" else ""
+            },
             database.teamSlotDao().observeByTournamentId(TOURNAMENT_ID).first().map { it.teamName },
         )
         assertEquals(
@@ -99,44 +101,81 @@ class GroupRotationTeamSetupRepositoryTest {
         )
         assertTrue(repository.confirmTournament(TOURNAMENT_ID))
 
+        val changedOneTeam = candidate("Initial").copy(
+            entries = candidate("Initial").entries.map { entry ->
+                if (entry.lobbySlotNumber == 1) entry.copy(teamName = "Changed 1") else entry
+            },
+        )
         assertEquals(
             GroupRotationTeamSetupLocalSaveResult.Saved,
-            repository.saveGroupRotationTeamSetup(candidate("Changed"), OWNER_ID),
+            repository.saveGroupRotationTeamSetup(changedOneTeam, OWNER_ID),
         )
 
         assertEquals(TournamentStatus.DRAFT, repository.observeById(TOURNAMENT_ID).first()?.status)
     }
 
     @Test
-    fun historyProtectionRejectsRosterBeforeMutation() = runBlocking {
-        val tournament = createTournament(TournamentStatus.DRAFT)
+    fun existingRosterDoesNotBlockFirstSetupForDifferentPairing() = runBlocking {
+        val tournament = createTournament(
+            TournamentStatus.DRAFT,
+            pairings = listOf("A:B", "B:C"),
+        )
         val repository = RoomTournamentRepository(database)
         repository.create(tournament)
         repository.saveGroupRotationTeamSetup(candidate("Initial"), OWNER_ID)
-        val beforeSlots = database.teamSlotDao().observeByTournamentId(TOURNAMENT_ID).first()
-        val beforeMappings = database.groupRotationPairingLobbySlotDao()
+        val beforeA = database.groupRotationPairingLobbySlotDao()
             .observeByTournamentId(TOURNAMENT_ID)
             .first()
+            .filter { it.pairingKey == "A:B" }
         database.rosterPlayerDao().upsertAll(
             listOf(RosterPlayerEntity(TOURNAMENT_ID, 1, 1, "Player")),
         )
 
-        val result = repository.saveGroupRotationTeamSetup(candidate("Changed"), OWNER_ID)
+        val result = repository.saveGroupRotationTeamSetup(
+            candidateForPairing(
+                tournament,
+                pairingKey = "B:C",
+                teamNames = (1..6).map { "Initial $it" } + (7..12).map { "Second $it" },
+            ),
+            OWNER_ID,
+        )
 
-        assertEquals(GroupRotationTeamSetupLocalSaveResult.ProtectedHistory, result)
-        assertEquals(beforeSlots, database.teamSlotDao().observeByTournamentId(TOURNAMENT_ID).first())
+        assertEquals(GroupRotationTeamSetupLocalSaveResult.Saved, result)
         assertEquals(
-            beforeMappings,
-            database.groupRotationPairingLobbySlotDao().observeByTournamentId(TOURNAMENT_ID).first(),
+            beforeA,
+            database.groupRotationPairingLobbySlotDao()
+                .observeByTournamentId(TOURNAMENT_ID)
+                .first()
+                .filter { it.pairingKey == "A:B" },
+        )
+        assertEquals(
+            12,
+            database.groupRotationPairingLobbySlotDao()
+                .observeByTournamentId(TOURNAMENT_ID)
+                .first()
+                .count { it.pairingKey == "B:C" },
+        )
+        assertEquals(
+            (1..6).map { "Initial $it" },
+            database.teamSlotDao().observeByTournamentId(TOURNAMENT_ID).first()
+                .filter { it.slotNumber in 1..6 }
+                .map { it.teamName },
         )
     }
 
     @Test
-    fun historyProtectionRejectsMatchBeforeMutation() = runBlocking {
-        val tournament = createTournament(TournamentStatus.DRAFT)
+    fun matchHistoryProtectsSubmittedPairingButAllowsAnotherPairing() = runBlocking {
+        val tournament = createTournament(
+            TournamentStatus.DRAFT,
+            pairings = listOf("A:B", "B:C"),
+        )
         val repository = RoomTournamentRepository(database)
         repository.create(tournament)
         repository.saveGroupRotationTeamSetup(candidate("Initial"), OWNER_ID)
+        val beforeA = database.groupRotationPairingLobbySlotDao()
+            .observeByTournamentId(TOURNAMENT_ID)
+            .first()
+            .filter { it.pairingKey == "A:B" }
         database.matchDao().upsert(
             MatchEntity(
                 id = "match-1",
@@ -150,8 +189,61 @@ class GroupRotationTeamSetupRepositoryTest {
         )
 
         assertEquals(
+            GroupRotationTeamSetupLocalSaveResult.Saved,
+            repository.saveGroupRotationTeamSetup(
+                candidateForPairing(
+                    tournament,
+                    pairingKey = "B:C",
+                    teamNames = (1..6).map { "Initial $it" } + (7..12).map { "Second $it" },
+                ),
+                OWNER_ID,
+            ),
+        )
+        assertEquals(
             GroupRotationTeamSetupLocalSaveResult.ProtectedHistory,
             repository.saveGroupRotationTeamSetup(candidate("Changed"), OWNER_ID),
+        )
+        assertEquals(
+            beforeA,
+            database.groupRotationPairingLobbySlotDao()
+                .observeByTournamentId(TOURNAMENT_ID)
+                .first()
+                .filter { it.pairingKey == "A:B" },
+        )
+    }
+
+    @Test
+    fun unknownMatchPairingProtectsSetupBeforeMutation() = runBlocking {
+        val tournament = createTournament(TournamentStatus.DRAFT)
+        val repository = RoomTournamentRepository(database)
+        repository.create(tournament)
+        repository.saveGroupRotationTeamSetup(candidate("Initial"), OWNER_ID)
+        val beforeSlots = database.teamSlotDao().observeByTournamentId(TOURNAMENT_ID).first()
+        val beforeMappings = database.groupRotationPairingLobbySlotDao()
+            .observeByTournamentId(TOURNAMENT_ID)
+            .first()
+        database.matchDao().upsert(
+            MatchEntity(
+                id = "match-unknown-pairing",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 1,
+                date = "2026-10-06",
+                mapName = "Alpine",
+                status = "DRAFT",
+                groupPairingKey = null,
+            ),
+        )
+
+        assertEquals(
+            GroupRotationTeamSetupLocalSaveResult.ProtectedHistory,
+            repository.saveGroupRotationTeamSetup(candidate("Changed"), OWNER_ID),
+        )
+        assertEquals(beforeSlots, database.teamSlotDao().observeByTournamentId(TOURNAMENT_ID).first())
+        assertEquals(
+            beforeMappings,
+            database.groupRotationPairingLobbySlotDao()
+                .observeByTournamentId(TOURNAMENT_ID)
+                .first(),
         )
     }
 
@@ -310,7 +402,7 @@ class GroupRotationTeamSetupRepositoryTest {
     }
 
     @Test
-    fun readRepositoryLoadsArbitrarySelectedPairingSubsetAndOrder() = runBlocking {
+    fun readRepositoryLoadsSingleConfiguredPairingWithoutInventingOtherPairings() = runBlocking {
         val tournament = createTournament(
             status = TournamentStatus.DRAFT,
             groupCount = 3,
@@ -318,13 +410,42 @@ class GroupRotationTeamSetupRepositoryTest {
         )
         val localRepository = RoomTournamentRepository(database)
         localRepository.create(tournament)
-        localRepository.saveGroupRotationTeamSetup(candidateFor(tournament, "Subset"), OWNER_ID)
+        localRepository.saveGroupRotationTeamSetup(
+            candidateForPairing(
+                tournament,
+                pairingKey = "A:C",
+                teamNames = (1..12).map { "Subset $it" },
+            ),
+            OWNER_ID,
+        )
 
         val result = RoomGroupRotationTeamSetupReadRepository(database)
             .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID) as GroupRotationTeamSetupReadResult.Loaded
 
         assertEquals(setOf("A:B", "A:C"), result.setup.tournament.selectedGroupPairings.map { it.canonicalKey }.toSet())
-        assertEquals(setOf("A:B", "A:C"), result.setup.candidate.entries.map { it.pairing.canonicalKey }.toSet())
+        assertEquals(setOf("A:C"), result.setup.candidate.entries.map { it.pairing.canonicalKey }.toSet())
+    }
+
+    @Test
+    fun readRepositoryAcceptsLegacyGroupMetadataOnPersistedTeamSlots() = runBlocking {
+        val tournament = createTournament(TournamentStatus.DRAFT)
+        val localRepository = RoomTournamentRepository(database)
+        localRepository.create(tournament)
+        localRepository.saveGroupRotationTeamSetup(candidate("Legacy"), OWNER_ID)
+        database.teamSlotDao().upsertAll(
+            database.teamSlotDao().readByTournamentId(TOURNAMENT_ID).map { slot ->
+                when (slot.slotNumber) {
+                    1 -> slot.copy(group = "A")
+                    13 -> slot.copy(group = "C")
+                    else -> slot
+                }
+            },
+        )
+
+        assertTrue(
+            RoomGroupRotationTeamSetupReadRepository(database)
+                .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID) is GroupRotationTeamSetupReadResult.Loaded,
+        )
     }
 
     @Test
@@ -468,20 +589,39 @@ class GroupRotationTeamSetupRepositoryTest {
         },
     )
 
+    private fun candidateForPairing(
+        tournament: Tournament,
+        pairingKey: String,
+        teamNames: List<String>,
+    ): GroupRotationTeamSetupCandidate {
+        require(teamNames.size == 12)
+        val pairing = tournament.selectedGroupPairings.first { it.canonicalKey == pairingKey }
+        return GroupRotationTeamSetupCandidate(
+            tournamentId = tournament.id,
+            entries = teamNames.mapIndexed { index, teamName ->
+                GroupRotationPairingTeamEntry(pairing, index + 1, teamName)
+            },
+        )
+    }
+
     private fun repeatedIdentityCandidate(
         tournament: Tournament,
-    ): GroupRotationTeamSetupCandidate = GroupRotationTeamSetupCandidate(
-        tournamentId = tournament.id,
-        entries = tournament.selectedGroupPairings.flatMap { pairing ->
-            (1..12).map { lobbySlot ->
-                GroupRotationPairingTeamEntry(
-                    pairing,
-                    lobbySlot,
-                    if (lobbySlot == 1) "Shared" else "${pairing.canonicalKey} Team $lobbySlot",
-                )
-            }
-        },
-    )
+    ): GroupRotationTeamSetupCandidate {
+        val firstPairing = tournament.selectedGroupPairings[0]
+        val secondPairing = tournament.selectedGroupPairings[1]
+        val firstNames = listOf("Shared") + (2..12).map { "A:B Team $it" }
+        val secondNames = listOf("Shared") +
+            (2..6).map { "A:B Team $it" } +
+            (7..12).map { "A:C Team $it" }
+        return GroupRotationTeamSetupCandidate(
+            tournamentId = tournament.id,
+            entries = listOf(firstPairing to firstNames, secondPairing to secondNames).flatMap { (pairing, names) ->
+                names.mapIndexed { index, name ->
+                    GroupRotationPairingTeamEntry(pairing, index + 1, name)
+                }
+            },
+        )
+    }
 
     private fun candidate(
         teamNamePrefix: String,

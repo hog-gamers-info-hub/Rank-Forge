@@ -1352,8 +1352,17 @@ class RoomTournamentRepository @Inject constructor(
                     }
                     is com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidationResult.Valid -> validation
                 }
-                if (database.matchDao().observeByTournamentId(candidate.tournamentId).first().isNotEmpty() ||
-                    database.rosterPlayerDao().observeByTournamentId(candidate.tournamentId).first().isNotEmpty()
+                val submittedPairingKeys = validated.entries
+                    .map { it.pairing.canonicalKey }
+                    .toSet()
+                val selectedPairingKeys = tournament.selectedGroupPairings
+                    .map { it.canonicalKey }
+                    .toSet()
+                if (database.matchDao().observeByTournamentId(candidate.tournamentId).first().any { match ->
+                        match.groupPairingKey == null ||
+                            match.groupPairingKey !in selectedPairingKeys ||
+                            match.groupPairingKey in submittedPairingKeys
+                    }
                 ) {
                     return@withTransaction GroupRotationTeamSetupLocalSaveResult.ProtectedHistory
                 }
@@ -1374,13 +1383,16 @@ class RoomTournamentRepository @Inject constructor(
                 val plannedMappings = plan.lobbySlotMappings
                     .map { it.toEntity() }
                     .sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
+                val mergedMappings = (
+                    existingMappings.filterNot { it.pairingKey in submittedPairingKeys } + plannedMappings
+                    ).sortedWith(compareBy({ it.pairingKey }, { it.lobbySlotNumber }))
                 val existingSlotEntities = database.teamSlotDao()
                     .observeByTournamentId(candidate.tournamentId)
                     .first()
                     .sortedBy { it.slotNumber }
                 val plannedSlotEntities = plan.teamSlots.map { it.toEntity() }.sortedBy { it.slotNumber }
                 val teamSlotsChanged = existingSlotEntities != plannedSlotEntities
-                val mappingsChanged = existingMappings != plannedMappings
+                val mappingsChanged = existingMappings != mergedMappings
                 val current = state.value
                 val nextTournament = if (tournament.status == TournamentStatus.CONFIRMED &&
                     (teamSlotsChanged || mappingsChanged)
@@ -1400,8 +1412,13 @@ class RoomTournamentRepository @Inject constructor(
                     slots = current.slots + (tournament.id to plan.teamSlots),
                 )
                 database.teamSlotDao().upsertAll(plannedSlotEntities)
-                database.groupRotationPairingLobbySlotDao().deleteByTournamentId(candidate.tournamentId)
-                database.groupRotationPairingLobbySlotDao().upsertAll(plannedMappings)
+                submittedPairingKeys.sorted().forEach { pairingKey ->
+                    database.groupRotationPairingLobbySlotDao().replaceForTournamentAndPairing(
+                        tournamentId = candidate.tournamentId,
+                        pairingKey = pairingKey,
+                        assignments = plannedMappings.filter { it.pairingKey == pairingKey },
+                    )
+                }
                 persistTournamentStatusChanges(current, next)
                 touchTournament(candidate.tournamentId)
                 saveLegacyState(next)

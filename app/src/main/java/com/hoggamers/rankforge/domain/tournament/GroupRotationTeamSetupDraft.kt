@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 enum class GroupRotationTeamSetupDraftIssueCode {
     NOT_GROUP_ROTATION,
     TOURNAMENT_ID_MISMATCH,
+    EMPTY_CANDIDATE,
     MISSING_PAIRING,
     EXTRA_PAIRING,
     INVALID_PAIRING_ENTRY_COUNT,
@@ -37,6 +38,11 @@ interface GroupRotationTeamSetupDraftRepository {
     ): GroupRotationTeamSetupDraftSaveResult
 
     suspend fun clearDraft(tournamentId: String)
+
+    suspend fun clearDraftForPairing(
+        tournamentId: String,
+        pairing: GroupPairing,
+    )
 }
 
 fun validateGroupRotationTeamSetupDraft(
@@ -50,23 +56,19 @@ fun validateGroupRotationTeamSetupDraft(
     if (candidate.tournamentId != tournament.id) {
         issues += GroupRotationTeamSetupDraftIssue(GroupRotationTeamSetupDraftIssueCode.TOURNAMENT_ID_MISMATCH)
     }
+    if (candidate.entries.isEmpty()) {
+        issues += GroupRotationTeamSetupDraftIssue(GroupRotationTeamSetupDraftIssueCode.EMPTY_CANDIDATE)
+    }
     val expectedKeys = tournament.selectedGroupPairings.map { it.canonicalKey }.toSet()
     val entriesByPairing = candidate.entries.groupBy { it.pairing.canonicalKey }
-    expectedKeys.minus(entriesByPairing.keys).sorted().forEach { pairingKey ->
-        issues += GroupRotationTeamSetupDraftIssue(
-            code = GroupRotationTeamSetupDraftIssueCode.MISSING_PAIRING,
-            pairingKey = pairingKey,
-        )
-    }
     entriesByPairing.keys.minus(expectedKeys).sorted().forEach { pairingKey ->
         issues += GroupRotationTeamSetupDraftIssue(
             code = GroupRotationTeamSetupDraftIssueCode.EXTRA_PAIRING,
             pairingKey = pairingKey,
         )
     }
-    tournament.selectedGroupPairings.sortedBy { it.canonicalKey }.forEach { pairing ->
-        val pairingKey = pairing.canonicalKey
-        val entries = entriesByPairing[pairingKey].orEmpty()
+    entriesByPairing.keys.intersect(expectedKeys).sorted().forEach { pairingKey ->
+        val entries = entriesByPairing.getValue(pairingKey)
         if (entries.size != GroupRotationPairingLobbySlot.MAX_LOBBY_SLOT_NUMBER) {
             issues += GroupRotationTeamSetupDraftIssue(
                 code = GroupRotationTeamSetupDraftIssueCode.INVALID_PAIRING_ENTRY_COUNT,
