@@ -39,6 +39,7 @@ data class FinalizedMatchResultUploadPayload(
 data class FinalizedMatchCloudSyncPayloads(
     val matches: List<FinalizedMatchUploadPayload>,
     val matchResults: List<FinalizedMatchResultUploadPayload>,
+    val tournamentFormat: TournamentFormat = TournamentFormat.STANDARD,
 )
 
 sealed interface FinalizedMatchCloudSyncMappingResult {
@@ -125,6 +126,7 @@ object FinalizedMatchCloudSyncMapper {
             FinalizedMatchCloudSyncPayloads(
                 matches = matchPayloadByLocalId.values.sortedBy { it.matchNumber },
                 matchResults = resultPayloads,
+                tournamentFormat = snapshot.tournament.format,
             ),
         )
     }

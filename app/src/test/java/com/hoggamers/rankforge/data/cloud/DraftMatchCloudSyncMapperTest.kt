@@ -45,6 +45,7 @@ class DraftMatchCloudSyncMapperTest {
         assertEquals(null, payloads.matchResults.single { it.teamSlotId != expectedTeamSlotId }.placement)
         assertEquals(7, payloads.matchResults.single { it.teamSlotId != expectedTeamSlotId }.kills)
         assertTrue(payloads.matchResults.all { it.reviewStatus == "draft" && it.source == "manual" })
+        assertEquals(TournamentFormat.STANDARD, payloads.tournamentFormat)
     }
 
     @Test
@@ -126,6 +127,7 @@ class DraftMatchCloudSyncMapperTest {
             TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), 7),
             result.payloads.matchResults.single().teamSlotId,
         )
+        assertEquals(TournamentFormat.GROUP_ROTATION, result.payloads.tournamentFormat)
     }
 
     @Test

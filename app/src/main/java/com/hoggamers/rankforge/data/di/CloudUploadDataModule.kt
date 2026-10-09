@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentSnapshotRpcInvoker
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentStandingsShareGateway
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentStandingsShareRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareGateway
@@ -24,6 +25,7 @@ import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRepositor
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentQuotaRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.TournamentSnapshotRpcInvoker
+import com.hoggamers.rankforge.data.cloud.MatchSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.DraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRepository
@@ -103,6 +105,12 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindTournamentSnapshotRpcInvoker(
         invoker: SupabaseTournamentSnapshotRpcInvoker,
     ): TournamentSnapshotRpcInvoker
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchSnapshotRpcInvoker(
+        invoker: SupabaseMatchSnapshotRpcInvoker,
+    ): MatchSnapshotRpcInvoker
 
     @Binds
     @Singleton

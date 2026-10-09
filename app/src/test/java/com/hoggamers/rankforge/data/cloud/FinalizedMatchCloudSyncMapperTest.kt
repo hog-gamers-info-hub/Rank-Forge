@@ -46,6 +46,7 @@ class FinalizedMatchCloudSyncMapperTest {
         assertEquals(1, payloads.matchResults.first { it.teamSlotId == expectedTeamSlotId }.placement)
         assertEquals(0, payloads.matchResults.first { it.teamSlotId == expectedTeamSlotId }.kills)
         assertEquals("confirmed", payloads.matchResults.first().reviewStatus)
+        assertEquals(TournamentFormat.STANDARD, payloads.tournamentFormat)
     }
 
     @Test
@@ -159,6 +160,7 @@ class FinalizedMatchCloudSyncMapperTest {
                 it.teamSlotId == teamSlotId(7)
             },
         )
+        assertEquals(TournamentFormat.GROUP_ROTATION, result.payloads.tournamentFormat)
     }
 
     @Test

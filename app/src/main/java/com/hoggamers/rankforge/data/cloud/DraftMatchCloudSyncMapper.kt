@@ -38,6 +38,7 @@ data class DraftMatchResultUploadPayload(
 data class DraftMatchCloudSyncPayloads(
     val matches: List<DraftMatchUploadPayload>,
     val matchResults: List<DraftMatchResultUploadPayload>,
+    val tournamentFormat: TournamentFormat = TournamentFormat.STANDARD,
 )
 
 sealed interface DraftMatchCloudSyncMappingResult {
@@ -130,6 +131,7 @@ object DraftMatchCloudSyncMapper {
                 matchResults = resultPayloads.sortedWith(
                     compareBy(DraftMatchResultUploadPayload::matchId, DraftMatchResultUploadPayload::teamSlotId),
                 ),
+                tournamentFormat = snapshot.tournament.format,
             ),
         )
     }
