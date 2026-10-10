@@ -11,17 +11,24 @@ object GroupRotationRestorationValidator {
             return pairingLobbySlots.isEmpty()
         }
 
-        val expectedSlots = runCatching { tournament.formatDerivedSlots() }.getOrNull()
-            ?: return false
-        val expectedSlotNumbers = expectedSlots.map { it.slotNumber }.toSet()
-        if (slots.size != expectedSlots.size || slots.map { it.slotNumber }.toSet() != expectedSlotNumbers) {
+        val expectedSlotCount = when (tournament.groupCount) {
+            3 -> 18
+            4 -> 24
+            else -> return false
+        }
+        val expectedSlotNumbers = (1..expectedSlotCount).toSet()
+        if (slots.size != expectedSlotCount || slots.map { it.slotNumber }.toSet() != expectedSlotNumbers) {
             return false
         }
-        if (slots.any { slot ->
-                slot.tournamentId != tournament.id ||
-                    expectedSlots.firstOrNull { it.slotNumber == slot.slotNumber }?.group != slot.group
-            }
-        ) {
+        if (slots.any { it.tournamentId != tournament.id }) {
+            return false
+        }
+
+        val normalizer = GroupRotationTeamIdentityNormalizer()
+        val normalizedOccupiedNames = slots
+            .map { normalizer.normalize(it.teamName) }
+            .filter(String::isNotBlank)
+        if (normalizedOccupiedNames.size != normalizedOccupiedNames.toSet().size) {
             return false
         }
 
@@ -29,7 +36,7 @@ object GroupRotationRestorationValidator {
 
         val expectedPairingKeys = tournament.selectedGroupPairings.map { it.canonicalKey }.toSet()
         val mappingsByPairing = pairingLobbySlots.groupBy { it.pairing.canonicalKey }
-        if (mappingsByPairing.keys != expectedPairingKeys) return false
+        if (mappingsByPairing.keys.any { it !in expectedPairingKeys }) return false
 
         val slotsByNumber = slots.associateBy { it.slotNumber }
         return mappingsByPairing.all { (pairingKey, mappings) ->

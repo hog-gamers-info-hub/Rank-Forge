@@ -20,7 +20,7 @@ class SupabaseTournamentRosterSnapshotRpcInvoker @Inject constructor(
     override suspend fun invokeGroupRotation(
         parameters: TournamentRosterCloudReplacementV2Parameters,
     ): RevisionWriteResponse = clientProvider.client.postgrest.rpc(
-        "replace_tournament_roster_snapshot_v2",
+        "replace_tournament_roster_snapshot_v3",
         parameters,
     ).decodeSingle()
 }

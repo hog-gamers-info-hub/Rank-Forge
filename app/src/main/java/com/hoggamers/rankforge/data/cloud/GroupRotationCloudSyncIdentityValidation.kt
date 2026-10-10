@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 
 internal fun groupRotationTeamSlotsByNumberOrNull(
@@ -21,7 +22,7 @@ internal fun groupRotationTeamSlotsByNumberOrNull(
         teamSlots.map { it.slotNumber }.toSet() != expectedByNumber.keys ||
         teamSlots.any { slot ->
             slot.tournamentId != tournament.id ||
-                expectedByNumber[slot.slotNumber]?.group != slot.group
+                !slot.group.isValidGroupRotationMetadata(tournament, slot.slotNumber)
         }
     ) {
         return null
@@ -55,4 +56,15 @@ internal fun MatchTeamIdentityContext.eligibleGroupRotationSlotNumbersOrNull(
         return null
     }
     return eligibleSlotNumbers
+}
+
+private fun TournamentGroup?.isValidGroupRotationMetadata(
+    tournament: Tournament,
+    slotNumber: Int,
+): Boolean = when (this) {
+    null -> true
+    TournamentGroup.A -> slotNumber in 1..6
+    TournamentGroup.B -> slotNumber in 7..12
+    TournamentGroup.C -> slotNumber in 13..18
+    TournamentGroup.D -> tournament.groupCount == 4 && slotNumber in 19..24
 }

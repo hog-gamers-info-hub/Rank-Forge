@@ -97,7 +97,7 @@ class TournamentCloudRestorationMapperTest {
     }
 
     @Test
-    fun restoresThreeGroupConfigurationAndGroupMembership() {
+    fun restoresThreeGroupConfigurationWithNullGroupMetadata() {
         val result = TournamentCloudRestorationMapper.mapSnapshot(
             groupPayload(3),
         )
@@ -109,6 +109,18 @@ class TournamentCloudRestorationMapperTest {
         assertEquals(3, snapshot.tournament.selectedGroupPairings.size)
         assertEquals((1..18).toList(), snapshot.slots.map { it.slotNumber })
         assertEquals("Team 13", snapshot.slots.single { it.slotNumber == 13 }.teamName)
+        assertTrue(snapshot.slots.all { it.group == null })
+    }
+
+    @Test
+    fun restoresValidLegacyGroupMetadataUnchanged() {
+        val result = TournamentCloudRestorationMapper.mapSnapshot(
+            groupPayload(3, slots = groupSlots(3, includeLegacyGroups = true)),
+        )
+
+        assertTrue(result is TournamentCloudRestorationMappingResult.Success)
+        val snapshot = (result as TournamentCloudRestorationMappingResult.Success).value
+        assertEquals(TournamentGroup.A, snapshot.slots.single { it.slotNumber == 1 }.group)
         assertEquals(TournamentGroup.C, snapshot.slots.single { it.slotNumber == 13 }.group)
     }
 
@@ -135,9 +147,17 @@ class TournamentCloudRestorationMapperTest {
     }
 
     @Test
-    fun rejectsGroupRotationWrongGroup() {
+    fun rejectsInvalidLegacyGroupSlotCombination() {
         val slots = groupSlots(3).map { slot ->
             if (slot.slotNumber == 13) slot.copy(group = "A") else slot
+        }
+        assertInvalid(groupPayload(3, slots = slots))
+    }
+
+    @Test
+    fun rejectsInvalidLegacyGroupString() {
+        val slots = groupSlots(3).map { slot ->
+            if (slot.slotNumber == 13) slot.copy(group = "not-a-group") else slot
         }
         assertInvalid(groupPayload(3, slots = slots))
     }
@@ -164,9 +184,17 @@ class TournamentCloudRestorationMapperTest {
     }
 
     @Test
-    fun rejectsMissingPairingMapping() {
-        val mappings = completeMappings().filterNot { it.pairingKey == "B:C" }
-        assertInvalid(groupPayload(3, mappings = mappings))
+    fun acceptsSingleConfiguredPairing() {
+        val mappings = completeMappings().filter { it.pairingKey == "A:B" }
+        val result = TournamentCloudRestorationMapper.mapSnapshot(groupPayload(3, mappings = mappings))
+
+        assertTrue(result is TournamentCloudRestorationMappingResult.Success)
+        assertEquals(
+            listOf("A:B"),
+            (result as TournamentCloudRestorationMappingResult.Success).value.pairingLobbySlots
+                .map { it.pairing.canonicalKey }
+                .distinct(),
+        )
     }
 
     @Test
@@ -254,6 +282,18 @@ class TournamentCloudRestorationMapperTest {
     }
 
     @Test
+    fun rejectsDuplicateNormalizedTeamIdentities() {
+        val slots = groupSlots(3).map { slot ->
+            when (slot.slotNumber) {
+                1 -> slot.copy(teamName = " Team   2 ")
+                2 -> slot.copy(teamName = "team 2")
+                else -> slot
+            }
+        }
+        assertInvalid(groupPayload(3, slots = slots, mappings = emptyList()))
+    }
+
+    @Test
     fun rejectsStandardMappingRows() {
         val standardMapping = GroupPairingLobbySlotUploadPayload(
             TOURNAMENT_ID,
@@ -289,15 +329,22 @@ class TournamentCloudRestorationMapperTest {
         pairingLobbySlots = mappings,
     )
 
-    private fun groupSlots(groupCount: Int) = (1..(groupCount * 6)).map { slotNumber ->
-        val group = TournamentGroup.entries[(slotNumber - 1) / 6]
+    private fun groupSlots(
+        groupCount: Int,
+        includeLegacyGroups: Boolean = false,
+    ) = (1..(groupCount * 6)).map { slotNumber ->
+        val group = if (includeLegacyGroups) {
+            TournamentGroup.entries[(slotNumber - 1) / 6].name
+        } else {
+            null
+        }
         TeamSlotUploadPayload(
             id = TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), slotNumber),
             tournamentId = TOURNAMENT_ID,
             slotNumber = slotNumber,
             teamName = "Team $slotNumber",
             status = "draft",
-            group = group.name,
+            group = group,
         )
     }
 

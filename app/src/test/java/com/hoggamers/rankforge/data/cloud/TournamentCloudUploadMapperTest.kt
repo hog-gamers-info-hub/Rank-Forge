@@ -98,7 +98,7 @@ class TournamentCloudUploadMapperTest {
         assertEquals(3, result.payloads.tournament.groupCount)
         assertEquals(3, result.payloads.tournament.selectedGroupPairings.size)
         assertEquals(18, result.payloads.teamSlots.size)
-        assertEquals("C", result.payloads.teamSlots.single { it.slotNumber == 13 }.group)
+        assertTrue(result.payloads.teamSlots.all { it.group == null })
         assertEquals(
             TournamentCloudIdentity.teamSlotId(UUID.fromString(TENANT_ID), 18),
             result.payloads.teamSlots.single { it.slotNumber == 18 }.id,
@@ -141,6 +141,22 @@ class TournamentCloudUploadMapperTest {
         )
 
         assertTrue(result is TournamentCloudUploadMappingResult.Success)
+    }
+
+    @Test
+    fun preservesValidLegacyGroupMetadataForGroupRotationSlots() {
+        val snapshot = groupRotationSnapshot().copy(
+            slots = groupRotationSnapshot().slots.map { slot ->
+                if (slot.slotNumber == 13) slot.copy(group = TournamentGroup.C) else slot
+            },
+        )
+
+        val result = TournamentCloudUploadMapper.map(snapshot, OWNER_ID)
+
+        assertTrue(result is TournamentCloudUploadMappingResult.Success)
+        val payloads = (result as TournamentCloudUploadMappingResult.Success).payloads
+        assertEquals(null, payloads.teamSlots.single { it.slotNumber == 1 }.group)
+        assertEquals("C", payloads.teamSlots.single { it.slotNumber == 13 }.group)
     }
 
     @Test
@@ -207,19 +223,18 @@ class TournamentCloudUploadMapperTest {
     }
 
     @Test
-    fun rejectsMissingSelectedPairingAndExtraPairing() {
+    fun acceptsSingleConfiguredPairingAndRejectsExtraPairing() {
         val first = GroupPairing(TournamentGroup.A, TournamentGroup.B)
         val second = GroupPairing(TournamentGroup.A, TournamentGroup.C)
 
-        assertEquals(
-            TournamentCloudUploadMappingResult.Invalid,
+        assertTrue(
             TournamentCloudUploadMapper.map(
                 groupRotationSnapshot(
                     pairings = listOf(first, second),
                     mappings = mappingFor(first, (1..12).toList()),
                 ),
                 OWNER_ID,
-            ),
+            ) is TournamentCloudUploadMappingResult.Success,
         )
         assertEquals(
             TournamentCloudUploadMappingResult.Invalid,
@@ -304,6 +319,24 @@ class TournamentCloudUploadMapperTest {
             mappings = mappingFor(pairing, (1..12).toList()),
         ).copy(
             slots = groupRotationSnapshot().slots.filterNot { it.slotNumber == 1 },
+        )
+
+        assertEquals(
+            TournamentCloudUploadMappingResult.Invalid,
+            TournamentCloudUploadMapper.map(snapshot, OWNER_ID),
+        )
+    }
+
+    @Test
+    fun rejectsDuplicateNormalizedOccupiedGroupRotationTeamNames() {
+        val snapshot = groupRotationSnapshot().copy(
+            slots = groupRotationSnapshot().slots.map { slot ->
+                when (slot.slotNumber) {
+                    1 -> slot.copy(teamName = "Alpha   Team")
+                    2 -> slot.copy(teamName = " alpha team ")
+                    else -> slot
+                }
+            },
         )
 
         assertEquals(

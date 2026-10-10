@@ -24,7 +24,7 @@ class SupabaseTournamentSnapshotRpcInvoker @Inject constructor(
     override suspend fun invokeGroupRotation(
         parameters: TournamentSnapshotWriteV2Parameters,
     ): RevisionWriteResponse = clientProvider.client.postgrest.rpc(
-        "write_tournament_snapshot_v2",
+        "write_tournament_snapshot_v3",
         parameters,
     ).decodeSingle()
 }

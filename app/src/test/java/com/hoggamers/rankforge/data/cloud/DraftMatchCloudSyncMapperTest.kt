@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
@@ -128,6 +129,64 @@ class DraftMatchCloudSyncMapperTest {
             result.payloads.matchResults.single().teamSlotId,
         )
         assertEquals(TournamentFormat.GROUP_ROTATION, result.payloads.tournamentFormat)
+    }
+
+    @Test
+    fun mapsGroupRotationDraftWithValidLegacyGroupMetadata() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+
+        listOf(3, 4).forEach { groupCount ->
+            val tournament = groupRotationTournament(pairing).copy(groupCount = groupCount)
+            val match = groupDraftMatch(pairing)
+            val teamSlots = legacyGroupTeamSlots(tournament)
+
+            val result = DraftMatchCloudSyncMapper.map(
+                DraftMatchCloudSyncSnapshot(
+                    tournament = tournament,
+                    teamSlots = teamSlots,
+                    matches = listOf(match),
+                    identityContextsByMatchId = mapOf(
+                        match.id to identityContext(tournament, pairing),
+                    ),
+                ),
+            ) as DraftMatchCloudSyncMappingResult.Success
+
+            assertEquals(
+                TournamentCloudIdentity.teamSlotId(UUID.fromString(TOURNAMENT_ID), 7),
+                result.payloads.matchResults.single().teamSlotId,
+            )
+            assertEquals(
+                teamSlots.map { it.group },
+                legacyGroupTeamSlots(tournament).map { it.group },
+            )
+        }
+    }
+
+    @Test
+    fun rejectsGroupRotationDraftWithLegacyGroupOutsideTournamentCapacity() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val tournament = groupRotationTournament(pairing).copy(groupCount = 3)
+        val malformedSlots = tournament.formatDerivedSlots().dropLast(1) + TeamSlot(
+            tournamentId = TOURNAMENT_ID,
+            slotNumber = 19,
+            teamName = "Team 19",
+            group = TournamentGroup.D,
+        )
+        val match = groupDraftMatch(pairing)
+
+        assertEquals(
+            DraftMatchCloudSyncMappingResult.Invalid,
+            DraftMatchCloudSyncMapper.map(
+                DraftMatchCloudSyncSnapshot(
+                    tournament = tournament,
+                    teamSlots = malformedSlots,
+                    matches = listOf(match),
+                    identityContextsByMatchId = mapOf(
+                        match.id to identityContext(tournament, pairing),
+                    ),
+                ),
+            ),
+        )
     }
 
     @Test
@@ -255,6 +314,19 @@ class DraftMatchCloudSyncMapperTest {
 
     private fun namedGroupTeamSlots(tournament: Tournament) =
         tournament.formatDerivedSlots().map { it.copy(teamName = "Team " + it.slotNumber) }
+
+    private fun legacyGroupTeamSlots(tournament: Tournament) =
+        tournament.formatDerivedSlots().map { slot ->
+            slot.copy(
+                teamName = "Team ${slot.slotNumber}",
+                group = when (slot.slotNumber) {
+                    in 1..6 -> TournamentGroup.A
+                    in 7..12 -> TournamentGroup.B
+                    in 13..18 -> TournamentGroup.C
+                    else -> TournamentGroup.D
+                },
+            )
+        }
 
     private fun identityContext(
         tournament: Tournament,

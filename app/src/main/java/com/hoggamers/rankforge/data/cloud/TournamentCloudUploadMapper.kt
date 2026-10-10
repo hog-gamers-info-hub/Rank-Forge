@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.data.cloud
 
 import com.hoggamers.rankforge.domain.tournament.RosterNameNormalizer
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityNormalizer
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
@@ -86,6 +87,21 @@ object TournamentCloudUploadMapper {
         }
         val expectedSlots = snapshot.tournament.formatDerivedSlots()
         val expectedSlotNumbers = expectedSlots.map { it.slotNumber }.toSet()
+        if (snapshot.tournament.format == TournamentFormat.GROUP_ROTATION) {
+            if (snapshot.slots.size != expectedSlots.size ||
+                slotsByNumber.keys != expectedSlotNumbers ||
+                slotsByNumber.values.any { it.size != 1 }
+            ) {
+                return TournamentCloudUploadMappingResult.Invalid
+            }
+            val identityNormalizer = GroupRotationTeamIdentityNormalizer()
+            val normalizedOccupiedNames = snapshot.slots
+                .map { identityNormalizer.normalize(it.teamName) }
+                .filter(String::isNotBlank)
+            if (normalizedOccupiedNames.size != normalizedOccupiedNames.toSet().size) {
+                return TournamentCloudUploadMappingResult.Invalid
+            }
+        }
         if (snapshot.slots.any { it.slotNumber !in expectedSlotNumbers } ||
             snapshot.rosters.keys.any { it !in expectedSlotNumbers }
         ) {
@@ -110,7 +126,7 @@ object TournamentCloudUploadMapper {
             val slotNumber = expectedSlot.slotNumber
             val localSlot = slotsByNumber[slotNumber]?.singleOrNull()
                 ?: expectedSlot
-            if (localSlot.group != expectedSlot.group) {
+            if (snapshot.tournament.format == TournamentFormat.STANDARD && localSlot.group != expectedSlot.group) {
                 return TournamentCloudUploadMappingResult.Invalid
             }
             TeamSlotUploadPayload(
@@ -177,7 +193,8 @@ object TournamentCloudUploadMapper {
         val selectedPairingKeys = snapshot.tournament.selectedGroupPairings
             .map { it.canonicalKey }
             .toSet()
-        if (mappings.map { it.pairing.canonicalKey }.toSet() != selectedPairingKeys) {
+        val configuredPairingKeys = mappings.map { it.pairing.canonicalKey }.toSet()
+        if (!configuredPairingKeys.all { it in selectedPairingKeys }) {
             return null
         }
         if (mappings.any {

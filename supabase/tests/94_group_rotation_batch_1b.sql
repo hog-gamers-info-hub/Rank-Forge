@@ -176,11 +176,11 @@ select is((
             from generate_series(1, 18) as slot_number
         ),
         '[]'::jsonb,
-        1
+        2
     )
 ), 'success', 'group pairing replacement is revision safe');
 select is((select count(*) from public.tournament_group_pairings where tournament_id = 'a2000000-0000-0000-0000-000000000003'), 1::bigint, 'stale group pairings are removed atomically');
-select is((select revision from public.tournaments where id = 'a2000000-0000-0000-0000-000000000003'), 2, 'group pairing replacement advances revision once');
+select is((select revision from public.tournaments where id = 'a2000000-0000-0000-0000-000000000003'), 3, 'group pairing replacement advances revision once');
 
 select is((
     select outcome
@@ -235,10 +235,10 @@ select is((
             from generate_series(1, 18) as slot_number
         ),
         '[]'::jsonb,
-        2
+        3
     )
 ), 'validation_failure', 'invalid group membership is rejected');
-select is((select revision from public.tournaments where id = 'a2000000-0000-0000-0000-000000000003'), 2, 'invalid group membership leaves revision unchanged');
+select is((select revision from public.tournaments where id = 'a2000000-0000-0000-0000-000000000003'), 3, 'invalid group membership leaves revision unchanged');
 
 select is((
     select outcome
@@ -276,7 +276,7 @@ select is((
             from generate_series(1, 24) as slot_number
         ),
         '[]'::jsonb,
-        0
+        1
     )
 ), 'success', 'four-group snapshot is accepted');
 select is((select count(*) from public.tournament_team_slots where tournament_id = 'a2000000-0000-0000-0000-000000000004'), 24::bigint, 'four-group snapshot stores 24 slots');
@@ -302,7 +302,7 @@ select is((
             from generate_series(1, 18) as slot_number
         ),
         '[]'::jsonb,
-        2
+        3
     )
 ), 'success', 'roster replacement accepts the configured 18-slot tournament');
 select is((select count(*) from public.tournament_team_slots where tournament_id = 'a2000000-0000-0000-0000-000000000003' and team_name like 'Replaced Three Team %'), 18::bigint, '18-slot replacement updates every team');
@@ -327,10 +327,10 @@ select is((
             from generate_series(1, 12) as slot_number
         ),
         '[]'::jsonb,
-        3
+        4
     )
 ), 'validation_failure', 'replacement rejects a non-configured slot count');
-select is((select revision from public.tournaments where id = 'a2000000-0000-0000-0000-000000000003'), 3, 'invalid replacement leaves revision unchanged');
+select is((select revision from public.tournaments where id = 'a2000000-0000-0000-0000-000000000003'), 4, 'invalid replacement leaves revision unchanged');
 
 select * from finish();
 rollback;

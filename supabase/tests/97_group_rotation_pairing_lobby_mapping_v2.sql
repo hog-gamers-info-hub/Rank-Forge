@@ -34,12 +34,60 @@ select is((select prosecdef from pg_proc where oid = 'public.write_tournament_sn
 select is((select prosecdef from pg_proc where oid = 'public.replace_tournament_roster_snapshot_v2(uuid,jsonb,jsonb,integer)'::regprocedure), false, 'V2 roster snapshot is SECURITY INVOKER');
 select is((select prosecdef from pg_proc where oid = 'public.write_match_snapshot_v2(uuid,jsonb,jsonb,integer)'::regprocedure), false, 'V2 match snapshot is SECURITY INVOKER');
 select is((select prosecdef from pg_proc where oid = 'public.finalize_match_snapshot_v2(uuid,jsonb,jsonb,integer)'::regprocedure), true, 'V2 finalization is SECURITY DEFINER');
-select ok((select pg_get_constraintdef(oid) like '%lobby_slot_number between 1 and 12%' from pg_constraint where conname = 'tournament_group_pairing_lobby_slots_lobby_check'), 'lobby slots remain constrained to 1..12');
-select ok((select pg_get_constraintdef(oid) like '%team_slot_number between 1 and 24%' from pg_constraint where conname = 'tournament_group_pairing_lobby_slots_team_check'), 'canonical team slots are constrained to 1..24');
-select ok((select pg_get_constraintdef(oid) like '%between 1 and 24%' from pg_constraint where conname = 'match_ocr_row_evidence_team_slot_check'), 'row OCR identity accepts canonical slot 24');
-select ok((select pg_get_constraintdef(oid) like '%between 1 and 24%' from pg_constraint where conname = 'match_ocr_correction_snapshots_team_slot_check'), 'correction OCR identity accepts canonical slot 24');
-select ok((select pg_get_constraintdef(oid) like '%between 1 and 12%' from pg_constraint where conname = 'match_ocr_row_evidence_placement_check'), 'row OCR placement remains 1..12');
-select ok((select pg_get_constraintdef(oid) like '%between 1 and 12%' from pg_constraint where conname = 'match_ocr_correction_snapshots_placement_check'), 'correction OCR placement remains 1..12');
+select ok(exists (
+    select 1
+    from pg_constraint c
+    where c.conname = 'tournament_group_pairing_lobby_slots_lobby_check'
+      and c.conrelid = 'public.tournament_group_pairing_lobby_slots'::regclass
+      and c.contype = 'c'
+      and c.convalidated
+      and pg_get_constraintdef(c.oid) ~* 'lobby_slot_number\s*>=\s*1.*<=\s*12'
+), 'lobby slots remain constrained to 1..12');
+select ok(exists (
+    select 1
+    from pg_constraint c
+    where c.conname = 'tournament_group_pairing_lobby_slots_team_check'
+      and c.conrelid = 'public.tournament_group_pairing_lobby_slots'::regclass
+      and c.contype = 'c'
+      and c.convalidated
+      and pg_get_constraintdef(c.oid) ~* 'team_slot_number\s*>=\s*1.*<=\s*24'
+), 'canonical team slots are constrained to 1..24');
+select ok(exists (
+    select 1
+    from pg_constraint c
+    where c.conname = 'match_ocr_row_evidence_team_slot_check'
+      and c.conrelid = 'public.match_ocr_row_evidence'::regclass
+      and c.contype = 'c'
+      and c.convalidated
+      and pg_get_constraintdef(c.oid) ~* 'original_suggested_team_slot\s*>=\s*1.*<=\s*24'
+), 'row OCR identity accepts canonical slot 24');
+select ok(exists (
+    select 1
+    from pg_constraint c
+    where c.conname = 'match_ocr_correction_snapshots_team_slot_check'
+      and c.conrelid = 'public.match_ocr_correction_snapshots'::regclass
+      and c.contype = 'c'
+      and c.convalidated
+      and pg_get_constraintdef(c.oid) ~* 'corrected_team_slot\s*>=\s*1.*<=\s*24'
+), 'correction OCR identity accepts canonical slot 24');
+select ok(exists (
+    select 1
+    from pg_constraint c
+    where c.conname = 'match_ocr_row_evidence_placement_check'
+      and c.conrelid = 'public.match_ocr_row_evidence'::regclass
+      and c.contype = 'c'
+      and c.convalidated
+      and pg_get_constraintdef(c.oid) ~* 'original_placement\s*>=\s*1.*<=\s*12'
+), 'row OCR placement remains 1..12');
+select ok(exists (
+    select 1
+    from pg_constraint c
+    where c.conname = 'match_ocr_correction_snapshots_placement_check'
+      and c.conrelid = 'public.match_ocr_correction_snapshots'::regclass
+      and c.contype = 'c'
+      and c.convalidated
+      and pg_get_constraintdef(c.oid) ~* 'corrected_placement\s*>=\s*1.*<=\s*12'
+), 'correction OCR placement remains 1..12');
 
 create temporary table v2_payloads (
     payload_key text primary key,

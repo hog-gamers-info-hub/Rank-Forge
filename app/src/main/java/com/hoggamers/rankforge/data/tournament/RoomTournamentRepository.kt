@@ -1693,6 +1693,23 @@ class RoomTournamentRepository @Inject constructor(
                 val existingSlots = database.teamSlotDao()
                     .observeByTournamentId(candidate.tournamentId)
                     .first()
+                val existingSlotsByNumber = existingSlots.groupBy { it.slotNumber }
+                if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                    val completeExistingSlotPool =
+                        existingSlots.size == expectedSlots.size &&
+                            existingSlotsByNumber.keys == expectedSlotNumbers.toSet() &&
+                            existingSlotsByNumber.values.all { it.size == 1 } &&
+                            existingSlots.all { it.tournamentId == candidate.tournamentId }
+                    if (!completeExistingSlotPool) {
+                        return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.InvalidCandidate
+                    }
+                    if (expectedSlotNumbers.any { slotNumber ->
+                            existingSlotsByNumber.getValue(slotNumber).single().teamName !=
+                                candidate.teamNamesBySlotNumber.getValue(slotNumber)
+                        }) {
+                        return@withTransaction ReplaceConfirmedTournamentRosterRepositoryResult.InvalidCandidate
+                    }
+                }
                 val existingRosters = expectedSlotNumbers.associateWith { slotNumber ->
                     database.rosterPlayerDao()
                         .observeByTournamentAndSlot(candidate.tournamentId, slotNumber)
@@ -1704,8 +1721,14 @@ class RoomTournamentRepository @Inject constructor(
                         candidate.rosterPlayersBySlotNumber.getValue(slotNumber)
                 }
                 val confirmedTournament = tournament.copy(status = TournamentStatus.CONFIRMED)
-                val replacementSlots = expectedSlots.map { slot ->
-                    slot.copy(teamName = candidate.teamNamesBySlotNumber.getValue(slot.slotNumber))
+                val replacementSlots = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                    expectedSlotNumbers.map { slotNumber ->
+                        existingSlotsByNumber.getValue(slotNumber).single().toDomain()
+                    }
+                } else {
+                    expectedSlots.map { slot ->
+                        slot.copy(teamName = candidate.teamNamesBySlotNumber.getValue(slot.slotNumber))
+                    }
                 }
                 val replacementRosters = expectedSlotNumbers.associate { slotNumber ->
                     RosterKey(candidate.tournamentId, slotNumber) to
@@ -1732,7 +1755,9 @@ class RoomTournamentRepository @Inject constructor(
                 }
                 val tournamentStatusChanged = tournament.status != TournamentStatus.CONFIRMED
 
-                database.teamSlotDao().upsertAll(replacementSlots.map { it.toEntity() })
+                if (tournament.format == TournamentFormat.STANDARD) {
+                    database.teamSlotDao().upsertAll(replacementSlots.map { it.toEntity() })
+                }
                 expectedSlotNumbers.forEach { slotNumber ->
                     database.rosterPlayerDao()
                         .deleteByTournamentAndSlot(candidate.tournamentId, slotNumber)

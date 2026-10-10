@@ -164,6 +164,62 @@ class FinalizedMatchCloudSyncMapperTest {
     }
 
     @Test
+    fun mapsGroupRotationFinalizedWithValidLegacyGroupMetadata() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+
+        listOf(3, 4).forEach { groupCount ->
+            val tournament = groupRotationTournament(pairing).copy(groupCount = groupCount)
+            val match = groupFinalizedMatch(tournament, pairing)
+            val teamSlots = legacyGroupTeamSlots(tournament)
+
+            val result = FinalizedMatchCloudSyncMapper.map(
+                FinalizedMatchCloudSyncSnapshot(
+                    tournament = tournament,
+                    teamSlots = teamSlots,
+                    matches = listOf(match),
+                    identityContextsByMatchId = mapOf(
+                        match.id to identityContext(tournament, pairing),
+                    ),
+                ),
+            ) as FinalizedMatchCloudSyncMappingResult.Success
+
+            assertEquals(12, result.payloads.matchResults.size)
+            assertTrue(result.payloads.matchResults.any { it.teamSlotId == teamSlotId(7) })
+            assertEquals(
+                teamSlots.map { it.group },
+                legacyGroupTeamSlots(tournament).map { it.group },
+            )
+        }
+    }
+
+    @Test
+    fun rejectsGroupRotationFinalizedWithLegacyGroupOutsideTournamentCapacity() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val tournament = groupRotationTournament(pairing).copy(groupCount = 3)
+        val malformedSlots = tournament.formatDerivedSlots().dropLast(1) + TeamSlot(
+            tournamentId = TOURNAMENT_ID,
+            slotNumber = 19,
+            teamName = "Team 19",
+            group = TournamentGroup.D,
+        )
+        val match = groupFinalizedMatch(tournament, pairing)
+
+        assertEquals(
+            FinalizedMatchCloudSyncMappingResult.Invalid,
+            FinalizedMatchCloudSyncMapper.map(
+                FinalizedMatchCloudSyncSnapshot(
+                    tournament = tournament,
+                    teamSlots = malformedSlots,
+                    matches = listOf(match),
+                    identityContextsByMatchId = mapOf(
+                        match.id to identityContext(tournament, pairing),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun rejectsGroupRotationFinalizedSnapshotWhenContextIsMissingOrMismatched() {
         val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
         val tournament = groupRotationTournament(pairing)
@@ -361,6 +417,19 @@ class FinalizedMatchCloudSyncMapperTest {
 
     private fun namedGroupTeamSlots(tournament: Tournament) =
         tournament.formatDerivedSlots().map { it.copy(teamName = "Team " + it.slotNumber) }
+
+    private fun legacyGroupTeamSlots(tournament: Tournament) =
+        tournament.formatDerivedSlots().map { slot ->
+            slot.copy(
+                teamName = "Team ${slot.slotNumber}",
+                group = when (slot.slotNumber) {
+                    in 1..6 -> TournamentGroup.A
+                    in 7..12 -> TournamentGroup.B
+                    in 13..18 -> TournamentGroup.C
+                    else -> TournamentGroup.D
+                },
+            )
+        }
 
     private fun identityContext(
         tournament: Tournament,

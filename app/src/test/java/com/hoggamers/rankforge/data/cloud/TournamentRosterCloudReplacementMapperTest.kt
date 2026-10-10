@@ -75,7 +75,59 @@ class TournamentRosterCloudReplacementMapperTest {
 
         assertEquals(24, result.payloads.teamSlots.size)
         assertEquals(TournamentFormat.GROUP_ROTATION, result.payloads.format)
-        assertEquals("D", result.payloads.teamSlots.single { it.slotNumber == 24 }.group)
+        assertTrue(result.payloads.teamSlots.all { it.group == null })
+    }
+
+    @Test
+    fun preservesValidLegacyGroupMetadataForGroupRotationSlots() {
+        val groupRotation = snapshot().copy(
+            tournament = snapshot().tournament.copy(
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = defaultGroupPairings(3),
+            ),
+        )
+        val result = TournamentRosterCloudReplacementMapper.map(
+            groupRotation.copy(
+                slots = groupRotation.tournament.formatDerivedSlots().map { slot ->
+                    if (slot.slotNumber == 13) slot.copy(group = com.hoggamers.rankforge.domain.tournament.TournamentGroup.C) else slot
+                },
+                rosters = emptyMap(),
+            ),
+            OWNER_ID,
+        )
+
+        assertTrue(result is TournamentRosterCloudReplacementMappingResult.Success)
+        val payloads = (result as TournamentRosterCloudReplacementMappingResult.Success).payloads
+        assertEquals(null, payloads.teamSlots.single { it.slotNumber == 1 }.group)
+        assertEquals("C", payloads.teamSlots.single { it.slotNumber == 13 }.group)
+    }
+
+    @Test
+    fun rejectsDuplicateNormalizedOccupiedGroupRotationTeamNames() {
+        val groupRotation = snapshot().copy(
+            tournament = snapshot().tournament.copy(
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = defaultGroupPairings(3),
+            ),
+            slots = snapshot().tournament.copy(
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = defaultGroupPairings(3),
+            ).formatDerivedSlots().map { slot ->
+                when (slot.slotNumber) {
+                    1 -> slot.copy(teamName = "Alpha   Team")
+                    2 -> slot.copy(teamName = " alpha team ")
+                    else -> slot.copy(teamName = "Team ${slot.slotNumber}")
+                }
+            },
+        )
+
+        assertEquals(
+            TournamentRosterCloudReplacementMappingResult.Invalid,
+            TournamentRosterCloudReplacementMapper.map(groupRotation, OWNER_ID),
+        )
     }
 
     private fun snapshot() = TournamentRosterCloudReplacement(

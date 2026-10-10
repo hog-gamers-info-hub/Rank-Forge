@@ -97,10 +97,6 @@ object TournamentCloudRestorationMapper {
             payloads.teamSlots.any {
                 it.tournamentId != payloads.tournament.id ||
                     it.slotNumber !in expectedSlotNumbers
-            } ||
-            payloads.teamSlots.any { payload ->
-                val expected = expectedSlots.firstOrNull { it.slotNumber == payload.slotNumber }
-                expected == null || payload.group?.toTournamentGroupOrNull() != expected.group
             }
         ) {
             return TournamentCloudRestorationMappingResult.Invalid
@@ -108,20 +104,52 @@ object TournamentCloudRestorationMapper {
 
         if (format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION &&
             (payloads.teamSlots.size != expectedSlots.size ||
-                slotsByNumber.keys != expectedSlotNumbers)
+                slotsByNumber.keys != expectedSlotNumbers ||
+                slotsByNumber.values.any { it.size != 1 })
         ) {
             return TournamentCloudRestorationMappingResult.Invalid
         }
 
-        val slots = expectedSlots.map { expectedSlot ->
-            val slotNumber = expectedSlot.slotNumber
-            val payload = slotsByNumber[slotNumber]?.singleOrNull()
-            TeamSlot.create(
-                tournamentId = payloads.tournament.id,
-                slotNumber = slotNumber,
-                teamName = payload?.teamName.orEmpty(),
-                group = expectedSlot.group,
-            )
+        val slots = if (format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION) {
+            val incomingGroupBySlot = mutableMapOf<Int, TournamentGroup?>()
+            payloads.teamSlots.forEach { payload ->
+                val group = if (payload.group == null) {
+                    null
+                } else {
+                    payload.group.toTournamentGroupOrNull()
+                        ?: return TournamentCloudRestorationMappingResult.Invalid
+                }
+                incomingGroupBySlot[payload.slotNumber] = group
+            }
+            runCatching {
+                expectedSlots.map { expectedSlot ->
+                    val payload = slotsByNumber.getValue(expectedSlot.slotNumber).single()
+                    TeamSlot.create(
+                        tournamentId = payloads.tournament.id,
+                        slotNumber = expectedSlot.slotNumber,
+                        teamName = payload.teamName,
+                        group = incomingGroupBySlot.getValue(expectedSlot.slotNumber),
+                    )
+                }
+            }.getOrElse { return TournamentCloudRestorationMappingResult.Invalid }
+        } else {
+            if (payloads.teamSlots.any { payload ->
+                    val expected = expectedSlots.firstOrNull { it.slotNumber == payload.slotNumber }
+                    expected == null || payload.group?.toTournamentGroupOrNull() != expected.group
+                }
+            ) {
+                return TournamentCloudRestorationMappingResult.Invalid
+            }
+            expectedSlots.map { expectedSlot ->
+                val slotNumber = expectedSlot.slotNumber
+                val payload = slotsByNumber[slotNumber]?.singleOrNull()
+                TeamSlot.create(
+                    tournamentId = payloads.tournament.id,
+                    slotNumber = slotNumber,
+                    teamName = payload?.teamName.orEmpty(),
+                    group = expectedSlot.group,
+                )
+            }
         }
 
         if (format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.STANDARD &&
