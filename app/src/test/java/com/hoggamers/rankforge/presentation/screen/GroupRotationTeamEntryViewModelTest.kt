@@ -7,6 +7,12 @@ import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamEntry
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingAssignment
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalSnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityWriteResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupCandidate
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftSaveResult
@@ -16,6 +22,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadRepos
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadResult
 import com.hoggamers.rankforge.domain.tournament.ReadGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamIdentitySetupUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
@@ -35,6 +42,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import java.util.UUID
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,6 +55,7 @@ class GroupRotationTeamEntryViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var readRepository: FakeReadRepository
     private lateinit var saveRepository: FakeSaveRepository
+    private lateinit var identityRepository: FakeIdentityRepository
     private lateinit var draftRepository: FakeDraftRepository
     private lateinit var uploadAction: RecordingUploadAction
 
@@ -55,6 +64,7 @@ class GroupRotationTeamEntryViewModelTest {
         kotlinx.coroutines.Dispatchers.setMain(dispatcher)
         readRepository = FakeReadRepository()
         saveRepository = FakeSaveRepository()
+        identityRepository = FakeIdentityRepository()
         draftRepository = FakeDraftRepository()
         uploadAction = RecordingUploadAction()
         TestAuthRepository.state = AuthState.SignedIn(AuthUser(OWNER_ID, "owner@example.test"))
@@ -86,6 +96,145 @@ class GroupRotationTeamEntryViewModelTest {
                 .all { it.teamName.isEmpty() },
         )
         assertEquals(18, viewModel.uiState.value.maximumUniqueTeams)
+    }
+
+    @Test
+    fun groupRotationUuidSaveIsLocalAndDoesNotUpload() = runTest {
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        val teamUuid = "00000000-0000-0000-0000-000000000001"
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Saved(
+            GroupRotationTeamIdentityLocalSnapshot(
+                teams = listOf(
+                    GroupRotationTeamIdentity(
+                        tournamentId = TOURNAMENT_ID,
+                        teamUUID = teamUuid,
+                        displayName = "Phoenix",
+                        normalizedName = "phoenix",
+                    ),
+                ),
+                assignments = listOf(
+                    GroupRotationPairingAssignment(
+                        tournamentId = TOURNAMENT_ID,
+                        pairingKey = GroupPairing.fromCanonicalKey("A:B"),
+                        lobbySlotNumber = 1,
+                        teamUUID = teamUuid,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = viewModel()
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(GroupPairing.fromCanonicalKey("A:B"), 1, "Phoenix")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(1, identityRepository.saveCalls)
+        assertEquals(0, saveRepository.saveCalls)
+        assertEquals(0, uploadAction.calls)
+        assertEquals("Phoenix", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
+    }
+
+    @Test
+    fun stalePairingDraftIsPreservedForConflictReview() = runTest {
+        val teamUuid = "00000000-0000-0000-0000-000000000002"
+        identityRepository.readResult = GroupRotationTeamIdentityReadResult.Loaded(
+            GroupRotationTeamIdentityLocalSnapshot(
+                teams = listOf(
+                    GroupRotationTeamIdentity(TOURNAMENT_ID, teamUuid, "Phoenix Renamed", "phoenix renamed"),
+                ),
+                assignments = listOf(
+                    GroupRotationPairingAssignment(
+                        TOURNAMENT_ID,
+                        GroupPairing.fromCanonicalKey("A:B"),
+                        1,
+                        teamUuid,
+                    ),
+                ),
+            ),
+        )
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = (1..12).map { lobbySlot ->
+            entry("A:B", lobbySlot, if (lobbySlot == 1) "Phoenix" else "")
+        }
+        val viewModel = viewModel()
+
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+
+        assertEquals(
+            "Phoenix",
+            viewModel.uiState.value.pairingSections.first().rows.first().teamName,
+        )
+    }
+
+    @Test
+    fun staleRenameDraftIsPreservedButCannotReplaceAuthoritativeIdentity() = runTest {
+        val teamUuid = "00000000-0000-0000-0000-000000000003"
+        identityRepository.readResult = GroupRotationTeamIdentityReadResult.Loaded(
+            GroupRotationTeamIdentityLocalSnapshot(
+                teams = listOf(GroupRotationTeamIdentity(TOURNAMENT_ID, teamUuid, "Phoenix Renamed", "phoenix renamed")),
+                assignments = listOf(
+                    GroupRotationPairingAssignment(
+                        TOURNAMENT_ID,
+                        GroupPairing.fromCanonicalKey("A:B"),
+                        1,
+                        teamUuid,
+                    ),
+                ),
+            ),
+        )
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = (1..12).map { lobbySlot ->
+            entry("A:B", lobbySlot, if (lobbySlot == 1) "Phoenix" else "")
+        }
+        val viewModel = viewModel()
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(0, identityRepository.saveCalls)
+        assertTrue(viewModel.uiState.value.validationIssues.any {
+            it.code == com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssueCode.AMBIGUOUS_EXISTING_IDENTITY
+        })
+        assertEquals("Phoenix", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
+    }
+
+    @Test
+    fun legitimateDraftForUnassignedSlotSurvivesRestartAndCanBeSaved() = runTest {
+        identityRepository.readResult = GroupRotationTeamIdentityReadResult.Loaded(
+            GroupRotationTeamIdentityLocalSnapshot(emptyList(), emptyList()),
+        )
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        draftRepository.raw = pairingCandidate("A:B", "Draft").entries
+        val viewModel = viewModel()
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+
+        assertEquals("Draft 1", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(1, identityRepository.saveCalls)
+        assertEquals(null, saveRepository.savedCandidate)
+    }
+
+    @Test
+    fun uuidSaveRejectsTournamentOwnedByAnotherSignedInAccount() = runTest {
+        val ownedByOther = tournament(ownerUserId = OTHER_OWNER_ID)
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(ownedByOther)
+        draftRepository.raw = pairingCandidate("A:B", "Team").entries
+        val viewModel = viewModel()
+        viewModel.load(ownedByOther.id)
+        advanceUntilIdle()
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(GroupRotationTeamEntrySaveError.Unexpected, viewModel.uiState.value.saveError)
+        assertEquals(0, identityRepository.saveCalls)
+        assertEquals(0, saveRepository.saveCalls)
+        assertEquals(0, uploadAction.calls)
     }
 
     @Test
@@ -138,8 +287,8 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        assertEquals(12, saveRepository.savedCandidate?.entries?.size)
-        assertTrue(saveRepository.savedCandidate?.entries.orEmpty().all { it.pairing.canonicalKey == "A:B" })
+        assertEquals(1, identityRepository.saveCalls)
+        assertEquals(null, saveRepository.savedCandidate)
         assertTrue(viewModel.uiState.value.pairingSections[1].rows.all { it.teamName.isEmpty() })
     }
 
@@ -198,7 +347,7 @@ class GroupRotationTeamEntryViewModelTest {
     }
 
     @Test
-    fun invalidBlankSetupStaysReviewRequiredAndDoesNotSave() = runTest {
+    fun emptyUnassignedPairingSavesWithoutCreatingIdentities() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         val viewModel = viewModel()
         viewModel.load(TOURNAMENT_ID)
@@ -208,8 +357,10 @@ class GroupRotationTeamEntryViewModelTest {
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isSaving)
-        assertTrue(viewModel.uiState.value.validationIssues.isNotEmpty())
+        assertTrue(viewModel.uiState.value.validationIssues.isEmpty())
+        assertEquals(1, identityRepository.saveCalls)
         assertTrue(saveRepository.savedCandidate == null)
+        assertEquals(0, uploadAction.calls)
     }
 
     @Test
@@ -226,18 +377,16 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        assertEquals(
-            complete.entries.filter { it.pairing.canonicalKey == "A:B" },
-            saveRepository.savedCandidate?.entries,
-        )
+        assertEquals(1, identityRepository.saveCalls)
+        assertEquals(null, saveRepository.savedCandidate)
         assertEquals(listOf("A:B"), draftRepository.clearedPairings)
         assertTrue(draftRepository.raw.any { it.pairing.canonicalKey == "A:C" })
         assertEquals(
             GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails,
             navigation.await(),
         )
-        assertEquals(1, uploadAction.calls)
-        assertEquals(listOf("cloud-upload", "draft-cleared:A:B"), draftRepository.events)
+        assertEquals(0, uploadAction.calls)
+        assertEquals(listOf("draft-cleared:A:B"), draftRepository.events)
     }
 
     @Test
@@ -261,13 +410,14 @@ class GroupRotationTeamEntryViewModelTest {
         assertEquals(null, viewModel.uiState.value.saveError)
         assertEquals(null, viewModel.uiState.value.cloudSyncError)
         assertEquals(listOf("A:B"), draftRepository.clearedPairings)
-        assertEquals(listOf("cloud-upload", "draft-cleared:A:B"), draftRepository.events)
+        assertEquals(listOf("draft-cleared:A:B"), draftRepository.events)
     }
 
     @Test
     fun localSaveWithQueuePersistenceFailureStaysOnScreenWithCloudError() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         draftRepository.raw = completeCandidate("Team").entries
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Unsupported
         uploadAction.result = QueueAwareActionResult(
             primaryResult = TournamentCloudUploadResult.NetworkFailure,
             queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
@@ -280,8 +430,10 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        assertEquals(GroupRotationTeamEntryCloudSyncError.QueuePersistenceFailed, viewModel.uiState.value.cloudSyncError)
-        assertEquals(null, viewModel.uiState.value.saveError)
+        assertEquals(GroupRotationTeamEntrySaveError.Unexpected, viewModel.uiState.value.saveError)
+        assertEquals(null, viewModel.uiState.value.cloudSyncError)
+        assertEquals(0, saveRepository.saveCalls)
+        assertEquals(0, uploadAction.calls)
         assertFalse(draftRepository.cleared)
         assertFalse(navigation.isCompleted)
         navigation.cancel()
@@ -291,6 +443,7 @@ class GroupRotationTeamEntryViewModelTest {
     fun localSaveWithNonNetworkCloudFailureStaysOnScreenAsCloudFailure() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         draftRepository.raw = completeCandidate("Team").entries
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Unsupported
         uploadAction.result = QueueAwareActionResult(
             primaryResult = TournamentCloudUploadResult.ValidationFailure,
             queueRecordingResult = QueueRecordingResult.RECORDED,
@@ -303,8 +456,10 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        assertEquals(GroupRotationTeamEntryCloudSyncError.ValidationFailure, viewModel.uiState.value.cloudSyncError)
-        assertEquals(null, viewModel.uiState.value.saveError)
+        assertEquals(GroupRotationTeamEntrySaveError.Unexpected, viewModel.uiState.value.saveError)
+        assertEquals(null, viewModel.uiState.value.cloudSyncError)
+        assertEquals(0, saveRepository.saveCalls)
+        assertEquals(0, uploadAction.calls)
         assertTrue(draftRepository.clearedPairings.isEmpty())
         assertTrue(draftRepository.raw.any { it.pairing.canonicalKey == "A:B" })
         assertTrue(draftRepository.raw.any { it.pairing.canonicalKey == "A:C" })
@@ -317,17 +472,17 @@ class GroupRotationTeamEntryViewModelTest {
     fun staleCloudCompletionDoesNotNavigateOrOverwriteNewerDraft() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         draftRepository.raw = completeCandidate("Team").entries
-        uploadAction.blocked = true
+        identityRepository.blocked = true
         val viewModel = viewModel()
         viewModel.load(TOURNAMENT_ID)
         advanceUntilIdle()
         val navigation = async { viewModel.navigationEvents.first() }
         viewModel.saveTeamNames()
         runCurrent()
-        uploadAction.started.await()
+        identityRepository.saveStarted.await()
 
         viewModel.onTeamNameChanged(GroupPairing.fromCanonicalKey("A:B"), 1, "Newer")
-        uploadAction.release.complete(Unit)
+        identityRepository.release.complete(Unit)
         advanceUntilIdle()
 
         assertEquals("Newer", draftRepository.raw.first { it.pairing.canonicalKey == "A:B" && it.lobbySlotNumber == 1 }.teamName)
@@ -520,13 +675,13 @@ class GroupRotationTeamEntryViewModelTest {
         val tournamentB = tournament(id = "other-tournament")
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentA)
         draftRepository.raw = completeCandidate("A").entries
-        saveRepository.blocked = true
+        identityRepository.blocked = true
         val viewModel = viewModel()
         viewModel.load(tournamentA.id)
         advanceUntilIdle()
         viewModel.saveTeamNames()
         runCurrent()
-        assertTrue(saveRepository.saveStarted.isCompleted)
+        assertTrue(identityRepository.saveStarted.isCompleted)
 
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentB)
         draftRepository.raw = completeCandidate("B").entries
@@ -534,7 +689,7 @@ class GroupRotationTeamEntryViewModelTest {
         advanceUntilIdle()
         val navigation = async { viewModel.navigationEvents.first() }
 
-        saveRepository.release.complete(Unit)
+        identityRepository.release.complete(Unit)
         advanceUntilIdle()
 
         assertEquals("B 1", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
@@ -550,13 +705,13 @@ class GroupRotationTeamEntryViewModelTest {
         val tournamentB = tournament(id = "other-tournament")
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentA)
         draftRepository.raw = completeCandidate("A-old").entries
-        saveRepository.blocked = true
+        identityRepository.blocked = true
         val viewModel = viewModel()
         viewModel.load(tournamentA.id)
         advanceUntilIdle()
         viewModel.saveTeamNames()
         runCurrent()
-        assertTrue(saveRepository.saveStarted.isCompleted)
+        assertTrue(identityRepository.saveStarted.isCompleted)
 
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentB)
         draftRepository.raw = completeCandidate("B").entries
@@ -567,7 +722,7 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.load(tournamentA.id)
         advanceUntilIdle()
 
-        saveRepository.release.complete(Unit)
+        identityRepository.release.complete(Unit)
         advanceUntilIdle()
 
         assertEquals("A-new 1", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
@@ -581,20 +736,20 @@ class GroupRotationTeamEntryViewModelTest {
         val tournamentB = tournament(id = "other-tournament")
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentA)
         draftRepository.raw = completeCandidate("A").entries
-        saveRepository.blocked = true
-        saveRepository.result = GroupRotationTeamSetupLocalSaveResult.ProtectedHistory
+        identityRepository.blocked = true
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.ProtectedHistory
         val viewModel = viewModel()
         viewModel.load(tournamentA.id)
         advanceUntilIdle()
         viewModel.saveTeamNames()
         runCurrent()
-        assertTrue(saveRepository.saveStarted.isCompleted)
+        assertTrue(identityRepository.saveStarted.isCompleted)
 
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentB)
         draftRepository.raw = completeCandidate("B").entries
         viewModel.load(tournamentB.id)
         advanceUntilIdle()
-        saveRepository.release.complete(Unit)
+        identityRepository.release.complete(Unit)
         advanceUntilIdle()
 
         assertEquals("B 1", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
@@ -609,11 +764,11 @@ class GroupRotationTeamEntryViewModelTest {
         val tournamentB = tournament(id = "other-tournament")
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentA)
         draftRepository.raw = completeCandidate("A").entries
-        saveRepository.blocked = true
-        saveRepository.result = GroupRotationTeamSetupLocalSaveResult.InvalidSetup(
+        identityRepository.blocked = true
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Invalid(
             listOf(
-                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssue(
-                    com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssueCode.INVALID_LOBBY_SLOT,
+                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssue(
+                    com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssueCode.INVALID_LOBBY_SLOT,
                 ),
             ),
         )
@@ -622,13 +777,13 @@ class GroupRotationTeamEntryViewModelTest {
         advanceUntilIdle()
         viewModel.saveTeamNames()
         runCurrent()
-        assertTrue(saveRepository.saveStarted.isCompleted)
+        assertTrue(identityRepository.saveStarted.isCompleted)
 
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournamentB)
         draftRepository.raw = completeCandidate("B").entries
         viewModel.load(tournamentB.id)
         advanceUntilIdle()
-        saveRepository.release.complete(Unit)
+        identityRepository.release.complete(Unit)
         advanceUntilIdle()
 
         assertEquals("B 1", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
@@ -641,7 +796,7 @@ class GroupRotationTeamEntryViewModelTest {
     fun duplicateSaveIsIgnoredAndNewerEditSurvivesBlockedSave() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         draftRepository.raw = completeCandidate("Team").entries
-        saveRepository.blocked = true
+        identityRepository.blocked = true
         val viewModel = viewModel()
         viewModel.load(TOURNAMENT_ID)
         advanceUntilIdle()
@@ -649,12 +804,12 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.saveTeamNames()
         runCurrent()
         viewModel.saveTeamNames()
-        assertEquals(1, saveRepository.saveCalls)
+        assertEquals(1, identityRepository.saveCalls)
 
         val navigation = async { viewModel.navigationEvents.first() }
         viewModel.onTeamNameChanged(GroupPairing.fromCanonicalKey("A:B"), 1, "Newer")
         advanceUntilIdle()
-        saveRepository.release.complete(Unit)
+        identityRepository.release.complete(Unit)
         advanceUntilIdle()
 
         assertEquals("Newer", viewModel.uiState.value.pairingSections.first().rows.first().teamName)
@@ -672,11 +827,11 @@ class GroupRotationTeamEntryViewModelTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         draftRepository.raw = complete.entries
         val results = listOf(
-            GroupRotationTeamSetupLocalSaveResult.ProtectedHistory to GroupRotationTeamEntrySaveError.ProtectedHistory,
-            GroupRotationTeamSetupLocalSaveResult.TournamentNotFound to GroupRotationTeamEntrySaveError.TournamentNotFound,
+            GroupRotationTeamIdentityWriteResult.ProtectedHistory to GroupRotationTeamEntrySaveError.ProtectedHistory,
+            GroupRotationTeamIdentityWriteResult.Unsupported to GroupRotationTeamEntrySaveError.Unexpected,
         )
-        results.forEach { (localResult, expectedError) ->
-            saveRepository.result = localResult
+        results.forEach { (identityResult, expectedError) ->
+            identityRepository.saveResult = identityResult
             val viewModel = viewModel()
             viewModel.load(TOURNAMENT_ID)
             advanceUntilIdle()
@@ -697,9 +852,9 @@ class GroupRotationTeamEntryViewModelTest {
             authenticationViewModel.uiState.value.saveError,
         )
 
-        saveRepository.result = GroupRotationTeamSetupLocalSaveResult.InvalidSetup(
-            listOf(com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssue(
-                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssueCode.INVALID_LOBBY_SLOT,
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Invalid(
+            listOf(com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssue(
+                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssueCode.INVALID_LOBBY_SLOT,
             )),
         )
         TestAuthRepository.state = AuthState.SignedIn(AuthUser(OWNER_ID, "owner@example.test"))
@@ -712,8 +867,16 @@ class GroupRotationTeamEntryViewModelTest {
     }
 
     private fun viewModel(): GroupRotationTeamEntryViewModel = GroupRotationTeamEntryViewModel(
-        readGroupRotationTeamSetup = ReadGroupRotationTeamSetupUseCase(readRepository, TestAuthRepository),
+        readGroupRotationTeamSetup = ReadGroupRotationTeamSetupUseCase(
+            readRepository,
+            TestAuthRepository,
+            identityRepository,
+        ),
         saveGroupRotationTeamSetup = SaveGroupRotationTeamSetupUseCase(saveRepository, TestAuthRepository),
+        saveGroupRotationTeamIdentitySetup = SaveGroupRotationTeamIdentitySetupUseCase(
+            identityRepository,
+            TestAuthRepository,
+        ),
         draftRepository = draftRepository,
         uploadTournament = uploadAction,
     )
@@ -722,12 +885,14 @@ class GroupRotationTeamEntryViewModelTest {
         id: String = TOURNAMENT_ID,
         groupCount: Int = 3,
         pairings: List<String> = listOf("A:B", "A:C"),
+        ownerUserId: String? = null,
     ): Tournament = Tournament(
         id = id,
         name = "Rotation",
         stageName = "Stage",
         organizerContactNumber = "123",
         status = TournamentStatus.DRAFT,
+        ownerUserId = ownerUserId,
         format = TournamentFormat.GROUP_ROTATION,
         groupCount = groupCount,
         selectedGroupPairings = pairings.map(GroupPairing::fromCanonicalKey),
@@ -785,6 +950,92 @@ class GroupRotationTeamEntryViewModelTest {
             }
             return result
         }
+    }
+
+    private class FakeIdentityRepository : GroupRotationTeamIdentityLocalRepository {
+        var saveCalls = 0
+        var readResult: GroupRotationTeamIdentityReadResult = GroupRotationTeamIdentityReadResult.Unsupported
+        var saveResult: GroupRotationTeamIdentityWriteResult? = null
+        var blocked = false
+        val saveStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        override suspend fun read(
+            tournament: Tournament,
+        ): GroupRotationTeamIdentityReadResult = readResult
+
+        override suspend fun savePairing(
+            tournament: Tournament,
+            pairingKey: GroupPairing,
+            entries: List<com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamIdentityEntry>,
+        ): GroupRotationTeamIdentityWriteResult {
+            saveCalls += 1
+            if (blocked) {
+                saveStarted.complete(Unit)
+                release.await()
+            }
+            return saveResult ?: defaultSavedResult(tournament, pairingKey, entries)
+        }
+
+        private fun defaultSavedResult(
+            tournament: Tournament,
+            pairingKey: GroupPairing,
+            entries: List<com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamIdentityEntry>,
+        ): GroupRotationTeamIdentityWriteResult {
+            val normalizer = com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityNormalizer()
+            val duplicate = entries
+                .map { normalizer.normalize(it.displayName) }
+                .filter { it.isNotBlank() }
+                .groupingBy { it }
+                .eachCount()
+                .filterValues { it > 1 }
+                .keys
+                .firstOrNull()
+            if (duplicate != null) {
+                return GroupRotationTeamIdentityWriteResult.Invalid(
+                    listOf(
+                        com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssue(
+                            com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssueCode.DUPLICATE_NORMALIZED_NAME,
+                            normalizedName = duplicate,
+                            pairingKey = pairingKey.canonicalKey,
+                        ),
+                    ),
+                )
+            }
+            val teamsByName = linkedMapOf<String, GroupRotationTeamIdentity>()
+            entries.filter { normalizer.normalize(it.displayName).isNotBlank() }.forEach { entry ->
+                val normalized = normalizer.normalize(entry.displayName)
+                teamsByName.getOrPut(normalized) {
+                    val number = teamsByName.size + 1
+                    GroupRotationTeamIdentity(
+                        tournamentId = tournament.id,
+                        teamUUID = UUID(0, number.toLong()).toString(),
+                        displayName = normalizer.cleanDisplayName(entry.displayName),
+                        normalizedName = normalized,
+                    )
+                }
+            }
+            return GroupRotationTeamIdentityWriteResult.Saved(
+                GroupRotationTeamIdentityLocalSnapshot(
+                    teams = teamsByName.values.toList(),
+                    assignments = entries.filter { normalizer.normalize(it.displayName).isNotBlank() }
+                        .map { entry ->
+                            GroupRotationPairingAssignment(
+                                tournamentId = tournament.id,
+                                pairingKey = pairingKey,
+                                lobbySlotNumber = entry.lobbySlotNumber,
+                                teamUUID = teamsByName.getValue(normalizer.normalize(entry.displayName)).teamUUID,
+                            )
+                        },
+                ),
+            )
+        }
+
+        override suspend fun renameTeam(
+            tournament: Tournament,
+            teamUUID: String,
+            displayName: String,
+        ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
     }
 
     private class FakeDraftRepository : GroupRotationTeamSetupDraftRepository {
@@ -875,5 +1126,6 @@ class GroupRotationTeamEntryViewModelTest {
     private companion object {
         const val TOURNAMENT_ID = "group-rotation-entry"
         const val OWNER_ID = "owner"
+        const val OTHER_OWNER_ID = "other-owner"
     }
 }

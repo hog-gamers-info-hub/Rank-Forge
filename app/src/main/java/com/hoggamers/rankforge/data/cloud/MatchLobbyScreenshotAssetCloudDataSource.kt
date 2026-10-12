@@ -93,11 +93,13 @@ class SupabaseMatchLobbyScreenshotAssetCloudDataSource internal constructor(
     private val deleteAsset: suspend (String, Int) -> Unit,
     private val readAssets: suspend (String, Set<String>) -> List<MatchLobbyScreenshotAssetCloudPayload> =
         { _, _ -> emptyList() },
+    private val matchProvisioner: GroupRotationCloudMatchProvisioner = NoOpGroupRotationCloudMatchProvisioner,
 ) : MatchLobbyScreenshotAssetCloudDataSource {
     @Inject
     constructor(
         config: SupabaseAuthConfig,
         clientProvider: SupabaseClientProvider,
+        matchProvisioner: GroupRotationCloudMatchProvisioner,
     ) : this(
         isConfigured = { config.isConfigured },
         currentUserId = {
@@ -118,6 +120,7 @@ class SupabaseMatchLobbyScreenshotAssetCloudDataSource internal constructor(
             }.decodeList<MatchLobbyScreenshotAssetCloudPayload>()
                 .filter { it.matchId in matchIds }
         },
+        matchProvisioner = matchProvisioner,
     )
 
     override suspend fun readByTournamentAndMatchIds(
@@ -158,8 +161,16 @@ class SupabaseMatchLobbyScreenshotAssetCloudDataSource internal constructor(
         if (expectedOwnerUserId != null && (expectedOwnerUserId.isBlank() || ownerId != expectedOwnerUserId)) {
             return failed(MatchLobbyScreenshotAssetCloudFailure.AUTHORIZATION)
         }
+        val cloudMatchId = matchProvisioner.resolveCloudMatchId(
+            tournamentId = asset.tournamentId,
+            matchId = asset.matchId,
+            expectedOwnerUserId = expectedOwnerUserId ?: ownerId,
+        ) ?: return failed(MatchLobbyScreenshotAssetCloudFailure.CLOUD_MATCH_ID_UNAVAILABLE)
         val payload = when (val result = asset.copy(ownerUserId = expectedOwnerUserId ?: asset.ownerUserId)
-            .toMatchLobbyScreenshotAssetCloudPayload(expectedOwnerUserId ?: ownerId)) {
+            .toMatchLobbyScreenshotAssetCloudPayload(
+                ownerId = expectedOwnerUserId ?: ownerId,
+                cloudMatchId = cloudMatchId,
+            )) {
             is MatchLobbyScreenshotAssetCloudPayloadMappingResult.Success -> result.payload
             MatchLobbyScreenshotAssetCloudPayloadMappingResult.InvalidIdentity ->
                 return failed(MatchLobbyScreenshotAssetCloudFailure.INVALID_IDENTITY)
@@ -181,8 +192,11 @@ class SupabaseMatchLobbyScreenshotAssetCloudDataSource internal constructor(
     ): MatchLobbyScreenshotAssetCloudResult = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext failed(MatchLobbyScreenshotAssetCloudFailure.WRITE_FAILED)
         if (currentUserId() == null) return@withContext failed(MatchLobbyScreenshotAssetCloudFailure.MISSING_AUTH_SESSION)
-        val cloudMatchId = MatchCloudIdentity.matchId(identity.tournamentId, identity.matchId)
-            ?: return@withContext failed(MatchLobbyScreenshotAssetCloudFailure.CLOUD_MATCH_ID_UNAVAILABLE)
+        val cloudMatchId = matchProvisioner.resolveCloudMatchId(
+            tournamentId = identity.tournamentId,
+            matchId = identity.matchId,
+            expectedOwnerUserId = currentUserId(),
+        ) ?: return@withContext failed(MatchLobbyScreenshotAssetCloudFailure.CLOUD_MATCH_ID_UNAVAILABLE)
         try {
             deleteAsset(cloudMatchId, identity.lobbyScreenshotIndex)
             MatchLobbyScreenshotAssetCloudResult.Success
@@ -217,14 +231,15 @@ sealed interface MatchLobbyScreenshotAssetCloudPayloadMappingResult {
 
 fun MatchLobbyScreenshotAssetEntity.toMatchLobbyScreenshotAssetCloudPayload(
     ownerId: String,
+    cloudMatchId: String? = null,
 ): MatchLobbyScreenshotAssetCloudPayloadMappingResult {
     val identity = identityOrNull() ?: return MatchLobbyScreenshotAssetCloudPayloadMappingResult.InvalidIdentity
-    val cloudMatchId = MatchCloudIdentity.matchId(identity.tournamentId, identity.matchId)
+    val resolvedCloudMatchId = cloudMatchId ?: MatchCloudIdentity.matchId(identity.tournamentId, identity.matchId)
         ?: return MatchLobbyScreenshotAssetCloudPayloadMappingResult.CloudMatchIdUnavailable
     if (identity.lobbyScreenshotIndex !in 1..3) return MatchLobbyScreenshotAssetCloudPayloadMappingResult.InvalidIdentity
     return MatchLobbyScreenshotAssetCloudPayloadMappingResult.Success(
         MatchLobbyScreenshotAssetCloudPayload(
-            matchId = cloudMatchId,
+            matchId = resolvedCloudMatchId,
             ownerId = ownerId,
             tournamentId = identity.tournamentId,
             lobbyScreenshotIndex = identity.lobbyScreenshotIndex,

@@ -2216,6 +2216,7 @@ private fun MatchReviewContent(
                     teamNamesBySlot = readyOcrUiState.teamNamesBySlot,
                     calculationOrigin = readyOcrUiState.calculatedEvidenceOrigin,
                     finalization = readyOcrUiState.finalization,
+                    isUuidBackedGroupRotation = readyOcrUiState.isUuidBackedGroupRotation,
                     onFinalizeOcrCorrection = onOcrFinalize,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2347,7 +2348,7 @@ private fun MatchReviewContent(
             }
             Button(
                 onClick = { showFinalizeConfirmation = true },
-                enabled = reviewInteractionsEnabled && uiState.isValid && !uiState.isFinalizing &&
+                enabled = reviewInteractionsEnabled && uiState.canFinalize && !uiState.isFinalizing &&
                     !uiState.isScreenshotPreservationInProgress &&
                     !uiState.isScreenshotUploadInProgress,
                 modifier = Modifier
@@ -2727,6 +2728,7 @@ private fun MatchReviewFinalizeAction(
     teamNamesBySlot: Map<Int, String>,
     calculationOrigin: MatchCalculatedEvidenceOrigin,
     finalization: MatchOcrReviewFinalizationUiState,
+    isUuidBackedGroupRotation: Boolean,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
     val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current

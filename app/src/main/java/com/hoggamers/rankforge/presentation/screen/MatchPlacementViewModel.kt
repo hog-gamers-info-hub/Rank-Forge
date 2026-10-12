@@ -17,6 +17,12 @@ import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchResult
 import com.hoggamers.rankforge.domain.tournament.ClearDraftMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
+import com.hoggamers.rankforge.domain.tournament.ObserveGroupRotationMatchDraftUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchDraftValueUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchPlacementsUseCase
+import com.hoggamers.rankforge.domain.tournament.ClearGroupRotationMatchDraftUseCase
 import com.hoggamers.rankforge.domain.tournament.finalizedHistoricalTeamSlotNumbers
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsInput
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsResult
@@ -44,6 +50,10 @@ class MatchPlacementViewModel @Inject constructor(
     private val clearDraftMatch: ClearDraftMatchUseCase,
     private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
         ReadMatchTeamIdentityContextUseCase(),
+    private val observeGroupRotationMatchDraft: ObserveGroupRotationMatchDraftUseCase? = null,
+    private val saveGroupRotationMatchDraftValue: SaveGroupRotationMatchDraftValueUseCase? = null,
+    private val saveGroupRotationMatchPlacements: SaveGroupRotationMatchPlacementsUseCase? = null,
+    private val clearGroupRotationMatchDraft: ClearGroupRotationMatchDraftUseCase? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchPlacementUiState())
     val uiState: StateFlow<MatchPlacementUiState> = _uiState.asStateFlow()
@@ -66,12 +76,15 @@ class MatchPlacementViewModel @Inject constructor(
             )
         }
         loadJob = viewModelScope.launch {
+            val groupDraft = observeGroupRotationMatchDraft?.invoke(tournamentId, matchId)
+                ?: kotlinx.coroutines.flow.flowOf(null)
             combine(
                 observeMatches(tournamentId),
                 observeTournamentSlots(tournamentId),
                 observeRoster(tournamentId),
                 observeDraftValues(tournamentId, matchId),
-            ) { matches, slots, rosters, draftValues ->
+                groupDraft,
+            ) { matches, slots, rosters, draftValues, groupDraftResult ->
                 val match = matches.firstOrNull { it.id == matchId }
                 if (match == null) {
                     MatchPlacementUiState(
@@ -81,6 +94,47 @@ class MatchPlacementViewModel @Inject constructor(
                         matchId = matchId,
                     )
                 } else {
+                    val uuidDraft = groupDraftResult as? GroupRotationMatchDraftReadResult.Loaded
+                    if (uuidDraft != null) {
+                        val projection = GroupRotationMatchPresentationProjection.project(uuidDraft.state)
+                        val loadedProjection = projection as? GroupRotationMatchPresentationProjectionResult.Loaded
+                        if (loadedProjection == null) {
+                            return@combine MatchPlacementUiState(
+                                isLoading = false,
+                                isAvailable = false,
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                            )
+                        }
+                        return@combine MatchPlacementUiState(
+                            isLoading = false,
+                            isAvailable = true,
+                            tournamentId = tournamentId,
+                            matchId = matchId,
+                            matchNumber = match.matchNumber,
+                            isReadOnly = match.status == MatchStatus.FINALIZED,
+                            isUuidBackedGroupRotation = true,
+                            rows = loadedProjection.rows.map { team ->
+                                    MatchPlacementRowUiState(
+                                        teamSlotNumber = team.lobbySlotNumber,
+                                        teamName = team.displayName,
+                                        placementInput = team.placementInput,
+                                        lobbySlotNumber = team.lobbySlotNumber,
+                                    )
+                                },
+                        )
+                    }
+                    if (match.groupPairing != null &&
+                        groupDraftResult != null &&
+                        groupDraftResult !is GroupRotationMatchDraftReadResult.NotUuidBacked
+                    ) {
+                        return@combine MatchPlacementUiState(
+                            isLoading = false,
+                            isAvailable = false,
+                            tournamentId = tournamentId,
+                            matchId = matchId,
+                        )
+                    }
                     val identityContext = (readMatchTeamIdentityContext.forMatch(match.id)
                         as? MatchTeamIdentityContextReadResult.Loaded)?.context
                     val isGroupRotationMatch = match.groupPairing != null ||
@@ -174,14 +228,17 @@ class MatchPlacementViewModel @Inject constructor(
         }
         val tournamentId = currentState.tournamentId ?: return
         val matchId = currentState.matchId ?: return
-        enqueueDraftWrite(
-            SaveMatchDraftValueInput(
-                tournamentId = tournamentId,
-                matchId = matchId,
-                teamSlotNumber = teamSlotNumber,
-                placementInput = value,
-            ),
+        val input = SaveMatchDraftValueInput(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            teamSlotNumber = teamSlotNumber,
+            placementInput = value,
         )
+        if (currentState.isUuidBackedGroupRotation) {
+            enqueueGroupDraftWrite(input)
+        } else {
+            enqueueDraftWrite(input)
+        }
     }
 
     fun save() {
@@ -193,18 +250,39 @@ class MatchPlacementViewModel @Inject constructor(
         viewModelScope.launch {
             draftWriteError = null
             currentState.rows.forEach { row ->
-                enqueueDraftWrite(
-                    SaveMatchDraftValueInput(
+                val input = SaveMatchDraftValueInput(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         teamSlotNumber = row.teamSlotNumber,
                         placementInput = row.placementInput,
-                    ),
-                )
+                    )
+                if (currentState.isUuidBackedGroupRotation) {
+                    enqueueGroupDraftWrite(input)
+                } else {
+                    enqueueDraftWrite(input)
+                }
             }
             draftWriteJob?.join()
             draftWriteError?.let { error ->
                 _uiState.update { it.copy(isSubmitting = false, globalError = error) }
+                return@launch
+            }
+            if (currentState.isUuidBackedGroupRotation) {
+                val groupResult = saveGroupRotationMatchPlacements?.invoke(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    placementsByLobbySlot = currentState.rows.associate { row ->
+                        row.teamSlotNumber to row.placementInput
+                    },
+                ) ?: GroupRotationMatchDraftMutationResult.INVALID_DATA
+                when (groupResult) {
+                    GroupRotationMatchDraftMutationResult.SAVED -> _uiState.update {
+                        it.copy(isSubmitting = false, navigation = MatchPlacementNavigation.Saved(tournamentId, matchId))
+                    }
+                    else -> _uiState.update {
+                        it.copy(isSubmitting = false, globalError = groupResult.toPlacementError())
+                    }
+                }
                 return@launch
             }
             when (
@@ -247,6 +325,22 @@ class MatchPlacementViewModel @Inject constructor(
         }
         viewModelScope.launch {
             draftWriteJob?.join()
+            if (_uiState.value.isUuidBackedGroupRotation) {
+                when (clearGroupRotationMatchDraft?.invoke(tournamentId, matchId)) {
+                    GroupRotationMatchDraftMutationResult.SAVED -> Unit
+                    GroupRotationMatchDraftMutationResult.AUTHENTICATION_REQUIRED -> _uiState.update {
+                        it.copy(globalError = PlacementGlobalError.AUTHENTICATION_REQUIRED)
+                    }
+                    GroupRotationMatchDraftMutationResult.MATCH_NOT_FOUND -> _uiState.update {
+                        it.copy(globalError = PlacementGlobalError.MATCH_NOT_FOUND)
+                    }
+                    GroupRotationMatchDraftMutationResult.INVALID_DATA -> _uiState.update {
+                        it.copy(globalError = PlacementGlobalError.INVALID_DATA)
+                    }
+                    null -> _uiState.update { it.copy(globalError = PlacementGlobalError.INVALID_DATA) }
+                }
+                return@launch
+            }
             when (clearDraftMatch(ClearDraftMatchInput(tournamentId, matchId))) {
                 ClearDraftMatchResult.Cleared -> Unit
                 ClearDraftMatchResult.AuthenticationRequired -> _uiState.update {
@@ -286,5 +380,30 @@ class MatchPlacementViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun enqueueGroupDraftWrite(input: SaveMatchDraftValueInput) {
+        val previousWrite = draftWriteJob
+        draftWriteJob = viewModelScope.launch {
+            previousWrite?.join()
+            draftWriteMutex.withLock {
+                val result = saveGroupRotationMatchDraftValue?.invoke(input)
+                    ?: GroupRotationMatchDraftMutationResult.INVALID_DATA
+                draftWriteError = when (result) {
+                    GroupRotationMatchDraftMutationResult.SAVED -> draftWriteError
+                    GroupRotationMatchDraftMutationResult.AUTHENTICATION_REQUIRED ->
+                        PlacementGlobalError.AUTHENTICATION_REQUIRED
+                    GroupRotationMatchDraftMutationResult.MATCH_NOT_FOUND -> PlacementGlobalError.MATCH_NOT_FOUND
+                    GroupRotationMatchDraftMutationResult.INVALID_DATA -> PlacementGlobalError.INVALID_DATA
+                }
+            }
+        }
+    }
+
+    private fun GroupRotationMatchDraftMutationResult.toPlacementError(): PlacementGlobalError = when (this) {
+        GroupRotationMatchDraftMutationResult.AUTHENTICATION_REQUIRED -> PlacementGlobalError.AUTHENTICATION_REQUIRED
+        GroupRotationMatchDraftMutationResult.MATCH_NOT_FOUND -> PlacementGlobalError.MATCH_NOT_FOUND
+        GroupRotationMatchDraftMutationResult.INVALID_DATA -> PlacementGlobalError.INVALID_DATA
+        GroupRotationMatchDraftMutationResult.SAVED -> error("Successful Group Rotation write has no UI error")
     }
 }

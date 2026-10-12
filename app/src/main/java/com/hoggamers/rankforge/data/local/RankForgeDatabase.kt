@@ -32,7 +32,13 @@ interface RankForgeStateDao {
         TeamSlotEntity::class,
         TournamentGroupPairingEntity::class,
         GroupRotationPairingLobbySlotEntity::class,
+        GroupRotationTeamIdentityEntity::class,
+        GroupRotationPairingTeamIdentityAssignmentEntity::class,
+        GroupRotationMatchIdentityHeaderEntity::class,
+        GroupRotationMatchTeamAssignmentEntity::class,
+        GroupRotationMatchParticipantResultEntity::class,
         GroupRotationPairingTeamEntryDraftEntity::class,
+        GroupRotationV4SyncJournalEntity::class,
         RosterPlayerEntity::class,
         MatchEntity::class,
         MatchPlacementEntity::class,
@@ -58,7 +64,7 @@ interface RankForgeStateDao {
         PointTableDetailsEntity::class,
         PointTableLogoPlacementEntity::class,
     ],
-    version = 31,
+    version = 34,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -67,7 +73,13 @@ abstract class RankForgeDatabase : RoomDatabase() {
     abstract fun teamSlotDao(): TeamSlotDao
     abstract fun tournamentGroupPairingDao(): TournamentGroupPairingDao
     abstract fun groupRotationPairingLobbySlotDao(): GroupRotationPairingLobbySlotDao
+    abstract fun groupRotationTeamIdentityDao(): GroupRotationTeamIdentityDao
+    abstract fun groupRotationPairingTeamIdentityAssignmentDao(): GroupRotationPairingTeamIdentityAssignmentDao
+    abstract fun groupRotationMatchIdentityHeaderDao(): GroupRotationMatchIdentityHeaderDao
+    abstract fun groupRotationMatchTeamAssignmentDao(): GroupRotationMatchTeamAssignmentDao
+    abstract fun groupRotationMatchParticipantResultDao(): GroupRotationMatchParticipantResultDao
     abstract fun groupRotationPairingTeamEntryDraftDao(): GroupRotationPairingTeamEntryDraftDao
+    abstract fun groupRotationV4SyncJournalDao(): GroupRotationV4SyncJournalDao
     abstract fun groupRotationTeamSetupReadDao(): GroupRotationTeamSetupReadDao
     abstract fun rosterPlayerDao(): RosterPlayerDao
     abstract fun matchDao(): MatchDao
@@ -983,5 +995,181 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 )
             }
         }
+
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_rotation_team_identities` (
+                        `tournament_id` TEXT NOT NULL,
+                        `team_uuid` TEXT NOT NULL,
+                        `display_name` TEXT NOT NULL,
+                        `normalized_name` TEXT NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `team_uuid`),
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_group_rotation_team_identities_tournament_id_normalized_name` " +
+                        "ON `group_rotation_team_identities` (`tournament_id`, `normalized_name`)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_rotation_pairing_team_identity_assignments` (
+                        `tournament_id` TEXT NOT NULL,
+                        `pairing_key` TEXT NOT NULL,
+                        `lobby_slot_number` INTEGER NOT NULL,
+                        `team_uuid` TEXT NOT NULL,
+                        PRIMARY KEY(`tournament_id`, `pairing_key`, `lobby_slot_number`),
+                        FOREIGN KEY(`tournament_id`, `pairing_key`) REFERENCES `tournament_group_pairings`(`tournament_id`, `pairing_key`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`, `team_uuid`) REFERENCES `group_rotation_team_identities`(`tournament_id`, `team_uuid`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_pairing_team_identity_assignments_tournament_id_pairing_key` " +
+                        "ON `group_rotation_pairing_team_identity_assignments` (`tournament_id`, `pairing_key`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_pairing_team_identity_assignments_tournament_id_team_uuid` " +
+                        "ON `group_rotation_pairing_team_identity_assignments` (`tournament_id`, `team_uuid`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_group_rotation_pairing_team_identity_assignments_tournament_id_pairing_key_team_uuid` " +
+                        "ON `group_rotation_pairing_team_identity_assignments` (`tournament_id`, `pairing_key`, `team_uuid`)",
+                )
+            }
+        }
+
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_rotation_match_identity_headers` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `pairing_key` TEXT NOT NULL,
+                        PRIMARY KEY(`match_id`),
+                        FOREIGN KEY(`match_id`) REFERENCES `matches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_match_identity_headers_tournament_id` " +
+                        "ON `group_rotation_match_identity_headers` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_match_identity_headers_tournament_id_pairing_key` " +
+                        "ON `group_rotation_match_identity_headers` (`tournament_id`, `pairing_key`)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_rotation_match_team_assignments` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `lobby_slot_number` INTEGER NOT NULL,
+                        `team_uuid` TEXT NOT NULL,
+                        PRIMARY KEY(`match_id`, `lobby_slot_number`),
+                        FOREIGN KEY(`match_id`) REFERENCES `group_rotation_match_identity_headers`(`match_id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`, `team_uuid`) REFERENCES `group_rotation_team_identities`(`tournament_id`, `team_uuid`) ON UPDATE NO ACTION ON DELETE NO ACTION
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_match_team_assignments_match_id` " +
+                        "ON `group_rotation_match_team_assignments` (`match_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_match_team_assignments_tournament_id` " +
+                        "ON `group_rotation_match_team_assignments` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_group_rotation_match_team_assignments_match_id_team_uuid` " +
+                        "ON `group_rotation_match_team_assignments` (`match_id`, `team_uuid`)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_rotation_match_participant_results` (
+                        `match_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `team_uuid` TEXT NOT NULL,
+                        `participation_status` TEXT NOT NULL,
+                        `placement` INTEGER,
+                        `kills` INTEGER NOT NULL,
+                        `point_adjustment` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`match_id`, `team_uuid`),
+                        FOREIGN KEY(`match_id`) REFERENCES `group_rotation_match_identity_headers`(`match_id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`tournament_id`, `team_uuid`) REFERENCES `group_rotation_team_identities`(`tournament_id`, `team_uuid`) ON UPDATE NO ACTION ON DELETE NO ACTION
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_match_participant_results_match_id` " +
+                        "ON `group_rotation_match_participant_results` (`match_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_match_participant_results_tournament_id` " +
+                        "ON `group_rotation_match_participant_results` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_group_rotation_match_participant_results_match_id_placement` " +
+                        "ON `group_rotation_match_participant_results` (`match_id`, `placement`)",
+                )
+            }
+        }
+
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_rotation_v4_sync_journal` (
+                        `journal_id` TEXT NOT NULL,
+                        `owner_user_id` TEXT NOT NULL,
+                        `tournament_id` TEXT NOT NULL,
+                        `match_id` TEXT,
+                        `operation_type` TEXT NOT NULL,
+                        `request_id` TEXT NOT NULL,
+                        `payload_json` TEXT NOT NULL,
+                        `payload_format_version` INTEGER NOT NULL,
+                        `payload_sha256` TEXT NOT NULL,
+                        `expected_cloud_revision` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `attempt_count` INTEGER NOT NULL,
+                        `last_failure_category` TEXT,
+                        `confirmed_cloud_revision` INTEGER,
+                        `created_at_epoch_millis` INTEGER NOT NULL,
+                        `updated_at_epoch_millis` INTEGER NOT NULL,
+                        PRIMARY KEY(`journal_id`),
+                        FOREIGN KEY(`tournament_id`) REFERENCES `tournaments`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_group_rotation_v4_sync_journal_request_id` " +
+                        "ON `group_rotation_v4_sync_journal` (`request_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_v4_sync_journal_tournament_id` " +
+                        "ON `group_rotation_v4_sync_journal` (`tournament_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_v4_sync_journal_owner_user_id_tournament_id_status_updated_at_epoch_millis` " +
+                        "ON `group_rotation_v4_sync_journal` (`owner_user_id`, `tournament_id`, `status`, `updated_at_epoch_millis`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_v4_sync_journal_owner_user_id_tournament_id_created_at_epoch_millis` " +
+                        "ON `group_rotation_v4_sync_journal` (`owner_user_id`, `tournament_id`, `created_at_epoch_millis`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_rotation_v4_sync_journal_owner_user_id_match_id` " +
+                        "ON `group_rotation_v4_sync_journal` (`owner_user_id`, `match_id`)",
+                )
+            }
+        }
+
     }
 }

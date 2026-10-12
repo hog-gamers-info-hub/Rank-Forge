@@ -21,6 +21,8 @@ class SyncDraftMatchesUseCase @Inject constructor(
     private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
     private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
         NoOpMatchTeamIdentityContextRepository,
+    private val groupRotationMatchIdentityRepository: GroupRotationMatchIdentityPersistenceRepository =
+        NoOpGroupRotationMatchIdentityPersistenceRepository,
 ) : DraftMatchCloudSyncAction, DraftMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
@@ -75,6 +77,15 @@ class SyncDraftMatchesUseCase @Inject constructor(
             val matches = tournamentRepository
                 .observeMatchesByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)
                 .first()
+            if (
+                tournament.format == TournamentFormat.GROUP_ROTATION &&
+                matches.filter { it.status == MatchStatus.DRAFT }.any { match ->
+                    groupRotationMatchIdentityRepository.readIdentityMode(tournament, match) !=
+                        GroupRotationMatchIdentityMode.Legacy
+                }
+            ) {
+                return DraftMatchCloudSyncResult.ValidationFailure
+            }
             val teamSlots = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
                 tournamentRepository
                     .observeSlotsByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)

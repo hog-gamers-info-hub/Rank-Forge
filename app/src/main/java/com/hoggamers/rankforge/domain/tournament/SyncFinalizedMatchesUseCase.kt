@@ -21,6 +21,8 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
     private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
     private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
         NoOpMatchTeamIdentityContextRepository,
+    private val groupRotationMatchIdentityRepository: GroupRotationMatchIdentityPersistenceRepository =
+        NoOpGroupRotationMatchIdentityPersistenceRepository,
 ) : FinalizedMatchCloudSyncAction, FinalizedMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
@@ -64,6 +66,15 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
             val matches = tournamentRepository
                 .observeMatchesByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)
                 .first()
+            if (
+                tournament.format == TournamentFormat.GROUP_ROTATION &&
+                matches.filter { it.status == MatchStatus.FINALIZED }.any { match ->
+                    groupRotationMatchIdentityRepository.readIdentityMode(tournament, match) !=
+                        GroupRotationMatchIdentityMode.Legacy
+                }
+            ) {
+                return FinalizedMatchCloudSyncResult.ValidationFailure
+            }
             val identityContextsByMatchId = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
                 val contexts = mutableMapOf<String, MatchTeamIdentityContext>()
                 matches.filter { it.status == MatchStatus.FINALIZED }.forEach { match ->

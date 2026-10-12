@@ -11,11 +11,12 @@ import com.hoggamers.rankforge.domain.sync.QueueOperationRetryExecutor
 import com.hoggamers.rankforge.domain.sync.RecoverForegroundSyncQueueUseCase
 import com.hoggamers.rankforge.domain.sync.RecoverSyncQueueOnForegroundConnectivityUseCase
 import com.hoggamers.rankforge.domain.sync.SyncQueueEntryRetryExecutor
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRetryAction
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRetryAction
+import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationRetryAction
 import com.hoggamers.rankforge.domain.tournament.RestoreMatchesUseCase
-import com.hoggamers.rankforge.domain.tournament.RestoreTournamentUseCase
-import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
-import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
-import com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRetryAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import dagger.Binds
@@ -44,11 +45,11 @@ object SyncQueueRetryModule {
     @Singleton
     fun provideRetryExecutor(
         authRepository: AuthRepository,
-        uploadTournament: UploadTournamentUseCase,
-        restoreTournament: RestoreTournamentUseCase,
-        syncDraftMatches: SyncDraftMatchesUseCase,
-        syncFinalizedMatches: SyncFinalizedMatchesUseCase,
-        restoreMatches: RestoreMatchesUseCase,
+        uploadTournament: TournamentCloudUploadRetryAction,
+        restoreTournament: TournamentCloudRestorationRetryAction,
+        syncDraftMatches: DraftMatchCloudSyncRetryAction,
+        syncFinalizedMatches: FinalizedMatchCloudSyncRetryAction,
+        restoreMatches: MatchCloudRestorationRetryAction,
         rosterReplacement: ReplaceTournamentRosterInCloudUseCase,
     ): SyncQueueEntryRetryExecutor = QueueOperationRetryExecutor(
         authRepository = authRepository,

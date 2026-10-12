@@ -19,7 +19,11 @@ class ReadGroupRotationTeamSetupUseCaseTest {
         repository.result = GroupRotationTeamSetupReadResult.Loaded(
             GroupRotationTeamSetupRead(tournament(), candidate()),
         )
-        val useCase = ReadGroupRotationTeamSetupUseCase(repository, auth(AuthState.SignedIn(AuthUser("owner-1", "owner@test"))))
+        val useCase = ReadGroupRotationTeamSetupUseCase(
+            repository,
+            auth(AuthState.SignedIn(AuthUser("owner-1", "owner@test"))),
+            UnsupportedIdentityRepository,
+        )
 
         val result = useCase(TOURNAMENT_ID)
 
@@ -30,7 +34,7 @@ class ReadGroupRotationTeamSetupUseCaseTest {
     @Test
     fun unauthenticatedReturnsAuthenticationRequiredWithoutRepositoryCall() = runBlocking {
         val repository = FakeRepository()
-        val useCase = ReadGroupRotationTeamSetupUseCase(repository, auth(AuthState.SignedOut))
+        val useCase = ReadGroupRotationTeamSetupUseCase(repository, auth(AuthState.SignedOut), UnsupportedIdentityRepository)
 
         assertEquals(ReadGroupRotationTeamSetupResult.AuthenticationRequired, useCase(TOURNAMENT_ID))
         assertEquals(null, repository.ownerUserId)
@@ -51,9 +55,62 @@ class ReadGroupRotationTeamSetupUseCaseTest {
             val repository = FakeRepository().also { it.result = stored }
             assertEquals(
                 expected,
-                ReadGroupRotationTeamSetupUseCase(repository, auth(AuthState.SignedIn(AuthUser("owner", null))))(TOURNAMENT_ID),
+                ReadGroupRotationTeamSetupUseCase(
+                    repository,
+                    auth(AuthState.SignedIn(AuthUser("owner", null))),
+                    UnsupportedIdentityRepository,
+                )(TOURNAMENT_ID),
             )
         }
+    }
+
+    @Test
+    fun loadedUuidRegistrySnapshotBecomesTheAuthoritativeCandidate() = runBlocking {
+        val teamUuid = "00000000-0000-0000-0000-000000000003"
+        val identityRepository = object : GroupRotationTeamIdentityLocalRepository {
+            override suspend fun read(
+                tournament: Tournament,
+            ): GroupRotationTeamIdentityReadResult = GroupRotationTeamIdentityReadResult.Loaded(
+                GroupRotationTeamIdentityLocalSnapshot(
+                    teams = listOf(
+                        GroupRotationTeamIdentity(tournament.id, teamUuid, "Phoenix", "phoenix"),
+                    ),
+                    assignments = listOf(
+                        GroupRotationPairingAssignment(
+                            tournament.id,
+                            GroupPairing(TournamentGroup.A, TournamentGroup.B),
+                            7,
+                            teamUuid,
+                        ),
+                    ),
+                ),
+            )
+
+            override suspend fun savePairing(
+                tournament: Tournament,
+                pairingKey: GroupPairing,
+                entries: List<GroupRotationPairingTeamIdentityEntry>,
+            ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
+
+            override suspend fun renameTeam(
+                tournament: Tournament,
+                teamUUID: String,
+                displayName: String,
+            ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
+        }
+        val useCase = ReadGroupRotationTeamSetupUseCase(
+            FakeRepository().also { it.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament()) },
+            auth(AuthState.SignedIn(AuthUser("owner", null))),
+            identityRepository,
+        )
+
+        val result = useCase(TOURNAMENT_ID)
+
+        assertTrue(result is ReadGroupRotationTeamSetupResult.Loaded)
+        val loaded = result as ReadGroupRotationTeamSetupResult.Loaded
+        assertEquals(listOf("Phoenix"), loaded.candidate.entries.map { it.teamName })
+        assertEquals(7, loaded.candidate.entries.single().lobbySlotNumber)
+        assertTrue(loaded.identityAuthoritative)
     }
 
     private fun tournament(): Tournament = Tournament(
@@ -91,6 +148,24 @@ class ReadGroupRotationTeamSetupUseCaseTest {
             this.ownerUserId = ownerUserId
             return result
         }
+    }
+
+    private object UnsupportedIdentityRepository : GroupRotationTeamIdentityLocalRepository {
+        override suspend fun read(
+            tournament: Tournament,
+        ): GroupRotationTeamIdentityReadResult = GroupRotationTeamIdentityReadResult.Unsupported
+
+        override suspend fun savePairing(
+            tournament: Tournament,
+            pairingKey: GroupPairing,
+            entries: List<GroupRotationPairingTeamIdentityEntry>,
+        ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
+
+        override suspend fun renameTeam(
+            tournament: Tournament,
+            teamUUID: String,
+            displayName: String,
+        ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
     }
 
     private companion object {

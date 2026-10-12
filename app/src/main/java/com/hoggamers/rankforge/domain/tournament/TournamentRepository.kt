@@ -250,6 +250,14 @@ interface TournamentRepository {
     ): CreateMatchRepositoryResult =
         error("Owner-scoped match creation is not supported by this repository.")
 
+    /** Inactive UUID-first Group Rotation creation boundary; Standard uses createDraftMatchByOwner. */
+    suspend fun createGroupRotationMatchByOwner(
+        match: Match,
+        snapshot: GroupRotationMatchIdentitySnapshot,
+        ownerUserId: String,
+    ): GroupRotationMatchCreationRepositoryResult =
+        error("Group Rotation UUID match creation is not supported by this repository.")
+
     suspend fun saveDraftMatchPlacements(
         matchId: String,
         placements: List<MatchPlacement>,

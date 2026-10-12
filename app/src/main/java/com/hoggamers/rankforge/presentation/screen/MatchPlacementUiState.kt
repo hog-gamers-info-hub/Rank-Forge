@@ -18,6 +18,7 @@ data class MatchPlacementUiState(
     val tournamentId: String? = null,
     val matchId: String? = null,
     val matchNumber: Int? = null,
+    val isUuidBackedGroupRotation: Boolean = false,
     val isReadOnly: Boolean = false,
     val rows: List<MatchPlacementRowUiState> = emptyList(),
     val validationErrors: Map<Int, PlacementValidationError> = emptyMap(),

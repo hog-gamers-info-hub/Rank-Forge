@@ -42,6 +42,19 @@ import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
 import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftState
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
+import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput
+import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchParticipantResultsUseCase
+import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.data.ocr.matchlobby.GroupRotationMatchOcrIdentityAdapter
+import com.hoggamers.rankforge.data.ocr.matchlobby.GroupRotationMatchOcrSuggestionResult
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
@@ -82,6 +95,9 @@ class MatchOcrReviewViewModel @Inject constructor(
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
     private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
         ReadMatchTeamIdentityContextUseCase(),
+    private val observeGroupRotationMatchDraft: com.hoggamers.rankforge.domain.tournament.ObserveGroupRotationMatchDraftUseCase? = null,
+    private val saveGroupRotationMatchParticipantResults: SaveGroupRotationMatchParticipantResultsUseCase? = null,
+    private val finalizeGroupRotationMatch: FinalizeGroupRotationMatchUseCase? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<MatchOcrReviewUiState>(MatchOcrReviewUiState.Loading)
     val uiState: StateFlow<MatchOcrReviewUiState> = _uiState.asStateFlow()
@@ -108,6 +124,9 @@ class MatchOcrReviewViewModel @Inject constructor(
         finalizedMatchCloudSync: FinalizedMatchCloudSyncAction,
         initialUiState: MatchOcrReviewUiState,
         screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
+        observeGroupRotationMatchDraft: com.hoggamers.rankforge.domain.tournament.ObserveGroupRotationMatchDraftUseCase? = null,
+        saveGroupRotationMatchParticipantResults: SaveGroupRotationMatchParticipantResultsUseCase? = null,
+        finalizeGroupRotationMatch: FinalizeGroupRotationMatchUseCase? = null,
     ) : this(
         finalizeOcrCorrectionMatch,
         NO_OP_MATCH_RESULT_OCR_PREVIEW_RUNNER,
@@ -117,6 +136,9 @@ class MatchOcrReviewViewModel @Inject constructor(
         NO_OP_OBSERVE_ROSTER,
         finalizedMatchCloudSync,
         screenshotOwnerProvider = screenshotOwnerProvider,
+        observeGroupRotationMatchDraft = observeGroupRotationMatchDraft,
+        saveGroupRotationMatchParticipantResults = saveGroupRotationMatchParticipantResults,
+        finalizeGroupRotationMatch = finalizeGroupRotationMatch,
     ) {
         _uiState.value = initialUiState
     }
@@ -352,13 +374,24 @@ class MatchOcrReviewViewModel @Inject constructor(
             val lobbyResultForMatching = playerLobbyResult
                 ?: slotNumberResult?.toMatchLobbyPlayersOcrResult()
             val matchedRows = lobbyResultForMatching?.let { lobbyResult ->
-                MatchResultOcrPreviewTeamSuggestionMapper.map(
-                    preview = preview,
-                    resultRows = roleResults.processedResultRows(),
-                    lobbyOcrResult = lobbyResult,
-                    eligibleTeamSlots = teamContext.eligibleTeamSlots,
-                    matchIdentityContext = teamContext.identityContext,
-                )
+                if (teamContext.uuidSnapshot != null && teamContext.tournament != null) {
+                    mapUuidBackedSuggestions(
+                        tournament = teamContext.tournament,
+                        matchId = matchId,
+                        snapshot = teamContext.uuidSnapshot,
+                        preview = preview,
+                        resultRows = roleResults.processedResultRows(),
+                        lobbyOcrResult = lobbyResult,
+                    )
+                } else {
+                    MatchResultOcrPreviewTeamSuggestionMapper.map(
+                        preview = preview,
+                        resultRows = roleResults.processedResultRows(),
+                        lobbyOcrResult = lobbyResult,
+                        eligibleTeamSlots = teamContext.eligibleTeamSlots,
+                        matchIdentityContext = teamContext.identityContext,
+                    )
+                }
             }
             val lobbyPlayers = playerLobbyResult
                 ?.takeIf { lobbyResult ->
@@ -407,7 +440,9 @@ class MatchOcrReviewViewModel @Inject constructor(
                     null
                 }
                 when (state) {
-                    is MatchOcrReviewUiState.Calculating -> reviewState ?: MatchOcrReviewUiState.Empty(
+                    is MatchOcrReviewUiState.Calculating -> reviewState?.copy(
+                        isUuidBackedGroupRotation = teamContext.uuidSnapshot != null,
+                    ) ?: MatchOcrReviewUiState.Empty(
                         tournamentId = tournamentId,
                         matchId = matchId,
                         matchResultOcrPreview = preview,
@@ -416,25 +451,28 @@ class MatchOcrReviewViewModel @Inject constructor(
                         lobbySlotByTeamSlot = teamContext.lobbySlotByTeamSlot,
                         usesPairRelativeIdentity = teamContext.usesPairRelativeIdentity,
                         lobbyPlayers = lobbyPlayers,
+                        isUuidBackedGroupRotation = teamContext.uuidSnapshot != null,
                     )
                     is MatchOcrReviewUiState.Empty -> {
                         if (state.tournamentId == tournamentId && state.matchId == matchId) {
-                            reviewState ?: state.copy(
+                            reviewState?.copy(
+                                isUuidBackedGroupRotation = teamContext.uuidSnapshot != null,
                                 matchResultOcrPreview = preview,
                                 teamNamesBySlot = teamContext.teamNamesBySlot,
                                 lobbySlotByTeamSlot = teamContext.lobbySlotByTeamSlot,
                                 usesPairRelativeIdentity = teamContext.usesPairRelativeIdentity,
-                            )
+                            ) ?: state
                         } else {
                             state
                         }
                     }
-                    is MatchOcrReviewUiState.Ready -> reviewState ?: state.copy(
+                    is MatchOcrReviewUiState.Ready -> reviewState?.copy(
+                        isUuidBackedGroupRotation = teamContext.uuidSnapshot != null,
                         matchResultOcrPreview = preview,
                         teamNamesBySlot = teamContext.teamNamesBySlot,
                         lobbySlotByTeamSlot = teamContext.lobbySlotByTeamSlot,
                         usesPairRelativeIdentity = teamContext.usesPairRelativeIdentity,
-                    )
+                    ) ?: state
                     is MatchOcrReviewUiState.Error -> state.copy(matchResultOcrPreview = preview)
                     MatchOcrReviewUiState.Loading -> state
                 }
@@ -459,6 +497,62 @@ class MatchOcrReviewViewModel @Inject constructor(
                 )
             },
         )
+    }
+
+    private fun mapUuidBackedSuggestions(
+        tournament: Tournament,
+        matchId: String,
+        snapshot: GroupRotationMatchIdentitySnapshot,
+        preview: MatchResultOcrPreviewUiState,
+        resultRows: List<com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow>,
+        lobbyOcrResult: com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyPlayersOcrResult,
+    ): List<MatchOcrReviewRowUiState>? {
+        val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
+        val projection = when (
+            val projected = GroupRotationMatchOcrIdentityAdapter.project(
+                tournament = tournament,
+                matchId = matchId,
+                identitySnapshot = snapshot,
+                lobbyOcrResult = lobbyOcrResult,
+            )
+        ) {
+            is com.hoggamers.rankforge.data.ocr.matchlobby.GroupRotationMatchOcrIdentityProjectionResult.Invalid ->
+                return null
+            is com.hoggamers.rankforge.data.ocr.matchlobby.GroupRotationMatchOcrIdentityProjectionResult.Loaded ->
+                projected.projection
+        }
+        val suggestions = when (val suggested = GroupRotationMatchOcrIdentityAdapter.suggest(projection, resultRows)) {
+            is GroupRotationMatchOcrSuggestionResult.Invalid -> return null
+            is GroupRotationMatchOcrSuggestionResult.Loaded -> suggested.suggestions.associateBy { it.resultPosition }
+        }
+        return rows.map { row ->
+            val suggestion = suggestions[row.rowIndex + 1] ?: return@map row
+            val proposedLobby = suggestion.proposedLobbySlotNumber
+            val automaticLobby = suggestion.automaticLobbySlotNumber
+            val blockers = row.blockerLabels
+                .filterNot { it.startsWith("Team assignment:") }
+                .toMutableList()
+            if (automaticLobby == null) {
+                blockers += "Team assignment: manual required"
+            }
+            row.copy(
+                suggestedTeamSlotDisplayValue = proposedLobby?.toString() ?: "Unavailable",
+                teamIdentityDisplayValue = (automaticLobby ?: proposedLobby)?.let { lobby ->
+                    val name = snapshot.teams.firstOrNull { it.lobbySlotNumber == lobby }?.displayName
+                    "Lobby ${lobby.toString().padStart(2, '0')} · ${name.orEmpty()}"
+                },
+                originalSuggestedTeamSlot = automaticLobby,
+                confidenceScoreDisplayValue = suggestion.winningVotePercent?.toString() ?: "Unavailable",
+                confidenceTierLabel = if (automaticLobby == null) "Manual required" else "Automatic candidate",
+                assignmentSafetyStatusLabel = if (automaticLobby == null) "Manual required" else "Safe automatic assignment",
+                blockerLabels = blockers.distinct(),
+                severity = if (blockers.isEmpty()) {
+                    MatchOcrReviewSeverity.INFORMATIONAL
+                } else {
+                    MatchOcrReviewSeverity.BLOCKING
+                },
+            )
+        }
     }
 
     fun loadCached(tournamentId: String, matchId: String) {
@@ -512,13 +606,24 @@ class MatchOcrReviewViewModel @Inject constructor(
             }
             val hasCompleteCombinedCache = availability == MatchOcrCacheAvailability.READY
             val matchedRows = if (hasCompleteCombinedCache) {
-                MatchResultOcrPreviewTeamSuggestionMapper.map(
-                    preview = preview,
-                    resultRows = cached.resultRoleResults.processedResultRows(),
-                    lobbyOcrResult = cached.lobbyResult,
-                    eligibleTeamSlots = teamContext.eligibleTeamSlots,
-                    matchIdentityContext = teamContext.identityContext,
-                )
+                if (teamContext.uuidSnapshot != null && teamContext.tournament != null) {
+                    mapUuidBackedSuggestions(
+                        tournament = teamContext.tournament,
+                        matchId = matchId,
+                        snapshot = teamContext.uuidSnapshot,
+                        preview = preview,
+                        resultRows = cached.resultRoleResults.processedResultRows(),
+                        lobbyOcrResult = cached.lobbyResult,
+                    )
+                } else {
+                    MatchResultOcrPreviewTeamSuggestionMapper.map(
+                        preview = preview,
+                        resultRows = cached.resultRoleResults.processedResultRows(),
+                        lobbyOcrResult = cached.lobbyResult,
+                        eligibleTeamSlots = teamContext.eligibleTeamSlots,
+                        matchIdentityContext = teamContext.identityContext,
+                    )
+                }
             } else {
                 null
             }
@@ -551,7 +656,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                                 eligibleTeamSlots = teamContext.eligibleTeamSlots,
                                 lobbySlotByTeamSlot = teamContext.lobbySlotByTeamSlot,
                                 usesPairRelativeIdentity = teamContext.usesPairRelativeIdentity,
-                            ) ?: state
+                            )?.copy(isUuidBackedGroupRotation = teamContext.uuidSnapshot != null) ?: state
                         } else {
                             state
                         }
@@ -569,7 +674,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                         eligibleTeamSlots = teamContext.eligibleTeamSlots,
                         lobbySlotByTeamSlot = teamContext.lobbySlotByTeamSlot,
                         usesPairRelativeIdentity = teamContext.usesPairRelativeIdentity,
-                    ) ?: state
+                    )?.copy(isUuidBackedGroupRotation = teamContext.uuidSnapshot != null) ?: state
                 }
             }
         }
@@ -597,7 +702,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                 )
                 return@launch
             }
-            _uiState.value = evidence.toRestoredOcrReviewUiState(
+            val restored = evidence.toRestoredOcrReviewUiState(
                 tournamentId = tournamentId,
                 matchId = matchId,
                 teamNamesBySlot = teamContext.teamNamesBySlot,
@@ -605,6 +710,15 @@ class MatchOcrReviewViewModel @Inject constructor(
                 lobbySlotByTeamSlot = teamContext.lobbySlotByTeamSlot,
                 usesPairRelativeIdentity = teamContext.usesPairRelativeIdentity,
             )
+            _uiState.value = when (restored) {
+                is MatchOcrReviewUiState.Ready -> restored.copy(
+                    isUuidBackedGroupRotation = teamContext.uuidSnapshot != null,
+                )
+                is MatchOcrReviewUiState.Empty -> restored.copy(
+                    isUuidBackedGroupRotation = teamContext.uuidSnapshot != null,
+                )
+                else -> restored
+            }
         }
     }
 
@@ -872,6 +986,11 @@ class MatchOcrReviewViewModel @Inject constructor(
             return
         }
 
+        if (current.isUuidBackedGroupRotation) {
+            finalizeUuidBackedCorrection(current, correctionDraft)
+            return
+        }
+
         _uiState.updateReady {
             it.copy(
                 finalization = it.finalization.copy(
@@ -923,6 +1042,102 @@ class MatchOcrReviewViewModel @Inject constructor(
                 launchFinalizedMatchCloudSync(current.tournamentId)
             }
         }
+    }
+
+    private fun finalizeUuidBackedCorrection(
+        current: MatchOcrReviewUiState.Ready,
+        correctionDraft: MatchOcrReviewCorrectionDraft,
+    ) {
+        val saveResults = saveGroupRotationMatchParticipantResults
+        val finalize = finalizeGroupRotationMatch
+        if (saveResults == null || finalize == null) {
+            updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+            return
+        }
+        _uiState.updateReady {
+            it.copy(
+                finalization = it.finalization.copy(
+                    isFinalizing = true,
+                    showWarningConfirmation = false,
+                    error = null,
+                ),
+            )
+        }
+        viewModelScope.launch {
+            val draft = observeGroupRotationMatchDraft
+                ?.invoke(current.tournamentId, current.matchId)
+                ?.first() as? GroupRotationMatchDraftReadResult.Loaded
+            val participantResults = draft?.state?.toUuidParticipantResults(correctionDraft)
+            if (participantResults == null ||
+                saveResults(current.tournamentId, current.matchId, participantResults) !=
+                GroupRotationMatchDraftMutationResult.SAVED
+            ) {
+                updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+                return@launch
+            }
+            when (
+                val result = finalize(
+                    FinalizeGroupRotationMatchInput(
+                        tournamentId = current.tournamentId,
+                        matchId = current.matchId,
+                        participantResults = participantResults,
+                    ),
+                )
+            ) {
+                is GroupRotationMatchFinalizationResult.Finalized -> {
+                    _uiState.updateReady {
+                        it.copy(finalization = MatchOcrReviewFinalizationUiState(isFinalized = true))
+                    }
+                    launchFinalizedMatchCloudSync(current.tournamentId)
+                }
+                is GroupRotationMatchFinalizationResult.Rejected -> {
+                    updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+                }
+            }
+        }
+    }
+
+    private fun GroupRotationMatchDraftState.toUuidParticipantResults(
+        correctionDraft: MatchOcrReviewCorrectionDraft,
+    ): List<GroupRotationMatchParticipantResult>? {
+        val teamsByLobby = snapshot.teams.associateBy { it.lobbySlotNumber }
+        val existingByUuid = participantResults.associateBy { it.teamUUID }.toMutableMap()
+        correctionDraft.rows.forEach { row ->
+            val currentLobby = row.assignedTeamSlotDraftValue.trim().toIntOrNull()
+            val originalLobby = row.originalAssignedTeamSlotValue.trim().toIntOrNull()
+            if (originalLobby != null && originalLobby != currentLobby) {
+                teamsByLobby[originalLobby]?.let { existingByUuid.remove(it.teamUUID) }
+            }
+            if (row.isEffectivelyExcluded) {
+                currentLobby?.let { lobby ->
+                    teamsByLobby[lobby]?.let { team ->
+                        val previous = existingByUuid[team.teamUUID]
+                        existingByUuid[team.teamUUID] = GroupRotationMatchParticipantResult(
+                            teamUUID = team.teamUUID,
+                            participationStatus = MatchParticipationStatus.NO_SHOW,
+                            placement = null,
+                            kills = 0,
+                            pointAdjustment = previous?.pointAdjustment ?: 0,
+                        )
+                    }
+                }
+                return@forEach
+            }
+            val lobby = currentLobby ?: return null
+            val team = teamsByLobby[lobby] ?: return null
+            val placement = row.placementDraftValue.trim().toIntOrNull() ?: return null
+            val kills = row.killsDraftValue.trim().toIntOrNull()?.takeIf { it >= 0 } ?: return null
+            existingByUuid[team.teamUUID] = GroupRotationMatchParticipantResult(
+                teamUUID = team.teamUUID,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = placement,
+                kills = kills,
+                pointAdjustment = existingByUuid[team.teamUUID]?.pointAdjustment ?: 0,
+            )
+        }
+        return existingByUuid.values
+            .filter { result -> teamsByLobby.values.any { it.teamUUID == result.teamUUID } }
+            .toList()
     }
 
     private fun launchFinalizedMatchCloudSync(tournamentId: String) {
@@ -1150,6 +1365,37 @@ class MatchOcrReviewViewModel @Inject constructor(
         val persistedSlots = observeTournamentSlots(tournamentId).first()
         val match = tournamentRepository.observeMatchById(matchId).first()
         val tournament = tournamentRepository.observeById(tournamentId).first()
+        val groupDraft = observeGroupRotationMatchDraft?.invoke(tournamentId, matchId)?.first()
+        if (match?.groupPairing != null && groupDraft is GroupRotationMatchDraftReadResult.Loaded) {
+            val snapshot = groupDraft.state.snapshot
+            if (snapshot.tournamentId != tournamentId || snapshot.pairing != match.groupPairing) {
+                return OcrReviewTeamContext(
+                    teamNamesBySlot = emptyMap(),
+                    eligibleTeamSlots = emptySet(),
+                    tournament = tournament,
+                    identityFailure = MatchTeamIdentityContextReadResult.InvalidMapping,
+                )
+            }
+            return OcrReviewTeamContext(
+                teamNamesBySlot = snapshot.teams.associate { it.lobbySlotNumber to it.displayName },
+                eligibleTeamSlots = snapshot.teams.map { it.lobbySlotNumber }.toSet(),
+                lobbySlotByTeamSlot = snapshot.teams.associate { it.lobbySlotNumber to it.lobbySlotNumber },
+                usesPairRelativeIdentity = true,
+                tournament = tournament,
+                uuidSnapshot = snapshot,
+            )
+        }
+        if (match?.groupPairing != null &&
+            groupDraft != null &&
+            groupDraft !is GroupRotationMatchDraftReadResult.NotUuidBacked
+        ) {
+            return OcrReviewTeamContext(
+                teamNamesBySlot = emptyMap(),
+                eligibleTeamSlots = emptySet(),
+                tournament = tournament,
+                identityFailure = MatchTeamIdentityContextReadResult.InvalidMapping,
+            )
+        }
         val identityResult = readMatchTeamIdentityContext.forMatch(matchId)
         val loadedIdentity = identityResult as? MatchTeamIdentityContextReadResult.Loaded
         val usesPairRelativeIdentity = tournament?.format == TournamentFormat.GROUP_ROTATION ||
@@ -1207,6 +1453,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             identityContext = identityContext,
             lobbySlotByTeamSlot = lobbySlotByTeamSlot,
             usesPairRelativeIdentity = usesPairRelativeIdentity,
+            tournament = tournament,
             identityFailure = identityFailure,
         )
     } catch (cancellation: CancellationException) {
@@ -1215,6 +1462,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         OcrReviewTeamContext(
             teamNamesBySlot = emptyMap(),
             eligibleTeamSlots = emptySet(),
+            tournament = null,
             identityFailure = MatchTeamIdentityContextReadResult.InvalidMapping,
         )
     }
@@ -1225,6 +1473,8 @@ class MatchOcrReviewViewModel @Inject constructor(
         val identityContext: MatchTeamIdentityContext? = null,
         val lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
         val usesPairRelativeIdentity: Boolean = false,
+        val tournament: Tournament? = null,
+        val uuidSnapshot: GroupRotationMatchIdentitySnapshot? = null,
         val identityFailure: MatchTeamIdentityContextReadResult? = null,
     )
 

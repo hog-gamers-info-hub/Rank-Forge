@@ -92,6 +92,7 @@ sealed interface MatchOcrReviewUiState {
     data class Ready(
         val tournamentId: String,
         val matchId: String,
+        val isUuidBackedGroupRotation: Boolean = false,
         val matchDisplayLabel: String? = null,
         val rowCount: Int,
         val rows: List<MatchOcrReviewRowUiState>,
@@ -121,6 +122,7 @@ sealed interface MatchOcrReviewUiState {
     data class Empty(
         val tournamentId: String? = null,
         val matchId: String? = null,
+        val isUuidBackedGroupRotation: Boolean = false,
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
         val teamNamesBySlot: Map<Int, String> = emptyMap(),
         val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),

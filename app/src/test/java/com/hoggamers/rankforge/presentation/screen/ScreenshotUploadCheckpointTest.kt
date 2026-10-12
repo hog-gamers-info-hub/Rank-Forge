@@ -4,6 +4,8 @@ import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudDataSour
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotAssetCloudResult
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploadResult
 import com.hoggamers.rankforge.data.cloud.MatchLobbyScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.GroupRotationCloudMatchProvisionResult
+import com.hoggamers.rankforge.data.cloud.GroupRotationCloudMatchProvisioner
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudResult
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadResult
@@ -89,6 +91,65 @@ class ScreenshotUploadCheckpointTest {
         assertEquals(asset.cropProfileId, cloudAsset?.cropProfileId)
         assertEquals(asset.cropLeft, cloudAsset?.cropLeft)
         assertEquals(asset.localRelativePath, cloudAsset?.localRelativePath)
+    }
+
+    @Test
+    fun lobbyUploadWaitsForParentAndRetriesAfterProvisioningFailure() = runTest {
+        val identity = MatchLobbyScreenshotIdentity("tournament-1", "match-1", 1)
+        val root = newRoot()
+        val preserver = localPreserver(root)
+        val repository = CheckpointLobbyRepository(lobbyAsset(identity, preserver))
+        var parentReady = false
+        var parentCalls = 0
+        var storageCalls = 0
+        val checkpoint = MatchLobbyScreenshotUploadCheckpoint(
+            repository,
+            preserver,
+            clock,
+            storageUploader = lobbyStorage(
+                action = {
+                    assertTrue(parentReady)
+                    storageCalls += 1
+                    MatchLobbyScreenshotStorageUploadResult.Uploaded("parent-ready.png")
+                },
+            ),
+            cloudDataSource = object : MatchLobbyScreenshotAssetCloudDataSource {
+                override suspend fun upsert(asset: MatchLobbyScreenshotAssetEntity) =
+                    MatchLobbyScreenshotAssetCloudResult.Success
+
+                override suspend fun deleteByIdentity(identity: MatchLobbyScreenshotIdentity) =
+                    MatchLobbyScreenshotAssetCloudResult.Success
+            },
+            matchParentProvisioner = object : GroupRotationCloudMatchProvisioner {
+                override suspend fun ensureParent(
+                    tournamentId: String,
+                    matchId: String,
+                    expectedOwnerUserId: String?,
+                ): GroupRotationCloudMatchProvisionResult {
+                    parentCalls += 1
+                    return if (parentReady) {
+                        GroupRotationCloudMatchProvisionResult.Ensured
+                    } else {
+                        GroupRotationCloudMatchProvisionResult.NetworkFailure
+                    }
+                }
+
+                override suspend fun resolveCloudMatchId(
+                    tournamentId: String,
+                    matchId: String,
+                    expectedOwnerUserId: String?,
+                ) = matchId
+            },
+        )
+
+        assertEquals(MatchLobbyScreenshotUploadCheckpointResult.Failed, checkpoint.run(identity))
+        assertEquals(1, parentCalls)
+        assertEquals(0, storageCalls)
+
+        parentReady = true
+        assertEquals(MatchLobbyScreenshotUploadCheckpointResult.Completed, checkpoint.run(identity))
+        assertEquals(2, parentCalls)
+        assertEquals(1, storageCalls)
     }
 
     @Test

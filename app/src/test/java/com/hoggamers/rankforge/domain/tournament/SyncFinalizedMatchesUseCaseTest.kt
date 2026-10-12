@@ -167,6 +167,27 @@ class SyncFinalizedMatchesUseCaseTest {
     }
 
     @Test
+    fun uuidBackedGroupRotationFinalizedNeverDispatchesLegacyCloudSync() = runTest {
+        val local = groupRotationRepositoryWithFinalizedMatch()
+        val before = local.readLocalRevisionState(TOURNAMENT_ID)
+        val cloud = RecordingCloudRepository(FinalizedMatchCloudSyncResult.Success(2))
+        val result = SyncFinalizedMatchesUseCase(
+            tournamentRepository = local,
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudSyncRepository = cloud,
+            queueRecorder = testQueueRecorder(),
+            matchIdentityContextRepository = RecordingIdentityContextRepository(
+                MatchTeamIdentityContextReadResult.Loaded(groupRotationContext()),
+            ),
+            groupRotationMatchIdentityRepository = LoadedGroupRotationMatchIdentityRepository(),
+        )(TOURNAMENT_ID)
+
+        assertEquals(FinalizedMatchCloudSyncResult.ValidationFailure, result.primaryResult)
+        assertNull(cloud.snapshot)
+        assertEquals(before, local.readLocalRevisionState(TOURNAMENT_ID))
+    }
+
+    @Test
     fun retryReconstructsTenTeamSnapshotWithAuthoritativeSlotsAndTenCloudRows() = runTest {
         val local = InMemoryTournamentRepository()
         local.create(
@@ -438,6 +459,29 @@ class SyncFinalizedMatchesUseCaseTest {
             pairing: GroupPairing,
             ownerUserId: String,
         ): MatchTeamIdentityContextReadResult = result
+    }
+
+    private class LoadedGroupRotationMatchIdentityRepository : GroupRotationMatchIdentityPersistenceRepository {
+        override suspend fun save(
+            tournament: Tournament,
+            matchId: String,
+            snapshot: GroupRotationMatchIdentitySnapshot,
+            participantResults: List<GroupRotationMatchParticipantResult>,
+        ): GroupRotationMatchPersistenceResult = GroupRotationMatchPersistenceResult.Invalid(emptyList())
+
+        override suspend fun read(
+            tournament: Tournament,
+            matchId: String,
+        ): GroupRotationMatchPersistenceResult = GroupRotationMatchPersistenceResult.Loaded(
+            GroupRotationMatchPersistenceSnapshot(
+                identity = GroupRotationMatchIdentitySnapshot(
+                    tournamentId = tournament.id,
+                    pairing = tournament.selectedGroupPairings.first(),
+                    teams = emptyList(),
+                ),
+                participantResults = emptyList(),
+            ),
+        )
     }
 
     private class CountingRevisionRepository(

@@ -53,6 +53,7 @@ interface ScreenshotStorageUploader {
 class SupabaseScreenshotStorageUploader @Inject constructor(
     private val config: SupabaseAuthConfig,
     private val clientProvider: SupabaseClientProvider,
+    private val matchProvisioner: GroupRotationCloudMatchProvisioner,
 ) : ScreenshotStorageUploader {
     override suspend fun upload(
         tournamentId: String?,
@@ -127,13 +128,18 @@ class SupabaseScreenshotStorageUploader @Inject constructor(
             ?: return ScreenshotStorageUploadResult.Failed(
                 ScreenshotStorageUploadFailure.UNSUPPORTED_FORMAT,
             )
-        val objectPath = objectPath(
-            userId = userId,
+        val cloudMatchId = matchProvisioner.resolveCloudMatchId(
             tournamentId = normalizedTournamentId,
             matchId = normalizedMatchId,
-            extension = format.extension,
+            expectedOwnerUserId = userId,
         ) ?: return ScreenshotStorageUploadResult.Failed(
-            ScreenshotStorageUploadFailure.MISSING_TOURNAMENT_ID,
+            ScreenshotStorageUploadFailure.UPLOAD_FAILED,
+        )
+        val objectPath = objectPathForCloudMatchId(
+            userId = userId,
+            tournamentId = normalizedTournamentId,
+            cloudMatchId = cloudMatchId,
+            extension = format.extension,
         )
 
         return try {
@@ -150,6 +156,13 @@ class SupabaseScreenshotStorageUploader @Inject constructor(
     }
 
     companion object {
+        private fun objectPathForCloudMatchId(
+            userId: String,
+            tournamentId: String,
+            cloudMatchId: String,
+            extension: String,
+        ): String = "users/$userId/tournaments/$tournamentId/matches/$cloudMatchId/original.$extension"
+
         fun objectPath(
             userId: String,
             tournamentId: String,
@@ -161,7 +174,12 @@ class SupabaseScreenshotStorageUploader @Inject constructor(
                 localMatchId = matchId,
             ) ?: return null
 
-            return "users/$userId/tournaments/$tournamentId/matches/$cloudMatchId/original.$extension"
+            return objectPathForCloudMatchId(
+                userId = userId,
+                tournamentId = tournamentId,
+                cloudMatchId = cloudMatchId,
+                extension = extension,
+            )
         }
 
         private fun formatFor(file: File): ScreenshotImageFormat? = when (

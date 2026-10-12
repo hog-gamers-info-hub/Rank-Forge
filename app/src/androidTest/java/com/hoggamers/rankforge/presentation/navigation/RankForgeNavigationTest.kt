@@ -102,8 +102,12 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepo
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalSaveResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityWriteResult
 import com.hoggamers.rankforge.domain.tournament.ReadGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamIdentitySetupUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
@@ -2628,6 +2632,23 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
 
                             override suspend fun logout(): AuthOperationResult = error("unused")
                         },
+                        identityRepository = object : GroupRotationTeamIdentityLocalRepository {
+                            override suspend fun read(
+                                tournament: Tournament,
+                            ): GroupRotationTeamIdentityReadResult = GroupRotationTeamIdentityReadResult.Unsupported
+
+                            override suspend fun savePairing(
+                                tournament: Tournament,
+                                pairingKey: com.hoggamers.rankforge.domain.tournament.GroupPairing,
+                                entries: List<com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamIdentityEntry>,
+                            ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
+
+                            override suspend fun renameTeam(
+                                tournament: Tournament,
+                                teamUUID: String,
+                                displayName: String,
+                            ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
+                        },
                     ),
                     saveGroupRotationTeamSetup = SaveGroupRotationTeamSetupUseCase(
                         repository = object : GroupRotationTeamSetupLocalRepository {
@@ -2636,6 +2657,25 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                                 ownerUserId: String,
                             ): GroupRotationTeamSetupLocalSaveResult =
                                 GroupRotationTeamSetupLocalSaveResult.Saved
+                        },
+                    ),
+                    saveGroupRotationTeamIdentitySetup = SaveGroupRotationTeamIdentitySetupUseCase(
+                        repository = object : GroupRotationTeamIdentityLocalRepository {
+                            override suspend fun read(
+                                tournament: Tournament,
+                            ): GroupRotationTeamIdentityReadResult = GroupRotationTeamIdentityReadResult.Unsupported
+
+                            override suspend fun savePairing(
+                                tournament: Tournament,
+                                pairingKey: com.hoggamers.rankforge.domain.tournament.GroupPairing,
+                                entries: List<com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamIdentityEntry>,
+                            ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
+
+                            override suspend fun renameTeam(
+                                tournament: Tournament,
+                                teamUUID: String,
+                                displayName: String,
+                            ): GroupRotationTeamIdentityWriteResult = GroupRotationTeamIdentityWriteResult.Unsupported
                         },
                     ),
                     draftRepository = object : GroupRotationTeamSetupDraftRepository {
@@ -2654,6 +2694,11 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                             GroupRotationTeamSetupDraftSaveResult.Saved
 
                         override suspend fun clearDraft(tournamentId: String) = Unit
+
+                        override suspend fun clearDraftForPairing(
+                            tournamentId: String,
+                            pairing: com.hoggamers.rankforge.domain.tournament.GroupPairing,
+                        ) = Unit
                     },
                     uploadTournament = uploadAction,
                 )

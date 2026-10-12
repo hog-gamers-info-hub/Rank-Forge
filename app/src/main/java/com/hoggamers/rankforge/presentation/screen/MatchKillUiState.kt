@@ -18,6 +18,7 @@ data class MatchKillUiState(
     val tournamentId: String? = null,
     val matchId: String? = null,
     val matchNumber: Int? = null,
+    val isUuidBackedGroupRotation: Boolean = false,
     val rows: List<MatchKillRowUiState> = emptyList(),
     val validationErrors: Map<Int, KillValidationError> = emptyMap(),
     val globalError: KillGlobalError? = null,

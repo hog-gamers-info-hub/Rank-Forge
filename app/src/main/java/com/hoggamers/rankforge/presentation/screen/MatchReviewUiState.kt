@@ -180,6 +180,8 @@ data class MatchReviewUiState(
     val activeTeamCount: Int? = null,
     val finalizedParticipantSlotNumbers: Set<Int> = emptySet(),
     val matchNumber: Int? = null,
+    val isUuidBackedGroupRotation: Boolean = false,
+    val uuidFinalizationReady: Boolean = false,
     val nextMatchNumber: Int? = null,
     val existingMatchCount: Int? = null,
     val status: MatchStatus = MatchStatus.DRAFT,
@@ -241,6 +243,9 @@ data class MatchReviewUiState(
 
     val isValid: Boolean
         get() = isAvailable && validationErrors.isEmpty()
+
+    val canFinalize: Boolean
+        get() = isValid && (!isUuidBackedGroupRotation || uuidFinalizationReady)
 
     val canPrepareMatchCsvExport: Boolean
         get() = status == MatchStatus.FINALIZED && isValid

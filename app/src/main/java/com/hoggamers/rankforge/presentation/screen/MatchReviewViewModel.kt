@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
 import com.hoggamers.rankforge.data.cloud.MatchCloudIdentity
+import com.hoggamers.rankforge.data.cloud.GroupRotationCloudMatchProvisionResult
+import com.hoggamers.rankforge.data.cloud.GroupRotationCloudMatchProvisioner
+import com.hoggamers.rankforge.data.cloud.NoOpGroupRotationCloudMatchProvisioner
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudFailure
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudResult
@@ -64,6 +67,7 @@ import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
 import com.hoggamers.rankforge.domain.export.MatchCsvExportResult
 import com.hoggamers.rankforge.domain.export.MatchCsvExporter
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchInput
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
@@ -81,6 +85,18 @@ import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.ValidateMatchResultUseCase
 import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
+import com.hoggamers.rankforge.domain.tournament.ObserveGroupRotationMatchDraftUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchPointAdjustmentUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput
+import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationFailure
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationValidator
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchParticipantResultsUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
 import com.hoggamers.rankforge.domain.tournament.finalizedHistoricalTeamSlotNumbers
@@ -192,6 +208,11 @@ class MatchReviewViewModel @Inject constructor(
     private val saveDraftValue: SaveMatchDraftValueUseCase? = null,
     private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
         ReadMatchTeamIdentityContextUseCase(),
+    private val observeGroupRotationMatchDraft: ObserveGroupRotationMatchDraftUseCase? = null,
+    private val saveGroupRotationMatchPointAdjustment: SaveGroupRotationMatchPointAdjustmentUseCase? = null,
+    private val matchParentProvisioner: GroupRotationCloudMatchProvisioner = NoOpGroupRotationCloudMatchProvisioner,
+    private val finalizeGroupRotationMatch: FinalizeGroupRotationMatchUseCase? = null,
+    private val saveGroupRotationMatchParticipantResults: SaveGroupRotationMatchParticipantResultsUseCase? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
@@ -301,17 +322,21 @@ class MatchReviewViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             val tournamentFormat = getTournamentById(tournamentId).first()?.format
             val ownerUserId = screenshotOwnerProvider.currentOwnerUserId()
+            val groupDraft = observeGroupRotationMatchDraft?.invoke(tournamentId, matchId)
+                ?: flowOf(null)
             val baseInputs = combine(
                 observeMatches(tournamentId),
                 observeTournamentSlots(tournamentId),
                 observeRoster(tournamentId),
                 observeDraftValues(tournamentId, matchId),
-            ) { matches, slots, rosters, draftValues ->
+                groupDraft,
+            ) { matches, slots, rosters, draftValues, groupDraftResult ->
                 MatchReviewLoadInputs(
                     matches = matches,
                     slots = slots,
                     rosters = rosters,
                     draftValues = draftValues,
+                    groupDraft = groupDraftResult,
                 )
             }
             combine(
@@ -327,6 +352,7 @@ class MatchReviewViewModel @Inject constructor(
                 val slots = inputs.slots
                 val rosters = inputs.rosters
                 val draftValues = inputs.draftValues
+                val uuidDraft = inputs.groupDraft as? GroupRotationMatchDraftReadResult.Loaded
                 val match = matches.firstOrNull { it.id == matchId }
                 if (match == null) {
                     MatchReviewUiState(
@@ -337,6 +363,81 @@ class MatchReviewViewModel @Inject constructor(
                         matchId = matchId,
                     )
                 } else {
+                    if (uuidDraft != null) {
+                        val projection = GroupRotationMatchPresentationProjection.project(uuidDraft.state)
+                        val loadedProjection = projection as? GroupRotationMatchPresentationProjectionResult.Loaded
+                        if (loadedProjection == null) {
+                            return@combine MatchReviewUiState(
+                                isLoading = false,
+                                isAvailable = false,
+                                tournamentId = tournamentId,
+                                tournamentFormat = tournamentFormat,
+                                matchId = matchId,
+                            )
+                        }
+                        val restoredScreenshot = screenshotMetadata?.toRestoredUiState(localImagePreserver)
+                        val resultScreenshotSlots = resultScreenshotAssets.toResultScreenshotSlots(localImagePreserver)
+                        val rows = loadedProjection.rows.map { team ->
+                                MatchReviewRowUiState(
+                                    teamSlotNumber = team.lobbySlotNumber,
+                                    teamName = team.displayName,
+                                    placementInput = team.placementInput,
+                                    killsInput = team.killsInput,
+                                    pointAdjustment = team.pointAdjustment,
+                                    lobbySlotNumber = team.lobbySlotNumber,
+                                )
+                            }
+                        return@combine MatchReviewUiState(
+                            isLoading = false,
+                            isAvailable = true,
+                            tournamentId = tournamentId,
+                            tournamentFormat = tournamentFormat,
+                            matchId = matchId,
+                            activeTeamCount = rows.size,
+                            finalizedParticipantSlotNumbers = uuidDraft.state.participantResults
+                                .mapNotNull { result ->
+                                    uuidDraft.state.snapshot.teams.firstOrNull { it.teamUUID == result.teamUUID }
+                                        ?.lobbySlotNumber
+                                }
+                                .toSet(),
+                            matchNumber = match.matchNumber,
+                            nextMatchNumber = nextAvailableMatchNumber(matches.map { it.matchNumber }),
+                            existingMatchCount = matches.size,
+                            status = match.status,
+                            isUuidBackedGroupRotation = true,
+                            uuidFinalizationReady = GroupRotationMatchFinalizationValidator()
+                                .validate(uuidDraft.state.snapshot, uuidDraft.state.participantResults)
+                                .isEmpty(),
+                            correctionHistory = match.correctionHistory,
+                            rows = rows,
+                            validationErrors = emptyMap(),
+                            isScreenshotLinked = restoredScreenshot?.isLinked == true,
+                            linkedScreenshotFingerprint = restoredScreenshot?.fingerprint,
+                            isScreenshotLocallyPreserved = restoredScreenshot?.isLocallyPreserved == true,
+                            preservedScreenshotRelativePath = screenshotMetadata?.localRelativePath,
+                            screenshotMetadata = restoredScreenshot?.metadataUiState,
+                            isPreservedScreenshotMissing = restoredScreenshot?.isMissing == true,
+                            screenshotPreservationError = if (restoredScreenshot?.isMissing == true) {
+                                ScreenshotPreservationError.LOCAL_FILE_MISSING
+                            } else null,
+                            isScreenshotUploaded = restoredScreenshot?.isUploaded == true,
+                            screenshotUploadObjectPath = screenshotMetadata?.storageObjectPath,
+                            screenshotUploadError = restoredScreenshot?.uploadError,
+                            resultScreenshots = resultScreenshotSlots,
+                        )
+                    }
+                    if (match.groupPairing != null &&
+                        inputs.groupDraft != null &&
+                        inputs.groupDraft !is GroupRotationMatchDraftReadResult.NotUuidBacked
+                    ) {
+                        return@combine MatchReviewUiState(
+                            isLoading = false,
+                            isAvailable = false,
+                            tournamentId = tournamentId,
+                            tournamentFormat = tournamentFormat,
+                            matchId = matchId,
+                        )
+                    }
                     val identityContext = (readMatchTeamIdentityContext.forMatch(match.id)
                         as? MatchTeamIdentityContextReadResult.Loaded)?.context
                     val isGroupRotationMatch = tournamentFormat == TournamentFormat.GROUP_ROTATION ||
@@ -615,6 +716,18 @@ class MatchReviewViewModel @Inject constructor(
         val tournamentId = state.tournamentId?.takeIf { it.isNotBlank() } ?: return
         val matchId = state.matchId?.takeIf { it.isNotBlank() } ?: return
         if (!state.isEditable || state.rows.none { it.teamSlotNumber == teamSlotNumber }) return
+        if (state.isUuidBackedGroupRotation) {
+            val save = saveGroupRotationMatchPointAdjustment ?: return
+            viewModelScope.launch {
+                save(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    lobbySlotNumber = teamSlotNumber,
+                    pointAdjustment = pointAdjustment,
+                )
+            }
+            return
+        }
         saveDraftValue ?: return
         viewModelScope.launch {
             saveDraftValue(
@@ -2383,6 +2496,20 @@ class MatchReviewViewModel @Inject constructor(
         val expectedOwnerUserId = screenshotOwnerProvider.currentOwnerUserId()
             ?.takeIf { it.isNotBlank() }
             ?: return
+        val parentResult = matchParentProvisioner.ensureParent(identity.tournamentId, identity.matchId, expectedOwnerUserId)
+        when (parentResult) {
+            GroupRotationCloudMatchProvisionResult.Ensured,
+            GroupRotationCloudMatchProvisionResult.NotRequired,
+            -> Unit
+            else -> {
+                updateResultUploadFailure(
+                    identity,
+                    parentResult.toScreenshotStorageFailure().toUiError(),
+                    expectedOwnerUserId,
+                )
+                return
+            }
+        }
         val result = try {
             matchResultScreenshotStorageUploader.upload(
                 expectedOwnerUserId = expectedOwnerUserId,
@@ -3020,6 +3147,22 @@ class MatchReviewViewModel @Inject constructor(
             )
             return
         }
+        val parentResult = matchParentProvisioner.ensureParent(tournamentId, matchId, expectedOwnerUserId)
+        when (parentResult) {
+            GroupRotationCloudMatchProvisionResult.Ensured,
+            GroupRotationCloudMatchProvisionResult.NotRequired,
+            -> Unit
+            else -> {
+                handleStorageUploadFailure(
+                    tournamentId = tournamentId,
+                    matchId = matchId,
+                    selectedUri = selectedUri,
+                    failure = parentResult.toScreenshotStorageFailure(),
+                    expectedOwnerUserId = expectedOwnerUserId,
+                )
+                return
+            }
+        }
         val result = try {
             screenshotStorageUploader.upload(
                 expectedOwnerUserId = expectedOwnerUserId,
@@ -3176,7 +3319,12 @@ class MatchReviewViewModel @Inject constructor(
             null
         }
         if (!isCurrentScreenshotOwner(expectedOwnerUserId)) return
-        val cloudPayload = updatedMetadata?.toCloudPayload()
+        val cloudMatchId = matchParentProvisioner.resolveCloudMatchId(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            expectedOwnerUserId = expectedOwnerUserId,
+        )
+        val cloudPayload = cloudMatchId?.let { updatedMetadata?.toCloudPayload(it) }
         val cloudResult = if (cloudPayload != null) {
             try {
                 screenshotMetadataCloudDataSource.upsert(cloudPayload, expectedOwnerUserId)
@@ -3507,6 +3655,12 @@ class MatchReviewViewModel @Inject constructor(
 
     fun finalizeMatch() {
         val current = _uiState.value
+        if (current.isUuidBackedGroupRotation) {
+            if (current.canFinalize && !current.isFinalizing) {
+                finalizeUuidBackedMatch(current)
+            }
+            return
+        }
         val matchId = current.matchId ?: return
         if (
             !current.isEditable ||
@@ -3549,6 +3703,103 @@ class MatchReviewViewModel @Inject constructor(
                             )
                         },
                         finalizationError = result.globalError,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun finalizeUuidBackedMatch(current: MatchReviewUiState) {
+        val tournamentId = current.tournamentId ?: return
+        val matchId = current.matchId ?: return
+        val finalize = finalizeGroupRotationMatch ?: return
+        val saveResults = saveGroupRotationMatchParticipantResults ?: return
+        _uiState.update { it.copy(isFinalizing = true, finalizationError = null) }
+        viewModelScope.launch {
+            val draft = observeGroupRotationMatchDraft
+                ?.invoke(tournamentId, matchId)
+                ?.first() as? GroupRotationMatchDraftReadResult.Loaded
+            if (draft == null) {
+                _uiState.update {
+                    it.copy(
+                        isFinalizing = false,
+                        finalizationError = FinalizeMatchGlobalError.INVALID_DATA,
+                    )
+                }
+                return@launch
+            }
+            val teamByLobby = draft.state.snapshot.teams.associateBy { it.lobbySlotNumber }
+            val existingByUuid = draft.state.participantResults.associateBy { it.teamUUID }
+            val results = current.rows.map { row ->
+                val lobbySlot = row.lobbySlotNumber ?: row.teamSlotNumber
+                val team = teamByLobby[lobbySlot]
+                val placement = row.placementInput.trim().toIntOrNull()
+                val kills = row.killsInput.trim().toIntOrNull()
+                team?.let {
+                    val previous = existingByUuid[it.teamUUID]
+                    GroupRotationMatchParticipantResult(
+                        teamUUID = it.teamUUID,
+                        participationStatus = if (
+                            previous?.participationStatus == MatchParticipationStatus.NO_SHOW &&
+                            placement == null &&
+                            kills == 0
+                        ) {
+                            MatchParticipationStatus.NO_SHOW
+                        } else {
+                            MatchParticipationStatus.PARTICIPATED
+                        },
+                        placement = placement,
+                        kills = kills ?: -1,
+                        pointAdjustment = row.pointAdjustment,
+                    )
+                }
+            }
+            if (results.size != current.rows.size || results.any { it == null } ||
+                results.mapNotNull { it?.teamUUID }.toSet().size != results.size
+            ) {
+                _uiState.update {
+                    it.copy(
+                        isFinalizing = false,
+                        finalizationError = FinalizeMatchGlobalError.INVALID_DATA,
+                    )
+                }
+                return@launch
+            }
+            val participantResults = results.filterNotNull()
+            if (saveResults(tournamentId, matchId, participantResults) != GroupRotationMatchDraftMutationResult.SAVED) {
+                _uiState.update {
+                    it.copy(
+                        isFinalizing = false,
+                        finalizationError = FinalizeMatchGlobalError.INVALID_DATA,
+                    )
+                }
+                return@launch
+            }
+            when (
+                val result = finalize(
+                    FinalizeGroupRotationMatchInput(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        participantResults = participantResults,
+                    ),
+                )
+            ) {
+                is GroupRotationMatchFinalizationResult.Finalized -> {
+                    resultPositionCropPreviewsRequested = false
+                    clearAllResultPositionCropPreviews()
+                    _uiState.update { it.copy(isFinalizing = false, finalizationError = null) }
+                    launchFinalizedMatchCloudSync(tournamentId)
+                }
+                is GroupRotationMatchFinalizationResult.Rejected -> _uiState.update {
+                    it.copy(
+                        isFinalizing = false,
+                        finalizationError = when (result.reason) {
+                            GroupRotationMatchFinalizationFailure.MATCH_NOT_FOUND ->
+                                FinalizeMatchGlobalError.MATCH_NOT_FOUND
+                            GroupRotationMatchFinalizationFailure.MATCH_NOT_DRAFT ->
+                                FinalizeMatchGlobalError.MATCH_NOT_DRAFT
+                            else -> FinalizeMatchGlobalError.INVALID_DATA
+                        },
                     )
                 }
             }
@@ -3745,6 +3996,7 @@ private data class MatchReviewLoadInputs(
     val slots: List<TeamSlot>,
     val rosters: Map<Int, List<RosterPlayer>>,
     val draftValues: Map<Int, MatchDraftFieldValues>,
+    val groupDraft: GroupRotationMatchDraftReadResult?,
 )
 
 private sealed interface MatchResultAssetWriteResult {
@@ -4067,13 +4319,8 @@ private fun ScreenshotMetadataEntity.toUiState(): ScreenshotMetadataUiState =
         revision = revision,
     )
 
-private fun ScreenshotMetadataEntity.toCloudPayload(): ScreenshotMetadataCloudPayload? {
-    val cloudMatchId = MatchCloudIdentity.matchId(
-        tournamentId = tournamentId,
-        localMatchId = matchId,
-    ) ?: return null
-
-    return ScreenshotMetadataCloudPayload(
+private fun ScreenshotMetadataEntity.toCloudPayload(cloudMatchId: String): ScreenshotMetadataCloudPayload =
+    ScreenshotMetadataCloudPayload(
         matchId = cloudMatchId,
         ownerId = ownerUserId,
         tournamentId = tournamentId,
@@ -4094,6 +4341,15 @@ private fun ScreenshotMetadataEntity.toCloudPayload(): ScreenshotMetadataCloudPa
         createdAt = createdAt.toCloudTimestamp(),
         updatedAt = updatedAt.toCloudTimestamp(),
     )
+
+private fun GroupRotationCloudMatchProvisionResult.toScreenshotStorageFailure(): ScreenshotStorageUploadFailure = when (this) {
+    GroupRotationCloudMatchProvisionResult.AuthenticationRequired ->
+        ScreenshotStorageUploadFailure.MISSING_AUTH_SESSION
+    GroupRotationCloudMatchProvisionResult.AuthorizationFailure ->
+        ScreenshotStorageUploadFailure.AUTHORIZATION
+    GroupRotationCloudMatchProvisionResult.NetworkFailure ->
+        ScreenshotStorageUploadFailure.NETWORK
+    else -> ScreenshotStorageUploadFailure.UPLOAD_FAILED
 }
 
 private fun ScreenshotMetadataCloudFailure.toFailureCode(): String = when (this) {

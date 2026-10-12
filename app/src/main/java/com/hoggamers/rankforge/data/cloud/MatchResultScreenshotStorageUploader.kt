@@ -61,11 +61,13 @@ class SupabaseMatchResultScreenshotStorageUploader internal constructor(
     private val isConfigured: () -> Boolean,
     private val currentUserId: suspend () -> String?,
     private val uploadFile: suspend (String, String, File, String) -> Unit,
+    private val matchProvisioner: GroupRotationCloudMatchProvisioner = NoOpGroupRotationCloudMatchProvisioner,
 ) : MatchResultScreenshotStorageUploader {
     @Inject
     constructor(
         config: SupabaseAuthConfig,
         clientProvider: SupabaseClientProvider,
+        matchProvisioner: GroupRotationCloudMatchProvisioner,
     ) : this(
         isConfigured = { config.isConfigured },
         currentUserId = {
@@ -77,6 +79,7 @@ class SupabaseMatchResultScreenshotStorageUploader internal constructor(
                 this.contentType = ContentType.parse(contentType)
             }
         },
+        matchProvisioner = matchProvisioner,
     )
 
     override suspend fun upload(
@@ -155,14 +158,19 @@ class SupabaseMatchResultScreenshotStorageUploader internal constructor(
             ?: return MatchResultScreenshotStorageUploadResult.Failed(
                 MatchResultScreenshotStorageUploadFailure.UNSUPPORTED_FORMAT,
             )
-        val objectPath = objectPath(
-            userId = userId,
+        val cloudMatchId = matchProvisioner.resolveCloudMatchId(
             tournamentId = normalizedTournamentId,
             matchId = normalizedMatchId,
-            role = screenshotRole,
-            extension = format.extension,
+            expectedOwnerUserId = userId,
         ) ?: return MatchResultScreenshotStorageUploadResult.Failed(
             MatchResultScreenshotStorageUploadFailure.CLOUD_MATCH_ID_UNAVAILABLE,
+        )
+        val objectPath = objectPathForCloudMatchId(
+            userId = userId,
+            tournamentId = normalizedTournamentId,
+            cloudMatchId = cloudMatchId,
+            role = screenshotRole,
+            extension = format.extension,
         )
 
         return try {
@@ -187,6 +195,15 @@ class SupabaseMatchResultScreenshotStorageUploader internal constructor(
     ) = uploadFile(bucket, path, file, contentType)
 
     companion object {
+        private fun objectPathForCloudMatchId(
+            userId: String,
+            tournamentId: String,
+            cloudMatchId: String,
+            role: MatchResultScreenshotRole,
+            extension: String,
+        ): String = "users/$userId/tournaments/$tournamentId/matches/$cloudMatchId/result/" +
+            "${role.toCloudPathSegment()}/original.$extension"
+
         fun objectPath(
             userId: String,
             tournamentId: String,
@@ -199,8 +216,13 @@ class SupabaseMatchResultScreenshotStorageUploader internal constructor(
                 localMatchId = matchId,
             ) ?: return null
             val roleSegment = role.toCloudPathSegment()
-            return "users/$userId/tournaments/$tournamentId/matches/$cloudMatchId/result/" +
-                "$roleSegment/original.$extension"
+            return objectPathForCloudMatchId(
+                userId = userId,
+                tournamentId = tournamentId,
+                cloudMatchId = cloudMatchId,
+                role = role,
+                extension = extension,
+            )
         }
 
         fun formatFor(file: File): MatchResultScreenshotImageFormat? = when (

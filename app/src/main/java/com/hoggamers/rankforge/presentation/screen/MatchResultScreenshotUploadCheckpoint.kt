@@ -6,6 +6,9 @@ import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotAssetCloudResult
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadFailure
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploadResult
 import com.hoggamers.rankforge.data.cloud.MatchResultScreenshotStorageUploader
+import com.hoggamers.rankforge.data.cloud.GroupRotationCloudMatchProvisionResult
+import com.hoggamers.rankforge.data.cloud.GroupRotationCloudMatchProvisioner
+import com.hoggamers.rankforge.data.cloud.NoOpGroupRotationCloudMatchProvisioner
 import com.hoggamers.rankforge.data.cloud.NoOpMatchResultScreenshotAssetCloudDataSource
 import com.hoggamers.rankforge.data.cloud.NoOpMatchResultScreenshotStorageUploader
 import com.hoggamers.rankforge.data.cloud.OCR_SCREENSHOTS_BUCKET
@@ -49,6 +52,7 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
     private val cloudDataSource: MatchResultScreenshotAssetCloudDataSource =
         NoOpMatchResultScreenshotAssetCloudDataSource(),
     private val screenshotOwnerProvider: ScreenshotOwnerProvider = NoOpScreenshotOwnerProvider(),
+    private val matchParentProvisioner: GroupRotationCloudMatchProvisioner = NoOpGroupRotationCloudMatchProvisioner,
 ) : MatchResultScreenshotUploadCheckpointAction {
     override suspend fun run(identity: MatchResultScreenshotIdentity): MatchResultScreenshotUploadCheckpointResult =
         ScreenshotCloudReconciliationCoordinator.withLock(
@@ -93,6 +97,13 @@ class MatchResultScreenshotUploadCheckpoint @Inject constructor(
                     )
                 ) continue
                 return MatchResultScreenshotUploadCheckpointResult.Failed
+            }
+
+            when (matchParentProvisioner.ensureParent(identity.tournamentId, identity.matchId, expectedOwnerUserId)) {
+                GroupRotationCloudMatchProvisionResult.Ensured,
+                GroupRotationCloudMatchProvisionResult.NotRequired,
+                -> Unit
+                else -> return MatchResultScreenshotUploadCheckpointResult.Failed
             }
 
             val storageResult = if (hasRecordedStorageObject(current)) {

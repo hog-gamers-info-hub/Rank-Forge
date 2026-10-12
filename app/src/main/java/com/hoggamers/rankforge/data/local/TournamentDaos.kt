@@ -312,6 +312,12 @@ interface MatchDao {
     @Query("SELECT * FROM matches WHERE tournament_id = :tournamentId ORDER BY match_number, id")
     fun observeByTournamentId(tournamentId: String): Flow<List<MatchEntity>>
 
+    @Query("SELECT * FROM matches WHERE tournament_id = :tournamentId ORDER BY match_number, id")
+    suspend fun readForTournamentId(tournamentId: String): List<MatchEntity>
+
+    @Query("SELECT * FROM matches WHERE id = :matchId")
+    suspend fun readById(matchId: String): MatchEntity?
+
     @Query("SELECT * FROM matches WHERE id = :matchId")
     fun observeById(matchId: String): Flow<MatchEntity?>
 
