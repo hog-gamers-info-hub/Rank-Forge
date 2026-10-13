@@ -21,7 +21,6 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
-import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
@@ -30,6 +29,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -49,9 +49,7 @@ class GroupRotationInitialCloudSyncTest {
             snapshot.tournament.selectedGroupPairings.map { it.canonicalKey }.sorted(),
         )
         assertEquals(18, snapshot.slots.size)
-        assertEquals((1..6).toList(), snapshot.slots.filter { it.group == TournamentGroup.A }.map { it.slotNumber })
-        assertEquals((7..12).toList(), snapshot.slots.filter { it.group == TournamentGroup.B }.map { it.slotNumber })
-        assertEquals((13..18).toList(), snapshot.slots.filter { it.group == TournamentGroup.C }.map { it.slotNumber })
+        assertTrue(snapshot.slots.all { it.group == null })
         assertEquals(0, snapshot.expectedCloudRevision)
     }
 
@@ -69,7 +67,7 @@ class GroupRotationInitialCloudSyncTest {
             snapshot.tournament.selectedGroupPairings.map { it.canonicalKey }.sorted(),
         )
         assertEquals(24, snapshot.slots.size)
-        assertEquals((19..24).toList(), snapshot.slots.filter { it.group == TournamentGroup.D }.map { it.slotNumber })
+        assertTrue(snapshot.slots.all { it.group == null })
         assertEquals(0, snapshot.expectedCloudRevision)
     }
 

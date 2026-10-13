@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.data.cloud
 
+import android.util.Log
 import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AuthState
@@ -27,7 +28,10 @@ import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationFailureCategory
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRemoteResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
@@ -55,6 +59,7 @@ class GroupRotationDevCloudRoute @Inject constructor(
     private val uploadDelegate: com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase,
     private val uploadCoordinator: GroupRotationV4CloudUploadCoordinator,
     private val restorationDelegate: RestoreTournamentUseCase,
+    private val restorationCloudRepository: TournamentCloudRestorationRepository,
     private val uuidRestoration: RestoreGroupRotationUuidCloudUseCase,
     private val draftDelegate: SyncDraftMatchesUseCase,
     private val finalizedDelegate: SyncFinalizedMatchesUseCase,
@@ -90,13 +95,29 @@ class GroupRotationDevCloudRoute @Inject constructor(
     suspend fun restoreAction(
         tournamentId: String,
     ): QueueAwareActionResult<TournamentCloudRestorationResult> {
-        val owner = currentOwnerUserId() ?: return restorationDelegate.restore(tournamentId)
-        if (!devV4Enabled) return restorationDelegate.restore(tournamentId)
-        return when (val result = uuidRestoration(tournamentId)) {
-            GroupRotationUuidCloudRestorationResult.NotUuidBacked ->
-                restorationDelegate.restore(tournamentId)
-            else -> result.toTournamentRestorationResult()
+        val owner = currentOwnerUserId() ?: return restorationDelegate.restore(tournamentId).also {
+            debugRestore("ROUTE_LEGACY_AUTH_REQUIRED")
+            debugRestore("ROUTE_RESULT_${it.primaryResult.diagnosticCode()}")
+        }
+        if (!devV4Enabled) return restorationDelegate.restore(tournamentId).also {
+            debugRestore("ROUTE_LEGACY_V4_DISABLED")
+            debugRestore("ROUTE_RESULT_${it.primaryResult.diagnosticCode()}")
+        }
+        return when (val selection = selectRestorationEngine(tournamentId, owner)) {
+            RestorationEngine.LEGACY ->
+                restorationDelegate.restore(tournamentId).also {
+                    debugRestore("ROUTE_LEGACY_SELECTED")
+                    debugRestore("ROUTE_RESULT_${it.primaryResult.diagnosticCode()}")
+                }
+            is RestorationEngine.UUID_BACKED -> selection.result.toTournamentRestorationResult()
                 .withQueue(owner, SyncQueueOperationType.TOURNAMENT_RESTORATION, tournamentId)
+                .also {
+                    debugRestore("ROUTE_UUID_SELECTED")
+                    debugRestore("ROUTE_RESULT_${it.primaryResult.diagnosticCode()}")
+                }
+            is RestorationEngine.FAILURE -> selection.result
+                .withQueue(owner, SyncQueueOperationType.TOURNAMENT_RESTORATION, tournamentId)
+                .also { debugRestore("ROUTE_RESULT_${it.primaryResult.diagnosticCode()}") }
         }
     }
 
@@ -108,14 +129,73 @@ class GroupRotationDevCloudRoute @Inject constructor(
         tournamentId: String,
         expectedOwnerUserId: String,
     ): TournamentCloudRestorationResult {
+        if (currentOwnerUserId() != expectedOwnerUserId) {
+            return TournamentCloudRestorationResult.AuthorizationFailure
+        }
         if (!devV4Enabled) {
-            return restorationDelegate.executeForRetry(tournamentId, expectedOwnerUserId)
+            return restorationDelegate.executeForRetry(tournamentId, expectedOwnerUserId).also {
+                debugRestore("ROUTE_RETRY_LEGACY_V4_DISABLED")
+                debugRestore("ROUTE_RETRY_RESULT_${it.diagnosticCode()}")
+            }
         }
-        return when (val result = uuidRestoration(tournamentId)) {
-            GroupRotationUuidCloudRestorationResult.NotUuidBacked ->
-                restorationDelegate.executeForRetry(tournamentId, expectedOwnerUserId)
-            else -> result.toTournamentRestorationResult()
+        return when (val selection = selectRestorationEngine(tournamentId, expectedOwnerUserId)) {
+            RestorationEngine.LEGACY ->
+                restorationDelegate.executeForRetry(tournamentId, expectedOwnerUserId).also {
+                    debugRestore("ROUTE_RETRY_LEGACY_SELECTED")
+                    debugRestore("ROUTE_RETRY_RESULT_${it.diagnosticCode()}")
+                }
+            is RestorationEngine.UUID_BACKED -> selection.result.toTournamentRestorationResult().also {
+                debugRestore("ROUTE_RETRY_UUID_SELECTED")
+                debugRestore("ROUTE_RETRY_RESULT_${it.diagnosticCode()}")
+            }
+            is RestorationEngine.FAILURE -> selection.result.also {
+                debugRestore("ROUTE_RETRY_RESULT_${it.diagnosticCode()}")
+            }
         }
+    }
+
+    /** One authoritative cloud classification is shared by normal restore and retry. */
+    private suspend fun selectRestorationEngine(
+        tournamentId: String,
+        expectedOwnerUserId: String,
+    ): RestorationEngine {
+        val engine = try {
+            when (val parent = restorationCloudRepository.readOwnedTournament(tournamentId)) {
+                is TournamentCloudRestorationRemoteResult.Failure ->
+                    RestorationEngine.FAILURE(parent.category.toRestorationResult())
+                is TournamentCloudRestorationRemoteResult.Success -> {
+                    val tournament = parent.value.tournament
+                    if (tournament.id != tournamentId || tournament.ownerUserId != expectedOwnerUserId) {
+                        RestorationEngine.FAILURE(TournamentCloudRestorationResult.AuthorizationFailure)
+                    } else if (tournament.format != TournamentFormat.GROUP_ROTATION) {
+                        RestorationEngine.LEGACY
+                    } else {
+                        when (val result = uuidRestoration(tournamentId)) {
+                            GroupRotationUuidCloudRestorationResult.NotUuidBacked ->
+                                RestorationEngine.LEGACY
+                            else -> RestorationEngine.UUID_BACKED(result)
+                        }
+                    }
+                }
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            RestorationEngine.FAILURE(TournamentCloudRestorationResult.NetworkFailure)
+        }
+        debugRestore("ROUTE_ENGINE_${engine.diagnosticCode()}")
+        return engine
+    }
+
+    private sealed interface RestorationEngine {
+        data object LEGACY : RestorationEngine
+        data class UUID_BACKED(
+            val result: GroupRotationUuidCloudRestorationResult,
+        ) : RestorationEngine
+
+        data class FAILURE(
+            val result: TournamentCloudRestorationResult,
+        ) : RestorationEngine
     }
 
     suspend fun draftAction(
@@ -300,6 +380,39 @@ class GroupRotationDevCloudRoute @Inject constructor(
             error("NotUuidBacked is handled before mapping.")
     }
 
+    private fun TournamentCloudRestorationFailureCategory.toRestorationResult() = when (this) {
+        TournamentCloudRestorationFailureCategory.AUTHENTICATION ->
+            TournamentCloudRestorationResult.AuthenticationRequired
+        TournamentCloudRestorationFailureCategory.AUTHORIZATION,
+        TournamentCloudRestorationFailureCategory.NOT_FOUND,
+        -> TournamentCloudRestorationResult.AuthorizationFailure
+        TournamentCloudRestorationFailureCategory.NETWORK ->
+            TournamentCloudRestorationResult.NetworkFailure
+        TournamentCloudRestorationFailureCategory.VALIDATION ->
+            TournamentCloudRestorationResult.ValidationFailure
+    }
+
+    private fun debugRestore(code: String) {
+        if (BuildConfig.DEBUG) Log.d(RESTORE_LOG_TAG, code)
+    }
+
+    private fun RestorationEngine.diagnosticCode() = when (this) {
+        RestorationEngine.LEGACY -> "LEGACY"
+        is RestorationEngine.UUID_BACKED -> "UUID_BACKED"
+        is RestorationEngine.FAILURE -> "FAILURE_${result.diagnosticCode()}"
+    }
+
+    private fun TournamentCloudRestorationResult.diagnosticCode() = when (this) {
+        is TournamentCloudRestorationResult.Available -> "AVAILABLE"
+        is TournamentCloudRestorationResult.Success -> "SUCCESS"
+        TournamentCloudRestorationResult.AuthenticationRequired -> "AUTHENTICATION_REQUIRED"
+        TournamentCloudRestorationResult.AuthorizationFailure -> "AUTHORIZATION_FAILURE"
+        TournamentCloudRestorationResult.ValidationFailure -> "VALIDATION_FAILURE"
+        TournamentCloudRestorationResult.NetworkFailure -> "NETWORK_FAILURE"
+        is TournamentCloudRestorationResult.Conflict -> "CONFLICT"
+        TournamentCloudRestorationResult.LocalTransactionFailure -> "LOCAL_TRANSACTION_FAILURE"
+    }
+
     private fun TournamentCloudUploadResult.queueStatus() = when (this) {
         is TournamentCloudUploadResult.Success -> SyncQueueStatus.COMPLETED
         TournamentCloudUploadResult.AuthenticationRequired -> SyncQueueStatus.BLOCKED_AUTHENTICATION
@@ -345,6 +458,7 @@ class GroupRotationDevCloudRoute @Inject constructor(
     }
 
     companion object {
+        private const val RESTORE_LOG_TAG = "POINTIQ_V4_RESTORE"
         const val DEV_V4_ENABLED = "pointiq_dev_v4_enabled"
     }
 }

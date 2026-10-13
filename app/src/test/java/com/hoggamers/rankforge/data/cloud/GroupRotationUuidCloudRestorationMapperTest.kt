@@ -116,6 +116,73 @@ class GroupRotationUuidCloudRestorationMapperTest {
     }
 
     @Test
+    fun rejectsHeaderlessMatchWithoutIndependentLegacyEvidence() {
+        val result = GroupRotationUuidCloudRestorationMapper.map(
+            payloads(
+                identities = listOf(identity(U1, "Phoenix")),
+                assignments = listOf(assignment(PAIRING_AB, 3, U1)),
+                matches = listOf(baseMatch(PAIRING_AB)),
+                pairingLobbySlots = legacyPairingMappings(PAIRING_AB),
+            ),
+            OWNER,
+        )
+
+        assertTrue(result is GroupRotationUuidCloudRestorationMappingResult.Invalid)
+    }
+
+    @Test
+    fun legacyResultWithoutNumericMappingDoesNotEstablishLegacyIdentity() {
+        val result = GroupRotationUuidCloudRestorationMapper.map(
+            payloads(
+                matches = listOf(baseMatch(PAIRING_AB)),
+                legacyResults = listOf(legacyResult(MATCH)),
+            ),
+            OWNER,
+        )
+
+        assertTrue(result is GroupRotationUuidCloudRestorationMappingResult.Invalid)
+    }
+
+    @Test
+    fun genuineLegacyDraftWithoutResultsRemainsCompatibleWithNumericMapping() {
+        val result = GroupRotationUuidCloudRestorationMapper.map(
+            payloads(
+                matches = listOf(baseMatch(PAIRING_AB)),
+                pairingLobbySlots = legacyPairingMappings(PAIRING_AB),
+            ),
+            OWNER,
+        )
+
+        assertTrue(result is GroupRotationUuidCloudRestorationMappingResult.NotUuidBacked)
+    }
+
+    @Test
+    fun preservesMixedUuidAndLegacyMatchesWhenBothModesHaveEvidence() {
+        val legacyMatchId = "99999999-9999-4999-8999-999999999999"
+        val result = GroupRotationUuidCloudRestorationMapper.map(
+            payloads(
+                identities = listOf(identity(U1, "Phoenix")),
+                assignments = listOf(assignment(PAIRING_AB, 3, U1)),
+                matches = listOf(
+                    baseMatch(PAIRING_AB),
+                    baseMatch(PAIRING_AC, id = legacyMatchId, matchNumber = 2),
+                ),
+                uuidSnapshots = listOf(uuidHeader(PAIRING_AB)),
+                uuidAssignments = listOf(uuidAssignment(3, U1)),
+                uuidResults = listOf(uuidResult(U1, "PARTICIPATED", placement = null, kills = 4)),
+                legacyResults = listOf(legacyResult(legacyMatchId)),
+                pairingLobbySlots = legacyPairingMappings(PAIRING_AC),
+            ),
+            OWNER,
+        )
+
+        assertTrue(result is GroupRotationUuidCloudRestorationMappingResult.Success)
+        val snapshot = (result as GroupRotationUuidCloudRestorationMappingResult.Success).snapshot
+        assertEquals(listOf(MATCH, legacyMatchId), snapshot.matches.map { it.id })
+        assertEquals(listOf(MATCH), snapshot.uuidMatches.map { it.match.id })
+    }
+
+    @Test
     fun finalizedResultsAndNoShowSemanticsArePreserved() {
         val result = GroupRotationUuidCloudRestorationMapper.map(
             payloads(
@@ -200,10 +267,15 @@ class GroupRotationUuidCloudRestorationMapperTest {
         identities: List<GroupRotationUuidTeamIdentityPayload> = emptyList(),
         assignments: List<GroupRotationUuidPairingAssignmentPayload> = emptyList(),
         matches: List<MatchCloudRestorePayload> = emptyList(),
+        legacyResults: List<MatchResultCloudRestorePayload> = emptyList(),
+        pairingLobbySlots: List<GroupPairingLobbySlotUploadPayload> = emptyList(),
         uuidSnapshots: List<GroupRotationUuidMatchSnapshotRestorePayload> = emptyList(),
         uuidAssignments: List<GroupRotationUuidMatchAssignmentRestorePayload> = emptyList(),
         uuidResults: List<GroupRotationUuidMatchResultRestorePayload> = emptyList(),
     ): GroupRotationUuidCloudRestorationPayloads {
+        val referencedTeamSlotNumbers = pairingLobbySlots
+            .map { it.teamSlotNumber }
+            .toSet()
         val parent = TournamentCloudRestorationPayloads(
             tournament = TournamentUploadPayload(
                 id = T,
@@ -225,18 +297,18 @@ class GroupRotationUuidCloudRestorationMapperTest {
                     id = "00000000-0000-0000-0000-${slot.toString().padStart(12, '0')}",
                     tournamentId = T,
                     slotNumber = slot,
-                    teamName = "",
+                    teamName = if (slot in referencedTeamSlotNumbers) "Legacy Team $slot" else "",
                     status = "active",
                     group = null,
                 )
             },
             players = emptyList(),
-            pairingLobbySlots = emptyList(),
+            pairingLobbySlots = pairingLobbySlots,
         )
         return GroupRotationUuidCloudRestorationPayloads(
             parent = parent,
             matches = matches,
-            legacyResults = emptyList(),
+            legacyResults = legacyResults,
             identities = identities,
             assignments = assignments,
             uuidMatchSnapshots = uuidSnapshots,
@@ -255,10 +327,15 @@ class GroupRotationUuidCloudRestorationMapperTest {
     private fun assignment(pairing: GroupPairing, lobby: Int, uuid: String) =
         GroupRotationUuidPairingAssignmentPayload(T, pairing.canonicalKey, lobby, uuid)
 
-    private fun baseMatch(pairing: GroupPairing, status: String = "draft") = MatchCloudRestorePayload(
-        id = MATCH,
+    private fun baseMatch(
+        pairing: GroupPairing,
+        status: String = "draft",
+        id: String = MATCH,
+        matchNumber: Int = 1,
+    ) = MatchCloudRestorePayload(
+        id = id,
         tournamentId = T,
-        matchNumber = 1,
+        matchNumber = matchNumber,
         matchDate = "2026-10-12",
         mapName = "Erangel",
         status = status,
@@ -276,6 +353,27 @@ class GroupRotationUuidCloudRestorationMapperTest {
             finalizedAt = if (status == "finalized") "2026-10-12T10:00:00Z" else null,
             finalizedBy = if (status == "finalized") OWNER else null,
         )
+
+    private fun legacyResult(matchId: String) = MatchResultCloudRestorePayload(
+        id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        matchId = matchId,
+        teamSlotId = TournamentCloudIdentity.teamSlotId(
+            java.util.UUID.fromString(T),
+            1,
+        ),
+        placement = 1,
+        kills = 4,
+        participationStatus = "PARTICIPATED",
+    )
+
+    private fun legacyPairingMappings(pairing: GroupPairing) = (1..12).map { lobbySlotNumber ->
+        GroupPairingLobbySlotUploadPayload(
+            tournamentId = T,
+            pairingKey = pairing.canonicalKey,
+            lobbySlotNumber = lobbySlotNumber,
+            teamSlotNumber = lobbySlotNumber,
+        )
+    }
 
     private fun uuidAssignment(lobby: Int, uuid: String) =
         GroupRotationUuidMatchAssignmentRestorePayload(MATCH, T, lobby, uuid)

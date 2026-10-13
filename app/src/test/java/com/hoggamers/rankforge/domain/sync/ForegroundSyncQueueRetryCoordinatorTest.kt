@@ -45,13 +45,28 @@ class ForegroundSyncQueueRetryCoordinatorTest {
     }
 
     @Test fun otherConflictCategoriesRemainNonRetryable() {
-        listOf("STALE_WRITE_CONFLICT", "LOCAL_CLOUD_DIVERGENCE", "AUTHORIZATION").forEach { category ->
+        listOf("STALE_WRITE_CONFLICT", "AUTHORIZATION").forEach { category ->
             val entry = entry(
                 SyncQueueOperationType.ROSTER_REPLACEMENT,
                 SyncQueueStatus.FAILED_CONFLICT,
             ).copy(failureCategory = category)
             assertFalse(policy.isEligible(entry, hasAuthenticatedSession = true))
         }
+    }
+
+    @Test fun finalizedMatchLocalCloudDivergenceCanUseTheExistingRetryPath() {
+        val entry = entry(
+            SyncQueueOperationType.FINALIZED_MATCH_SYNC,
+            SyncQueueStatus.FAILED_CONFLICT,
+        ).copy(failureCategory = "LOCAL_CLOUD_DIVERGENCE")
+
+        assertTrue(policy.isEligible(entry, hasAuthenticatedSession = true))
+        assertFalse(
+            policy.isEligible(
+                entry.copy(operationType = SyncQueueOperationType.ROSTER_REPLACEMENT),
+                hasAuthenticatedSession = true,
+            ),
+        )
     }
 
     @Test fun nonRetryableStatusesAreSkipped() = runTest {
@@ -87,6 +102,25 @@ class ForegroundSyncQueueRetryCoordinatorTest {
         assertEquals(3, repository.entries.single().attemptCount)
         assertEquals(1, repository.entries.size)
         assertEquals(3, attempted.single().attemptCount)
+    }
+
+    @Test fun resolvedFinalizedMatchDivergenceUpdatesTheExistingQueueEntry() = runTest {
+        val entry = entry(
+            SyncQueueOperationType.FINALIZED_MATCH_SYNC,
+            SyncQueueStatus.FAILED_CONFLICT,
+        ).copy(failureCategory = "LOCAL_CLOUD_DIVERGENCE")
+        val repository = RecordingRepository(listOf(entry))
+        val executor = RecordingExecutor(SyncQueueRetryOutcome.Success)
+
+        ForegroundSyncQueueRetryCoordinator(repository, executor, testAuth()).retryEligible(
+            listOf(entry),
+            ownerUserId = OWNER_A,
+        )
+
+        assertEquals(listOf(entry.id), executor.executedEntries.map { it.id })
+        assertEquals(listOf(entry.id), repository.completedIds)
+        assertEquals(SyncQueueStatus.COMPLETED, repository.entries.single().status)
+        assertEquals(1, repository.entries.single().attemptCount)
     }
 
     @Test fun duplicateEligibleEntriesExecuteOnlyTheOldestOperationIdentity() = runTest {

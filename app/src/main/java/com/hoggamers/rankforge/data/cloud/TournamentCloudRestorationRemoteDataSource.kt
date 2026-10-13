@@ -240,7 +240,7 @@ private fun TournamentCloudRestorePayload.toRevisionFence(
 
 private const val MAX_REVISION_READ_ATTEMPTS = 2
 
-private fun TournamentCloudRestorePayload.toUploadPayload(
+internal fun TournamentCloudRestorePayload.toUploadPayload(
     pairings: List<GroupPairingUploadPayload> = selectedGroupPairings,
 ) = TournamentUploadPayload(
     id = id,

@@ -7,7 +7,11 @@ import java.util.concurrent.CancellationException
 class SyncQueueRetryEligibilityPolicy {
     fun isEligible(entry: SyncQueueEntry, hasAuthenticatedSession: Boolean): Boolean =
         if (entry.status == SyncQueueStatus.FAILED_CONFLICT) {
-            entry.failureCategory == RevisionConflict.MissingRevision.queueFailureCategory()
+            entry.failureCategory == RevisionConflict.MissingRevision.queueFailureCategory() ||
+                (
+                    entry.operationType == SyncQueueOperationType.FINALIZED_MATCH_SYNC &&
+                        entry.failureCategory == "LOCAL_CLOUD_DIVERGENCE"
+                    )
         } else {
             isRetryable(entry.status, hasAuthenticatedSession)
         }

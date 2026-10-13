@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.data.cloud
 
+import android.util.Log
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
@@ -33,31 +35,33 @@ object GroupRotationUuidCloudRestorationMapper {
         payloads: GroupRotationUuidCloudRestorationPayloads,
         expectedOwnerUserId: String,
     ): GroupRotationUuidCloudRestorationMappingResult {
-        if (expectedOwnerUserId.isBlank()) return GroupRotationUuidCloudRestorationMappingResult.Invalid
+        if (expectedOwnerUserId.isBlank()) return invalid("EXPECTED_OWNER_BLANK")
         val parent = when (
             val result = TournamentCloudRestorationMapper.mapSnapshot(payloads.parent)
         ) {
-            is TournamentCloudRestorationMappingResult.Success -> result.value
+            is TournamentCloudRestorationMappingResult.Success -> result.value.also {
+                debugMapper("MAPPER_PARENT_SUCCESS")
+            }
             TournamentCloudRestorationMappingResult.Invalid ->
-                return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                return invalid("PARENT_INVALID")
         }
         val tournament = parent.tournament
         if (tournament.format != TournamentFormat.GROUP_ROTATION ||
             tournament.ownerUserId != expectedOwnerUserId ||
             parent.cloudRevision == null
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("PARENT_CONTEXT_INVALID")
         }
 
         val normalizer = GroupRotationTeamIdentityNormalizer()
         val identities = payloads.identities.map { payload ->
             if (payload.tournamentId != tournament.id || !isCanonicalUuid(payload.teamUUID)) {
-                return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                return invalid("IDENTITY_ROW_INVALID")
             }
             if (normalizer.cleanDisplayName(payload.displayName).isBlank() ||
                 payload.normalizedName != normalizer.normalize(payload.displayName)
             ) {
-                return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                return invalid("IDENTITY_NAME_INVALID")
             }
             GroupRotationTeamIdentity(
                 tournamentId = payload.tournamentId,
@@ -69,26 +73,26 @@ object GroupRotationUuidCloudRestorationMapper {
         val capacity = when (tournament.groupCount) {
             3 -> 18
             4 -> 24
-            else -> return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            else -> return invalid("CAPACITY_INVALID")
         }
         if (identities.size > capacity ||
             identities.map { it.teamUUID }.distinct().size != identities.size ||
             identities.map { it.normalizedName }.distinct().size != identities.size
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("IDENTITY_POOL_INVALID")
         }
         val identitiesByUuid = identities.associateBy { it.teamUUID }
         val selectedPairings = tournament.selectedGroupPairings.toSet()
 
         val assignments = payloads.assignments.map { payload ->
             val pairing = runCatching { GroupPairing.fromCanonicalKey(payload.pairingKey) }
-                .getOrNull() ?: return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                .getOrNull() ?: return invalid("ASSIGNMENT_PAIRING_INVALID")
             if (payload.tournamentId != tournament.id ||
                 pairing !in selectedPairings ||
                 payload.lobbySlotNumber !in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS ||
                 identitiesByUuid[payload.teamUUID] == null
             ) {
-                return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                return invalid("ASSIGNMENT_ROW_INVALID")
             }
             GroupRotationPairingAssignment(
                 tournamentId = payload.tournamentId,
@@ -100,14 +104,14 @@ object GroupRotationUuidCloudRestorationMapper {
         if (assignments.groupBy { it.pairingKey to it.lobbySlotNumber }.any { it.value.size > 1 } ||
             assignments.groupBy { it.pairingKey to it.teamUUID }.any { it.value.size > 1 }
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("ASSIGNMENT_DUPLICATE")
         }
 
         val baseMatches = payloads.matches
         if (baseMatches.map { it.id }.distinct().size != baseMatches.size ||
             baseMatches.map { it.matchNumber }.distinct().size != baseMatches.size
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("BASE_MATCH_DUPLICATE")
         }
         val baseById = baseMatches.associateBy { it.id }
         if (baseMatches.any { match ->
@@ -121,7 +125,7 @@ object GroupRotationUuidCloudRestorationMapper {
                         .getOrNull() !in selectedPairings
             }
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("BASE_MATCH_ROW_INVALID")
         }
 
         val headers = payloads.uuidMatchSnapshots
@@ -134,7 +138,7 @@ object GroupRotationUuidCloudRestorationMapper {
                     header.status !in setOf("draft", "finalized")
             }
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("UUID_HEADER_ROW_INVALID")
         }
         if (headers.any { header ->
                 val base = baseById.getValue(header.matchId)
@@ -147,7 +151,7 @@ object GroupRotationUuidCloudRestorationMapper {
                         (header.finalizedAt != null || header.finalizedBy != null))
             }
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("UUID_HEADER_CONFLICT")
         }
 
         val assignmentsByMatch = payloads.uuidMatchAssignments.groupBy { it.matchId }
@@ -159,7 +163,7 @@ object GroupRotationUuidCloudRestorationMapper {
                     identitiesByUuid[row.teamUUID] == null
             }
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("UUID_ASSIGNMENT_ROW_INVALID")
         }
         if (assignmentsByMatch.values.any { rows ->
                 rows.isEmpty() ||
@@ -167,7 +171,7 @@ object GroupRotationUuidCloudRestorationMapper {
                     rows.groupBy { it.teamUUID }.any { it.value.size > 1 }
             }
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("UUID_ASSIGNMENT_SET_INVALID")
         }
 
         val resultsByMatch = payloads.uuidMatchResults.groupBy { it.matchId }
@@ -180,13 +184,13 @@ object GroupRotationUuidCloudRestorationMapper {
                     row.participationStatus !in setOf("PARTICIPATED", "NO_SHOW")
             }
         ) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("UUID_RESULT_ROW_INVALID")
         }
 
         val uuidSnapshots = headers.map { header ->
             val base = baseById.getValue(header.matchId)
             val pairing = runCatching { GroupPairing.fromCanonicalKey(header.pairingKey) }
-                .getOrNull() ?: return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                .getOrNull() ?: return invalid("UUID_HEADER_PAIRING_INVALID")
             val matchAssignments = assignmentsByMatch[header.matchId].orEmpty()
             val assignedUuids = matchAssignments.map { it.teamUUID }.toSet()
             val resultRows = resultsByMatch[header.matchId].orEmpty()
@@ -194,21 +198,21 @@ object GroupRotationUuidCloudRestorationMapper {
                 resultRows.groupBy { it.placement }.filterKeys { it != null }.any { it.value.size > 1 } ||
                 resultRows.any { it.teamUUID !in assignedUuids }
             ) {
-                return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                return invalid("UUID_RESULT_SET_INVALID")
             }
             if (resultRows.any { row ->
                     row.participationStatus == "NO_SHOW" &&
                         (row.placement != null || row.kills != 0)
                 }
             ) {
-                return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                return invalid("UUID_NO_SHOW_INVALID")
             }
             val participated = resultRows.filter { it.participationStatus == "PARTICIPATED" }
             if (header.status == "finalized") {
                 if (resultRows.size != assignedUuids.size || participated.isEmpty() ||
                     participated.mapNotNull { it.placement }.toSet() != (1..participated.size).toSet()
                 ) {
-                    return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                    return invalid("UUID_FINALIZED_RESULT_INVALID")
                 }
             }
             val identitySnapshot = GroupRotationMatchIdentitySnapshot(
@@ -238,7 +242,7 @@ object GroupRotationUuidCloudRestorationMapper {
                     tournamentId = base.tournamentId,
                     matchNumber = base.matchNumber,
                     date = runCatching { LocalDate.parse(base.matchDate) }.getOrNull()
-                        ?: return GroupRotationUuidCloudRestorationMappingResult.Invalid,
+                        ?: return invalid("BASE_MATCH_DATE_INVALID"),
                     mapName = base.mapName,
                     status = MatchStatus.valueOf(header.status.uppercase()),
                     groupPairing = pairing,
@@ -250,6 +254,29 @@ object GroupRotationUuidCloudRestorationMapper {
 
         val uuidMatchIds = uuidSnapshots.map { it.match.id }.toSet()
         val legacyMatches = baseMatches.filter { it.id !in uuidMatchIds }
+        val legacyMappingSlotsByPairing = payloads.parent.pairingLobbySlots
+            .groupBy { it.pairingKey }
+            .mapValues { (_, mappings) -> mappings.map { it.teamSlotNumber }.toSet() }
+        val hasUuidRegistryData = identities.isNotEmpty() || assignments.isNotEmpty()
+        val tournamentUuid = runCatching { UUID.fromString(tournament.id) }.getOrNull()
+        val legacyEvidenceMatchIds = legacyMatches
+            .filter { match ->
+                val mappingSlots = legacyMappingSlotsByPairing[match.groupPairingKey].orEmpty()
+                if (mappingSlots.isEmpty()) return@filter false
+                if (!hasUuidRegistryData) return@filter true
+
+                val legacyRows = payloads.legacyResults.filter { it.matchId == match.id }
+                legacyRows.isNotEmpty() && tournamentUuid != null && legacyRows.all { row ->
+                    mappingSlots.any { slotNumber ->
+                        TournamentCloudIdentity.teamSlotId(tournamentUuid, slotNumber) == row.teamSlotId
+                    }
+                }
+            }
+            .map { it.id }
+            .toSet()
+        if (legacyMatches.any { it.id !in legacyEvidenceMatchIds }) {
+            return invalid("MATCH_IDENTITY_AMBIGUOUS")
+        }
         val legacySnapshot = if (legacyMatches.isEmpty()) {
             emptyList()
         } else {
@@ -267,14 +294,14 @@ object GroupRotationUuidCloudRestorationMapper {
             ) {
                 is MatchCloudRestorationMappingResult.Success -> result.value.matches
                 MatchCloudRestorationMappingResult.Invalid ->
-                    return GroupRotationUuidCloudRestorationMappingResult.Invalid
+                    return invalid("LEGACY_MATCH_MAPPING_INVALID")
             }
         }
 
         val allMatches = (legacySnapshot + uuidSnapshots.map { it.match })
             .sortedWith(compareBy({ it.matchNumber }, { it.id }))
         if (allMatches.map { it.id }.distinct().size != allMatches.size) {
-            return GroupRotationUuidCloudRestorationMappingResult.Invalid
+            return invalid("RESTORED_MATCH_DUPLICATE")
         }
         if (uuidSnapshots.isEmpty() && identities.isEmpty() && assignments.isEmpty()) {
             return GroupRotationUuidCloudRestorationMappingResult.NotUuidBacked
@@ -293,4 +320,15 @@ object GroupRotationUuidCloudRestorationMapper {
 
     private fun isCanonicalUuid(value: String): Boolean =
         runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)
+}
+
+private const val RESTORE_LOG_TAG = "POINTIQ_V4_RESTORE"
+
+private fun invalid(code: String): GroupRotationUuidCloudRestorationMappingResult {
+    debugMapper("MAPPER_INVALID_$code")
+    return GroupRotationUuidCloudRestorationMappingResult.Invalid
+}
+
+private fun debugMapper(code: String) {
+    if (BuildConfig.DEBUG) Log.d(RESTORE_LOG_TAG, code)
 }

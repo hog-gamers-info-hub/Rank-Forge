@@ -26,8 +26,11 @@ import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import java.util.UUID
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -37,6 +40,7 @@ import kotlinx.serialization.json.Json
  * It is intentionally not bound to the normal upload action until cloud
  * restoration and device verification are complete.
  */
+@Singleton
 class GroupRotationV4CloudUploadCoordinator @Inject constructor(
     private val authRepository: AuthRepository,
     private val tournamentRepository: TournamentRepository,
@@ -53,12 +57,16 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
     @param:javax.inject.Named(REQUEST_ID_GENERATOR)
     private val requestIdGenerator: () -> String,
 ) {
+    private val uploadMutex = Mutex()
     private val json = Json {
         encodeDefaults = true
         ignoreUnknownKeys = false
     }
 
-    suspend fun upload(tournamentId: String): GroupRotationV4CloudUploadResult {
+    suspend fun upload(tournamentId: String): GroupRotationV4CloudUploadResult =
+        uploadMutex.withLock { uploadLocked(tournamentId) }
+
+    private suspend fun uploadLocked(tournamentId: String): GroupRotationV4CloudUploadResult {
         val ownerUserId = currentOwnerUserId()
             ?: return GroupRotationV4CloudUploadResult.AuthenticationRequired
         if (deletionIntentRepository.isBlockingByTournamentIdAndOwner(tournamentId, ownerUserId)) {
@@ -75,7 +83,10 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
             is GroupRotationV4SyncJournalEntriesResult.Corrupt ->
                 return GroupRotationV4CloudUploadResult.ValidationFailure
             is GroupRotationV4SyncJournalEntriesResult.Loaded -> if (recovered.entries.isNotEmpty()) {
-                return processJournalEntries(recovered.entries, ownerUserId, tournamentId)
+                when (val recovery = processJournalEntries(recovered.entries, ownerUserId, tournamentId)) {
+                    is GroupRotationV4CloudUploadResult.Success -> Unit
+                    else -> return recovery
+                }
             }
         }
 
@@ -168,70 +179,250 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
 
         var revision = revisionAfterIdentity
         uuidMatchSnapshots.forEach { (match, snapshot) ->
-            val draftRequestId = nextRequestId()
-                ?: return GroupRotationV4CloudUploadResult.ValidationFailure
-            val draftMapping = GroupRotationMatchCloudV4Mapper.mapDraft(
-                tournament = tournament,
-                request = GroupRotationV4DraftWriteRequest(
-                    tournament = tournament,
-                    tournamentId = tournamentId,
-                    matchId = match.id,
-                    source = GroupRotationMatchCloudV4RequestSource(snapshot, identitySnapshot),
-                    expectedRevision = revision,
-                    requestId = draftRequestId,
-                ),
-            )
-            val draftParameters = (draftMapping as? GroupRotationV4MappingResult.Success)
-                ?.parameters
-                ?: return GroupRotationV4CloudUploadResult.ValidationFailure
             when (
-                val draftResult = dispatchNew(
+                val matchResult = synchronizeMatch(
+                    tournament = tournament,
+                    match = match,
+                    snapshot = snapshot,
+                    identitySnapshot = identitySnapshot,
                     ownerUserId = ownerUserId,
-                    tournamentId = tournamentId,
-                    matchId = match.id,
-                    operationType = GroupRotationV4SyncJournalOperationType.MATCH_DRAFT,
-                    payloadJson = json.encodeToString(draftParameters),
-                    expectedRevision = revision,
+                    revision = revision,
                 )
             ) {
-                is OperationResult.Confirmed -> revision = draftResult.revision
-                is OperationResult.Failed -> return draftResult.result
-            }
-
-            if (match.status == MatchStatus.FINALIZED) {
-                val finalRequestId = nextRequestId()
-                    ?: return GroupRotationV4CloudUploadResult.ValidationFailure
-                val finalMapping = GroupRotationMatchCloudV4Mapper.mapFinalization(
-                    tournament = tournament,
-                    request = GroupRotationV4FinalizationRequest(
-                        tournament = tournament,
-                        tournamentId = tournamentId,
-                        matchId = match.id,
-                        source = GroupRotationMatchCloudV4RequestSource(snapshot, identitySnapshot),
-                        expectedRevision = revision,
-                        requestId = finalRequestId,
-                    ),
-                )
-                val finalParameters = (finalMapping as? GroupRotationV4MappingResult.Success)
-                    ?.parameters
-                    ?: return GroupRotationV4CloudUploadResult.ValidationFailure
-                when (
-                    val finalResult = dispatchNew(
-                        ownerUserId = ownerUserId,
-                        tournamentId = tournamentId,
-                        matchId = match.id,
-                        operationType = GroupRotationV4SyncJournalOperationType.MATCH_FINALIZATION,
-                        payloadJson = json.encodeToString(finalParameters),
-                        expectedRevision = revision,
-                    )
-                ) {
-                    is OperationResult.Confirmed -> revision = finalResult.revision
-                    is OperationResult.Failed -> return finalResult.result
-                }
+                is OperationResult.Confirmed -> revision = matchResult.revision
+                is OperationResult.Failed -> return matchResult.result
             }
         }
         return GroupRotationV4CloudUploadResult.Success(revision)
     }
+
+    private suspend fun synchronizeMatch(
+        tournament: com.hoggamers.rankforge.domain.tournament.Tournament,
+        match: Match,
+        snapshot: com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot,
+        identitySnapshot: com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalSnapshot,
+        ownerUserId: String,
+        revision: Int,
+    ): OperationResult {
+        val remoteState = matchParentProvisioner.readRemoteState(
+            tournamentId = tournament.id,
+            matchId = match.id,
+            expectedOwnerUserId = ownerUserId,
+        )
+        val stateRevision = when (remoteState) {
+            GroupRotationCloudMatchRemoteStateResult.NotRequired ->
+                return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+            is GroupRotationCloudMatchRemoteStateResult.Missing -> remoteState.currentTournamentRevision
+            is GroupRotationCloudMatchRemoteStateResult.Loaded -> remoteState.currentTournamentRevision
+            GroupRotationCloudMatchRemoteStateResult.AuthenticationRequired ->
+                return OperationResult.Failed(GroupRotationV4CloudUploadResult.AuthenticationRequired)
+            GroupRotationCloudMatchRemoteStateResult.AuthorizationFailure ->
+                return OperationResult.Failed(GroupRotationV4CloudUploadResult.AuthorizationFailure)
+            GroupRotationCloudMatchRemoteStateResult.ValidationFailure ->
+                return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+            GroupRotationCloudMatchRemoteStateResult.NetworkFailure ->
+                return OperationResult.Failed(GroupRotationV4CloudUploadResult.NetworkFailure)
+        }.let { remoteRevision ->
+            if (remoteRevision <= 0) revision else remoteRevision
+        }
+        if (stateRevision != revision) {
+            return OperationResult.Failed(
+                GroupRotationV4CloudUploadResult.Conflict(
+                    RevisionConflict.StaleWrite(
+                        expectedRevision = com.hoggamers.rankforge.domain.sync.CloudRevision(revision),
+                        currentCloudRevision = com.hoggamers.rankforge.domain.sync.CloudRevision(stateRevision),
+                    ),
+                ),
+            )
+        }
+
+        val desiredSource = GroupRotationMatchCloudV4RequestSource(snapshot, identitySnapshot)
+        when (remoteState) {
+            is GroupRotationCloudMatchRemoteStateResult.Missing -> {
+                val draft = dispatchDraft(
+                    tournament = tournament,
+                    match = match,
+                    source = desiredSource,
+                    ownerUserId = ownerUserId,
+                    expectedRevision = stateRevision,
+                )
+                if (draft is OperationResult.Failed || match.status != MatchStatus.FINALIZED) return draft
+                val draftRevision = (draft as OperationResult.Confirmed).revision
+                return dispatchFinalization(
+                    tournament = tournament,
+                    match = match,
+                    source = desiredSource,
+                    ownerUserId = ownerUserId,
+                    expectedRevision = draftRevision,
+                )
+            }
+            is GroupRotationCloudMatchRemoteStateResult.Loaded -> {
+                val identityMatches = remoteState.matchesIdentity(tournament.id, match.id, snapshot)
+                val resultsMatchDraft = remoteState.matchesDomainResults(snapshot.participantResults)
+                if (remoteState.snapshot.status == "finalized") {
+                    return if (match.status == MatchStatus.FINALIZED && identityMatches && resultsMatchDraft) {
+                        OperationResult.Confirmed(stateRevision)
+                    } else {
+                        finalizedDataConflict(stateRevision)
+                    }
+                }
+
+                var currentRevision = stateRevision
+                if (!identityMatches && match.status == MatchStatus.FINALIZED) {
+                    return finalizedDataConflict(stateRevision)
+                }
+                if (
+                    match.status == MatchStatus.FINALIZED &&
+                    !resultsMatchDraft &&
+                    remoteState.results.isNotEmpty()
+                ) {
+                    return finalizedDataConflict(stateRevision)
+                }
+                if (!identityMatches || !resultsMatchDraft) {
+                    when (
+                        val draft = dispatchDraft(
+                            tournament = tournament,
+                            match = match,
+                            source = desiredSource,
+                            ownerUserId = ownerUserId,
+                            expectedRevision = currentRevision,
+                        )
+                    ) {
+                        is OperationResult.Confirmed -> currentRevision = draft.revision
+                        is OperationResult.Failed -> return draft
+                    }
+                }
+                return if (match.status == MatchStatus.FINALIZED) {
+                    dispatchFinalization(
+                        tournament = tournament,
+                        match = match,
+                        source = desiredSource,
+                        ownerUserId = ownerUserId,
+                        expectedRevision = currentRevision,
+                    )
+                } else {
+                    OperationResult.Confirmed(currentRevision)
+                }
+            }
+            GroupRotationCloudMatchRemoteStateResult.NotRequired,
+            GroupRotationCloudMatchRemoteStateResult.AuthenticationRequired,
+            GroupRotationCloudMatchRemoteStateResult.AuthorizationFailure,
+            GroupRotationCloudMatchRemoteStateResult.ValidationFailure,
+            GroupRotationCloudMatchRemoteStateResult.NetworkFailure,
+            -> error("Remote state failures are returned before matching the state.")
+        }
+    }
+
+    private suspend fun dispatchDraft(
+        tournament: com.hoggamers.rankforge.domain.tournament.Tournament,
+        match: Match,
+        source: GroupRotationMatchCloudV4RequestSource,
+        ownerUserId: String,
+        expectedRevision: Int,
+    ): OperationResult {
+        val requestId = nextRequestId()
+            ?: return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+        val mapping = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament = tournament,
+            request = GroupRotationV4DraftWriteRequest(
+                tournament = tournament,
+                tournamentId = tournament.id,
+                matchId = match.id,
+                source = source,
+                expectedRevision = expectedRevision,
+                requestId = requestId,
+            ),
+        )
+        val parameters = (mapping as? GroupRotationV4MappingResult.Success)
+            ?.parameters
+            ?: return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+        return dispatchNew(
+            ownerUserId = ownerUserId,
+            tournamentId = tournament.id,
+            matchId = match.id,
+            operationType = GroupRotationV4SyncJournalOperationType.MATCH_DRAFT,
+            payloadJson = json.encodeToString(parameters),
+            expectedRevision = expectedRevision,
+        )
+    }
+
+    private suspend fun dispatchFinalization(
+        tournament: com.hoggamers.rankforge.domain.tournament.Tournament,
+        match: Match,
+        source: GroupRotationMatchCloudV4RequestSource,
+        ownerUserId: String,
+        expectedRevision: Int,
+    ): OperationResult {
+        val requestId = nextRequestId()
+            ?: return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+        val mapping = GroupRotationMatchCloudV4Mapper.mapFinalization(
+            tournament = tournament,
+            request = GroupRotationV4FinalizationRequest(
+                tournament = tournament,
+                tournamentId = tournament.id,
+                matchId = match.id,
+                source = source,
+                expectedRevision = expectedRevision,
+                requestId = requestId,
+            ),
+        )
+        val parameters = (mapping as? GroupRotationV4MappingResult.Success)
+            ?.parameters
+            ?: return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+        return dispatchNew(
+            ownerUserId = ownerUserId,
+            tournamentId = tournament.id,
+            matchId = match.id,
+            operationType = GroupRotationV4SyncJournalOperationType.MATCH_FINALIZATION,
+            payloadJson = json.encodeToString(parameters),
+            expectedRevision = expectedRevision,
+        )
+    }
+
+    private fun finalizedDataConflict(revision: Int): OperationResult.Failed =
+        OperationResult.Failed(GroupRotationV4CloudUploadResult.Conflict(finalizedConflict(revision)))
+
+    private fun finalizedConflict(revision: Int): RevisionConflict =
+        RevisionConflict.LocalCloudDivergence(
+            baseRevision = com.hoggamers.rankforge.domain.sync.CloudRevision(revision),
+            localRevision = revision,
+            cloudRevision = com.hoggamers.rankforge.domain.sync.CloudRevision(revision),
+        )
+
+    private fun GroupRotationCloudMatchRemoteStateResult.Loaded.matchesIdentity(
+        tournamentId: String,
+        matchId: String,
+        snapshot: com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot,
+    ): Boolean =
+        this.snapshot.matchId == matchId &&
+            this.snapshot.tournamentId == tournamentId &&
+            this.snapshot.pairingKey == snapshot.identity.pairing.canonicalKey &&
+            assignments
+                .map { it.lobbySlotNumber to it.teamUUID }
+                .sortedWith(compareBy<Pair<Int, String>> { it.first }.thenBy { it.second }) ==
+            snapshot.identity.teams
+                .map { it.lobbySlotNumber to it.teamUUID }
+                .sortedWith(compareBy<Pair<Int, String>> { it.first }.thenBy { it.second })
+
+    private fun GroupRotationCloudMatchRemoteStateResult.Loaded.matchesDomainResults(
+        results: List<com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult>,
+    ): Boolean =
+        this.results
+            .map { CloudResultShape(it.teamUUID, it.participationStatus, it.placement, it.kills, it.pointAdjustment) }
+            .sortedBy { it.teamUUID } ==
+            results
+                .map { CloudResultShape(it.teamUUID, it.participationStatus.name, it.placement, it.kills, it.pointAdjustment) }
+                .sortedBy { it.teamUUID }
+
+    private fun GroupRotationCloudMatchRemoteStateResult.Loaded.matchesPayloadResults(
+        results: List<GroupRotationUuidParticipantResultPayload>,
+    ): Boolean =
+        this.results
+            .map { CloudResultShape(it.teamUUID, it.participationStatus, it.placement, it.kills, it.pointAdjustment) }
+            .sortedBy { it.teamUUID } ==
+            results
+                .map { CloudResultShape(it.teamUUID, it.participationStatus, it.placement, it.kills, it.pointAdjustment) }
+                .sortedBy { it.teamUUID }
 
     private suspend fun processJournalEntries(
         entries: List<GroupRotationV4SyncJournalEntry>,
@@ -257,13 +448,14 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
     private suspend fun dispatchEntry(
         entry: GroupRotationV4SyncJournalEntry,
         ownerUserId: String,
+        parentAlreadyEnsured: Boolean = false,
     ): OperationResult {
         if (entry.operationType == GroupRotationV4SyncJournalOperationType.MATCH_DRAFT ||
             entry.operationType == GroupRotationV4SyncJournalOperationType.MATCH_FINALIZATION
         ) {
             val matchId = entry.matchId
                 ?: return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
-            when (matchParentProvisioner.ensureParent(entry.tournamentId, matchId, ownerUserId)) {
+            if (!parentAlreadyEnsured) when (matchParentProvisioner.ensureParent(entry.tournamentId, matchId, ownerUserId)) {
                 GroupRotationCloudMatchProvisionResult.Ensured,
                 GroupRotationCloudMatchProvisionResult.NotRequired,
                 -> Unit
@@ -336,6 +528,25 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
                 GroupRotationV4SyncJournalOperationType.MATCH_FINALIZATION ->
                     json.decodeFromString<GroupRotationV4FinalizationParameters>(payloadJson).requestId
             }
+        val parentAlreadyEnsured = operationType == GroupRotationV4SyncJournalOperationType.MATCH_DRAFT ||
+            operationType == GroupRotationV4SyncJournalOperationType.MATCH_FINALIZATION
+        if (parentAlreadyEnsured) {
+            val newMatchId = matchId
+                ?: return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+            when (matchParentProvisioner.ensureParent(tournamentId, newMatchId, ownerUserId)) {
+                GroupRotationCloudMatchProvisionResult.Ensured,
+                GroupRotationCloudMatchProvisionResult.NotRequired,
+                -> Unit
+                GroupRotationCloudMatchProvisionResult.AuthenticationRequired ->
+                    return OperationResult.Failed(GroupRotationV4CloudUploadResult.AuthenticationRequired)
+                GroupRotationCloudMatchProvisionResult.AuthorizationFailure ->
+                    return OperationResult.Failed(GroupRotationV4CloudUploadResult.AuthorizationFailure)
+                GroupRotationCloudMatchProvisionResult.ValidationFailure ->
+                    return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+                GroupRotationCloudMatchProvisionResult.NetworkFailure ->
+                    return OperationResult.Failed(GroupRotationV4CloudUploadResult.NetworkFailure)
+            }
+        }
         val create = journalRepository.createPending(
             GroupRotationV4SyncJournalRequest(
                 ownerUserId = ownerUserId,
@@ -352,7 +563,7 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
             is GroupRotationV4SyncJournalCreateResult.Reused -> create.entry
             else -> return OperationResult.Failed(create.toUploadResult())
         }
-        return dispatchEntry(entry, ownerUserId)
+        return dispatchEntry(entry, ownerUserId, parentAlreadyEnsured)
     }
 
     private suspend fun applyRemoteResult(
@@ -366,9 +577,72 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
         }
         is GroupRotationMatchCloudV4ExecutionResult -> when (remote) {
             is GroupRotationMatchCloudV4ExecutionResult.Success -> confirm(entry, ownerUserId, remote.confirmedCloudRevision)
-            is GroupRotationMatchCloudV4ExecutionResult.Failure -> recordFailure(entry, ownerUserId, remote.category, remote.conflict)
+            is GroupRotationMatchCloudV4ExecutionResult.Failure -> {
+                if (remote.outcome == "already_finalized" &&
+                    entry.operationType == GroupRotationV4SyncJournalOperationType.MATCH_FINALIZATION
+                ) {
+                    reconcileAlreadyFinalized(entry, ownerUserId)
+                } else {
+                    recordFailure(entry, ownerUserId, remote.category, remote.conflict)
+                }
+            }
         }
         else -> OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
+    }
+
+    private suspend fun reconcileAlreadyFinalized(
+        entry: GroupRotationV4SyncJournalEntry,
+        ownerUserId: String,
+    ): OperationResult {
+        val matchId = entry.matchId ?: return recordFailure(
+            entry,
+            ownerUserId,
+            GroupRotationMatchCloudV4FailureCategory.VALIDATION,
+            null,
+        )
+        return when (
+            val state = matchParentProvisioner.readRemoteState(
+                tournamentId = entry.tournamentId,
+                matchId = matchId,
+                expectedOwnerUserId = ownerUserId,
+            )
+        ) {
+            is GroupRotationCloudMatchRemoteStateResult.Loaded -> {
+                val parameters = runCatching {
+                    json.decodeFromString<GroupRotationV4FinalizationParameters>(entry.payloadJson)
+                }.getOrNull()
+                if (parameters != null &&
+                    state.snapshot.status == "finalized" &&
+                    state.snapshot.matchId == parameters.matchId &&
+                    state.snapshot.tournamentId == parameters.tournamentId &&
+                    state.matchesPayloadResults(parameters.matchResults)
+                ) {
+                    confirm(entry, ownerUserId, state.currentTournamentRevision)
+                } else {
+                    recordFailure(
+                        entry,
+                        ownerUserId,
+                        GroupRotationMatchCloudV4FailureCategory.CONFLICT,
+                        finalizedConflict(state.currentTournamentRevision),
+                    )
+                }
+            }
+            GroupRotationCloudMatchRemoteStateResult.AuthenticationRequired ->
+                recordFailure(entry, ownerUserId, GroupRotationMatchCloudV4FailureCategory.AUTHENTICATION, null)
+            GroupRotationCloudMatchRemoteStateResult.AuthorizationFailure ->
+                recordFailure(entry, ownerUserId, GroupRotationMatchCloudV4FailureCategory.AUTHORIZATION, null)
+            GroupRotationCloudMatchRemoteStateResult.NetworkFailure ->
+                recordFailure(entry, ownerUserId, GroupRotationMatchCloudV4FailureCategory.NETWORK, null)
+            GroupRotationCloudMatchRemoteStateResult.NotRequired,
+            is GroupRotationCloudMatchRemoteStateResult.Missing,
+            GroupRotationCloudMatchRemoteStateResult.ValidationFailure,
+            -> recordFailure(
+                entry,
+                ownerUserId,
+                GroupRotationMatchCloudV4FailureCategory.CONFLICT,
+                finalizedConflict(entry.expectedCloudRevision),
+            )
+        }
     }
 
     private suspend fun confirm(
@@ -471,3 +745,11 @@ sealed interface GroupRotationV4CloudUploadResult {
     data object DeletionBlocked : GroupRotationV4CloudUploadResult
     data class Conflict(val conflict: RevisionConflict) : GroupRotationV4CloudUploadResult
 }
+
+private data class CloudResultShape(
+    val teamUUID: String,
+    val participationStatus: String,
+    val placement: Int?,
+    val kills: Int,
+    val pointAdjustment: Int,
+)

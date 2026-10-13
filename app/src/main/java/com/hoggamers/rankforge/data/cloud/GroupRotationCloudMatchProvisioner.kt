@@ -29,6 +29,26 @@ sealed interface GroupRotationCloudMatchProvisionResult {
     data object NetworkFailure : GroupRotationCloudMatchProvisionResult
 }
 
+sealed interface GroupRotationCloudMatchRemoteStateResult {
+    data object NotRequired : GroupRotationCloudMatchRemoteStateResult
+
+    data class Missing(
+        val currentTournamentRevision: Int,
+    ) : GroupRotationCloudMatchRemoteStateResult
+
+    data class Loaded(
+        val snapshot: GroupRotationUuidMatchSnapshotRestorePayload,
+        val assignments: List<GroupRotationUuidMatchAssignmentRestorePayload>,
+        val results: List<GroupRotationUuidMatchResultRestorePayload>,
+        val currentTournamentRevision: Int,
+    ) : GroupRotationCloudMatchRemoteStateResult
+
+    data object AuthenticationRequired : GroupRotationCloudMatchRemoteStateResult
+    data object AuthorizationFailure : GroupRotationCloudMatchRemoteStateResult
+    data object ValidationFailure : GroupRotationCloudMatchRemoteStateResult
+    data object NetworkFailure : GroupRotationCloudMatchRemoteStateResult
+}
+
 interface GroupRotationCloudMatchProvisioner {
     suspend fun ensureParent(
         tournamentId: String,
@@ -41,6 +61,13 @@ interface GroupRotationCloudMatchProvisioner {
         matchId: String,
         expectedOwnerUserId: String? = null,
     ): String?
+
+    suspend fun readRemoteState(
+        tournamentId: String,
+        matchId: String,
+        expectedOwnerUserId: String? = null,
+    ): GroupRotationCloudMatchRemoteStateResult =
+        GroupRotationCloudMatchRemoteStateResult.NotRequired
 }
 
 object NoOpGroupRotationCloudMatchProvisioner : GroupRotationCloudMatchProvisioner {
@@ -140,6 +167,108 @@ class SupabaseGroupRotationCloudMatchProvisioner @Inject constructor(
         }
     }
 
+    override suspend fun readRemoteState(
+        tournamentId: String,
+        matchId: String,
+        expectedOwnerUserId: String?,
+    ): GroupRotationCloudMatchRemoteStateResult {
+        val ownerUserId = currentOwnerUserId(expectedOwnerUserId)
+            ?: return GroupRotationCloudMatchRemoteStateResult.AuthenticationRequired
+        val context = readUuidBackedMatch(tournamentId, matchId, ownerUserId)
+            ?: return GroupRotationCloudMatchRemoteStateResult.AuthorizationFailure
+        if (context is MatchCloudContext.NotRequired) {
+            return GroupRotationCloudMatchRemoteStateResult.NotRequired
+        }
+        if (context !is MatchCloudContext.UuidBacked) {
+            return GroupRotationCloudMatchRemoteStateResult.ValidationFailure
+        }
+
+        return try {
+            val tournamentRevision = clientProvider.client
+                .from(TOURNAMENTS_TABLE)
+                .select { filter { eq("id", tournamentId) } }
+                .decodeList<GroupRotationTournamentRevisionCloudRow>()
+                .singleOrNull()
+                ?.takeIf { it.id == tournamentId && it.revision > 0 }
+                ?.revision
+                ?: return GroupRotationCloudMatchRemoteStateResult.AuthorizationFailure
+
+            val snapshots = clientProvider.client
+                .from(UUID_MATCH_SNAPSHOTS_TABLE)
+                .select {
+                    filter {
+                        eq("match_id", matchId)
+                        eq("tournament_id", tournamentId)
+                    }
+                }
+                .decodeList<GroupRotationUuidMatchSnapshotRestorePayload>()
+            if (snapshots.size > 1) {
+                return GroupRotationCloudMatchRemoteStateResult.ValidationFailure
+            }
+            val snapshot = snapshots.singleOrNull()
+                ?: return GroupRotationCloudMatchRemoteStateResult.Missing(tournamentRevision)
+            if (snapshot.matchId != matchId ||
+                snapshot.tournamentId != tournamentId ||
+                snapshot.status !in setOf("draft", "finalized") ||
+                snapshot.revision <= 0 ||
+                snapshot.pairingKey.isBlank()
+            ) {
+                return GroupRotationCloudMatchRemoteStateResult.ValidationFailure
+            }
+            val parent = clientProvider.client
+                .from(MATCHES_TABLE)
+                .select {
+                    filter {
+                        eq("id", matchId)
+                        eq("tournament_id", tournamentId)
+                    }
+                }
+                .decodeList<GroupRotationMatchParentCloudRow>()
+                .singleOrNull()
+                ?: return GroupRotationCloudMatchRemoteStateResult.ValidationFailure
+            if (parent.status != snapshot.status || parent.groupPairingKey != snapshot.pairingKey) {
+                return GroupRotationCloudMatchRemoteStateResult.ValidationFailure
+            }
+
+            val assignments = clientProvider.client
+                .from(UUID_MATCH_ASSIGNMENTS_TABLE)
+                .select {
+                    filter {
+                        eq("match_id", matchId)
+                        eq("tournament_id", tournamentId)
+                    }
+                }
+                .decodeList<GroupRotationUuidMatchAssignmentRestorePayload>()
+            val results = clientProvider.client
+                .from(UUID_MATCH_RESULTS_TABLE)
+                .select {
+                    filter {
+                        eq("match_id", matchId)
+                        eq("tournament_id", tournamentId)
+                    }
+                }
+                .decodeList<GroupRotationUuidMatchResultRestorePayload>()
+            if (assignments.any { it.matchId != matchId || it.tournamentId != tournamentId } ||
+                results.any { it.matchId != matchId || it.tournamentId != tournamentId } ||
+                assignments.groupBy { it.lobbySlotNumber }.any { it.value.size > 1 } ||
+                assignments.groupBy { it.teamUUID }.any { it.value.size > 1 } ||
+                results.groupBy { it.teamUUID }.any { it.value.size > 1 }
+            ) {
+                return GroupRotationCloudMatchRemoteStateResult.ValidationFailure
+            }
+            GroupRotationCloudMatchRemoteStateResult.Loaded(
+                snapshot = snapshot,
+                assignments = assignments,
+                results = results,
+                currentTournamentRevision = tournamentRevision,
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            throwable.toRemoteStateResult()
+        }
+    }
+
     private suspend fun readUuidBackedMatch(
         tournamentId: String,
         matchId: String,
@@ -197,6 +326,10 @@ class SupabaseGroupRotationCloudMatchProvisioner @Inject constructor(
 
     private companion object {
         const val MATCHES_TABLE = "matches"
+        const val TOURNAMENTS_TABLE = "tournaments"
+        const val UUID_MATCH_SNAPSHOTS_TABLE = "group_rotation_match_uuid_snapshots"
+        const val UUID_MATCH_ASSIGNMENTS_TABLE = "group_rotation_match_uuid_assignments"
+        const val UUID_MATCH_RESULTS_TABLE = "group_rotation_match_uuid_results"
     }
 }
 
@@ -227,6 +360,12 @@ private data class GroupRotationMatchParentCloudRow(
     @SerialName("updated_at") val updatedAt: String? = null,
 )
 
+@Serializable
+private data class GroupRotationTournamentRevisionCloudRow(
+    val id: String,
+    val revision: Int,
+)
+
 private fun Throwable.toProvisionResult(): GroupRotationCloudMatchProvisionResult {
     val message = message.orEmpty().lowercase()
     return when {
@@ -243,5 +382,24 @@ private fun Throwable.toProvisionResult(): GroupRotationCloudMatchProvisionResul
             message.contains("timeout") ||
             message.contains("connection") -> GroupRotationCloudMatchProvisionResult.NetworkFailure
         else -> GroupRotationCloudMatchProvisionResult.ValidationFailure
+    }
+}
+
+private fun Throwable.toRemoteStateResult(): GroupRotationCloudMatchRemoteStateResult {
+    val message = message.orEmpty().lowercase()
+    return when {
+        message.contains("401") ||
+            message.contains("session") ||
+            message.contains("jwt") ||
+            message.contains("unauthorized") -> GroupRotationCloudMatchRemoteStateResult.AuthenticationRequired
+        message.contains("403") ||
+            message.contains("42501") ||
+            message.contains("forbidden") ||
+            message.contains("row-level security") -> GroupRotationCloudMatchRemoteStateResult.AuthorizationFailure
+        this is IOException ||
+            message.contains("network") ||
+            message.contains("timeout") ||
+            message.contains("connection") -> GroupRotationCloudMatchRemoteStateResult.NetworkFailure
+        else -> GroupRotationCloudMatchRemoteStateResult.ValidationFailure
     }
 }
