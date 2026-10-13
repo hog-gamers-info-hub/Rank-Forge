@@ -44,6 +44,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadRes
 import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftReadResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftState
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput
@@ -1100,44 +1101,97 @@ class MatchOcrReviewViewModel @Inject constructor(
     private fun GroupRotationMatchDraftState.toUuidParticipantResults(
         correctionDraft: MatchOcrReviewCorrectionDraft,
     ): List<GroupRotationMatchParticipantResult>? {
-        val teamsByLobby = snapshot.teams.associateBy { it.lobbySlotNumber }
-        val existingByUuid = participantResults.associateBy { it.teamUUID }.toMutableMap()
-        correctionDraft.rows.forEach { row ->
-            val currentLobby = row.assignedTeamSlotDraftValue.trim().toIntOrNull()
-            val originalLobby = row.originalAssignedTeamSlotValue.trim().toIntOrNull()
-            if (originalLobby != null && originalLobby != currentLobby) {
-                teamsByLobby[originalLobby]?.let { existingByUuid.remove(it.teamUUID) }
-            }
-            if (row.isEffectivelyExcluded) {
-                currentLobby?.let { lobby ->
-                    teamsByLobby[lobby]?.let { team ->
-                        val previous = existingByUuid[team.teamUUID]
-                        existingByUuid[team.teamUUID] = GroupRotationMatchParticipantResult(
-                            teamUUID = team.teamUUID,
-                            participationStatus = MatchParticipationStatus.NO_SHOW,
-                            placement = null,
-                            kills = 0,
-                            pointAdjustment = previous?.pointAdjustment ?: 0,
-                        )
-                    }
-                }
-                return@forEach
-            }
-            val lobby = currentLobby ?: return null
-            val team = teamsByLobby[lobby] ?: return null
-            val placement = row.placementDraftValue.trim().toIntOrNull() ?: return null
-            val kills = row.killsDraftValue.trim().toIntOrNull()?.takeIf { it >= 0 } ?: return null
-            existingByUuid[team.teamUUID] = GroupRotationMatchParticipantResult(
-                teamUUID = team.teamUUID,
-                participationStatus = MatchParticipationStatus.PARTICIPATED,
-                placement = placement,
-                kills = kills,
-                pointAdjustment = existingByUuid[team.teamUUID]?.pointAdjustment ?: 0,
-            )
+        val teams = snapshot.teams.sortedBy { it.lobbySlotNumber }
+        val teamsByLobby = teams.associateBy { it.lobbySlotNumber }
+        val teamUuids = teams.map { it.teamUUID }
+        if (
+            teams.size != snapshot.teams.size ||
+            teamsByLobby.size != teams.size ||
+            teams.any {
+                it.lobbySlotNumber !in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS ||
+                    it.teamUUID.isBlank()
+            } ||
+            teamUuids.toSet().size != teamUuids.size
+        ) {
+            return null
         }
-        return existingByUuid.values
-            .filter { result -> teamsByLobby.values.any { it.teamUUID == result.teamUUID } }
-            .toList()
+
+        val existingByUuid = participantResults.groupBy { it.teamUUID }
+        if (
+            existingByUuid.values.any { it.size != 1 } ||
+            existingByUuid.keys.any { it !in teamUuids }
+        ) {
+            return null
+        }
+
+        data class ReviewedRow(
+            val lobbySlotNumber: Int,
+            val row: MatchOcrReviewRowCorrectionDraft,
+        )
+
+        val reviewedRows = buildList {
+            correctionDraft.rows.forEach { row ->
+                if (row.isImplicitlyAbsent && !row.isExcluded) return@forEach
+                val lobbySlotNumber = row.assignedTeamSlotDraftValue.trim().toIntOrNull()
+                    ?: return null
+                if (
+                    lobbySlotNumber !in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS ||
+                    teamsByLobby[lobbySlotNumber] == null
+                ) {
+                    return null
+                }
+                add(ReviewedRow(lobbySlotNumber, row))
+            }
+        }
+
+        val reviewedRowsByLobby = reviewedRows.groupBy { it.lobbySlotNumber }
+        if (
+            reviewedRowsByLobby.values.any { it.size != 1 } ||
+            reviewedRowsByLobby.keys != teamsByLobby.keys
+        ) {
+            return null
+        }
+
+        val results = teams.map { team ->
+            val reviewedRow = reviewedRowsByLobby.getValue(team.lobbySlotNumber).single().row
+            val previous = existingByUuid[team.teamUUID]?.singleOrNull()
+            val pointAdjustment = previous?.pointAdjustment
+                ?: valuesByLobbySlot[team.lobbySlotNumber]?.pointAdjustment
+                ?: 0
+            if (reviewedRow.isEffectivelyExcluded) {
+                GroupRotationMatchParticipantResult(
+                    teamUUID = team.teamUUID,
+                    participationStatus = MatchParticipationStatus.NO_SHOW,
+                    placement = null,
+                    kills = 0,
+                    pointAdjustment = pointAdjustment,
+                )
+            } else {
+                val placement = reviewedRow.placementDraftValue.trim().toIntOrNull()
+                    ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                    ?: return null
+                val kills = reviewedRow.killsDraftValue.trim().toIntOrNull()
+                    ?.takeIf { it >= 0 }
+                    ?: return null
+                GroupRotationMatchParticipantResult(
+                    teamUUID = team.teamUUID,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = placement,
+                    kills = kills,
+                    pointAdjustment = pointAdjustment,
+                )
+            }
+        }
+
+        if (
+            results.map { it.teamUUID }.toSet().size != results.size ||
+            results.filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+                .mapNotNull { it.placement }
+                .let { placements -> placements.toSet().size != placements.size }
+        ) {
+            return null
+        }
+        return results
     }
 
     private fun launchFinalizedMatchCloudSync(tournamentId: String) {

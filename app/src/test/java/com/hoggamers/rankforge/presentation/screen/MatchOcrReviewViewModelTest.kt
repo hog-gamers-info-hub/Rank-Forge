@@ -115,6 +115,7 @@ import kotlinx.coroutines.test.runCurrent
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -205,6 +206,148 @@ class MatchOcrReviewViewModelTest {
         assertEquals(listOf(expected), draftRepository.savedParticipantResults)
         assertEquals(listOf(expected), finalizationRepository.input?.participantResults)
         assertTrue((viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun uuidSlotSwapUsesFinalLobbyAssignmentsForExactUuidResults() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot(listOf(1, 2))
+        val existing = listOf(
+            GroupRotationMatchParticipantResult("uuid-1", MatchParticipationStatus.PARTICIPATED, 1, 10, 3),
+            GroupRotationMatchParticipantResult("uuid-2", MatchParticipationStatus.PARTICIPATED, 2, 20, 4),
+        )
+        val result = runUuidFinalize(snapshot, existing, transform = { initial ->
+            initial
+                .let { MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(it, 0, "2") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(it, 1, "1") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(it, 0, "1") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(it, 1, "2") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onKillsChanged(it, 0, "11") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onKillsChanged(it, 1, "21") }
+        })
+        advanceUntilIdle()
+
+        val expected = listOf(
+            GroupRotationMatchParticipantResult("uuid-1", MatchParticipationStatus.PARTICIPATED, 2, 21, 3),
+            GroupRotationMatchParticipantResult("uuid-2", MatchParticipationStatus.PARTICIPATED, 1, 11, 4),
+        )
+        assertEquals(expected, result.draftRepository.savedParticipantResults)
+        assertEquals(expected, result.finalizationRepository.input?.participantResults)
+    }
+
+    @Test
+    fun uuidSlotSwapProducesSameResultsWhenCorrectionRowsAreReordered() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot(listOf(1, 2))
+        val existing = listOf(
+            GroupRotationMatchParticipantResult("uuid-1", MatchParticipationStatus.PARTICIPATED, 1, 10),
+            GroupRotationMatchParticipantResult("uuid-2", MatchParticipationStatus.PARTICIPATED, 2, 20),
+        )
+        val swap: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { initial ->
+            initial
+                .let { MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(it, 0, "2") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(it, 1, "1") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onKillsChanged(it, 0, "11") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onKillsChanged(it, 1, "21") }
+        }
+        val ordered = runUuidFinalize(snapshot, existing, transform = swap)
+        val reordered = runUuidFinalize(snapshot, existing, transform = { initial ->
+            swap(initial).let { draft -> draft.copy(rows = draft.rows.reversed()) }
+        })
+        advanceUntilIdle()
+
+        assertEquals(ordered.draftRepository.savedParticipantResults, reordered.draftRepository.savedParticipantResults)
+        assertEquals(ordered.finalizationRepository.input?.participantResults, reordered.finalizationRepository.input?.participantResults)
+    }
+
+    @Test
+    fun uuidDuplicateCorrectedLobbySlotsPreventSaveAndFinalization() = runTest(dispatcher) {
+        val result = runUuidFinalize(uuidSnapshot(listOf(1, 2)), emptyList(), transform = { initial ->
+            MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(initial, 0, "2")
+        })
+        advanceUntilIdle()
+
+        assertNull(result.draftRepository.savedParticipantResults)
+        assertNull(result.finalizationRepository.input)
+        assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun uuidBlankCorrectedLobbySlotPreventsSaveAndFinalization() = runTest(dispatcher) {
+        val result = runUuidFinalize(uuidSnapshot(listOf(1, 2)), emptyList(), transform = { initial ->
+            MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(initial, 0, "")
+        })
+        advanceUntilIdle()
+
+        assertNull(result.draftRepository.savedParticipantResults)
+        assertNull(result.finalizationRepository.input)
+        assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun uuidSparseTenTeamPairingProducesOneExactResultPerSnapshotTeam() = runTest(dispatcher) {
+        val lobbies = listOf(1, 2, 3, 4, 5, 6, 7, 8, 10, 12)
+        val snapshot = uuidSnapshot(lobbies)
+        val existing = snapshot.teams.mapIndexed { index, team ->
+            GroupRotationMatchParticipantResult(
+                teamUUID = team.teamUUID,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = index + 1,
+                kills = index,
+            )
+        }
+        val result = runUuidFinalize(snapshot, existing)
+        advanceUntilIdle()
+
+        assertEquals(existing, result.draftRepository.savedParticipantResults)
+        assertEquals(existing, result.finalizationRepository.input?.participantResults)
+    }
+
+    @Test
+    fun uuidNoShowAndPointAdjustmentRemainAttachedToPermanentUuid() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot(listOf(1, 2))
+        val existing = listOf(
+            GroupRotationMatchParticipantResult("uuid-1", MatchParticipationStatus.NO_SHOW, null, 0, 7),
+            GroupRotationMatchParticipantResult("uuid-2", MatchParticipationStatus.PARTICIPATED, 2, 8, 9),
+        )
+        val result = runUuidFinalize(snapshot, existing, transform = { initial ->
+            initial
+                .let { MatchOcrReviewCorrectionDraftReducer.onRowExcluded(it, 0) }
+                .let { MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(it, 1, "1") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onKillsChanged(it, 1, "4") }
+        })
+        advanceUntilIdle()
+
+        val expected = listOf(
+            GroupRotationMatchParticipantResult("uuid-1", MatchParticipationStatus.NO_SHOW, null, 0, 7),
+            GroupRotationMatchParticipantResult("uuid-2", MatchParticipationStatus.PARTICIPATED, 1, 4, 9),
+        )
+        assertEquals(expected, result.draftRepository.savedParticipantResults)
+        assertEquals(expected, result.finalizationRepository.input?.participantResults)
+    }
+
+    @Test
+    fun uuidInvalidSnapshotSlotPreventsSaveAndFinalization() = runTest(dispatcher) {
+        val result = runUuidFinalize(uuidSnapshot(listOf(1, 2)), emptyList(), transform = { initial ->
+            MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(initial, 0, "3")
+        })
+        advanceUntilIdle()
+
+        assertNull(result.draftRepository.savedParticipantResults)
+        assertNull(result.finalizationRepository.input)
+        assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun uuidDraftPersistenceFailurePreventsFinalization() = runTest(dispatcher) {
+        val result = runUuidFinalize(
+            snapshot = uuidSnapshot(listOf(1, 2)),
+            existing = emptyList(),
+            saveResult = GroupRotationMatchDraftMutationResult.INVALID_DATA,
+        )
+        advanceUntilIdle()
+
+        assertNotNull(result.draftRepository.savedParticipantResults)
+        assertNull(result.finalizationRepository.input)
+        assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
     }
 
     @Test
@@ -2287,6 +2430,8 @@ class MatchOcrReviewViewModelTest {
 
     private class RecordingGroupRotationMatchDraftRepository(
         private val state: GroupRotationMatchDraftState,
+        private val saveResult: GroupRotationMatchDraftMutationResult =
+            GroupRotationMatchDraftMutationResult.SAVED,
     ) : GroupRotationMatchDraftRepository {
         var savedParticipantResults: List<GroupRotationMatchParticipantResult>? = null
 
@@ -2329,7 +2474,7 @@ class MatchOcrReviewViewModelTest {
             participantResults: List<GroupRotationMatchParticipantResult>,
         ): GroupRotationMatchDraftMutationResult {
             savedParticipantResults = participantResults
-            return GroupRotationMatchDraftMutationResult.SAVED
+            return saveResult
         }
 
         override suspend fun savePointAdjustmentByOwner(
@@ -2556,6 +2701,83 @@ class MatchOcrReviewViewModelTest {
         hasUnavailableEvidence = false,
         correctionDraft = correctionDraft,
     )
+
+    private data class UuidFinalizeRecording(
+        val viewModel: MatchOcrReviewViewModel,
+        val draftRepository: RecordingGroupRotationMatchDraftRepository,
+        val finalizationRepository: RecordingGroupRotationMatchFinalizationRepository,
+    )
+
+    private fun runUuidFinalize(
+        snapshot: GroupRotationMatchIdentitySnapshot,
+        existing: List<GroupRotationMatchParticipantResult>,
+        transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },
+        saveResult: GroupRotationMatchDraftMutationResult = GroupRotationMatchDraftMutationResult.SAVED,
+    ): UuidFinalizeRecording {
+        val rows = uuidCorrectionRows(snapshot.teams.map { it.lobbySlotNumber })
+        val correctionDraft = transform(
+            MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
+        )
+        val draftRepository = RecordingGroupRotationMatchDraftRepository(
+            GroupRotationMatchDraftState(snapshot, existing, emptyMap()),
+            saveResult,
+        )
+        val finalizationRepository = RecordingGroupRotationMatchFinalizationRepository()
+        val viewModel = viewModelWith(
+            repository = InMemoryTournamentRepository(),
+            initialUiState = readyState(
+                correctionDraft = correctionDraft,
+                rows = rows,
+            ).copy(
+                rowCount = rows.size,
+                blockerCount = correctionDraft.blockerCount,
+                warningCount = correctionDraft.warningCount,
+                safeRowCount = rows.size,
+                isUuidBackedGroupRotation = true,
+            ),
+            observeGroupRotationMatchDraft = ObserveGroupRotationMatchDraftUseCase(
+                draftRepository,
+                com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
+            ),
+            saveGroupRotationMatchParticipantResults = SaveGroupRotationMatchParticipantResultsUseCase(
+                draftRepository,
+                com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
+            ),
+            finalizeGroupRotationMatch = FinalizeGroupRotationMatchUseCase(
+                finalizationRepository,
+                com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
+            ),
+        )
+        viewModel.onFinalizeOcrCorrection()
+        return UuidFinalizeRecording(viewModel, draftRepository, finalizationRepository)
+    }
+
+    private fun uuidSnapshot(lobbySlots: List<Int>): GroupRotationMatchIdentitySnapshot =
+        GroupRotationMatchIdentitySnapshot(
+            tournamentId = TOURNAMENT_ID,
+            pairing = GroupPairing.fromCanonicalKey("A:B"),
+            teams = lobbySlots.map { lobbySlot ->
+                GroupRotationMatchTeamIdentity(
+                    lobbySlotNumber = lobbySlot,
+                    teamUUID = "uuid-$lobbySlot",
+                    displayName = "Team $lobbySlot",
+                )
+            },
+        )
+
+    private fun uuidCorrectionRows(lobbySlots: List<Int>): List<MatchOcrReviewRowUiState> =
+        correctionRows().take(lobbySlots.size).mapIndexed { index, row ->
+            row.copy(
+                rowIndex = index,
+                expectedPlacementLabel = (index + 1).toString(),
+                detectedPlacementDisplayValue = (index + 1).toString(),
+                detectedKillDisplayValue = index.toString(),
+                suggestedTeamSlotDisplayValue = lobbySlots[index].toString(),
+                originalParsedPlacementValue = index + 1,
+                originalParsedKillValue = index,
+                originalSuggestedTeamSlot = lobbySlots[index],
+            )
+        }
 
     private fun automaticReadyState(
         visiblePositions: IntRange,

@@ -753,24 +753,39 @@ internal fun MatchOcrReviewCompactRow(
     val suggestedSlot = reviewRow?.suggestedTeamSlotDisplayValue
         ?.toIntOrNull()
         ?.takeIf { it in eligibleTeamSlots }
-    val identityLabel = reviewRow?.teamIdentityDisplayValue
-        ?: displayTeamIdentityLabel(
-            teamSlot = suggestedSlot,
+    val correctedSlot = correctionDraft
+        ?.assignedTeamSlotDraftValue
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it in eligibleTeamSlots }
+    val displayedSlot = if (correctionDraft == null) suggestedSlot else correctedSlot
+    val identityLabel = if (correctionDraft == null) {
+        reviewRow?.teamIdentityDisplayValue
+            ?: displayTeamIdentityLabel(
+                teamSlot = displayedSlot,
+                teamNamesBySlot = teamNamesBySlot,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
+            )
+    } else {
+        displayTeamIdentityLabel(
+            teamSlot = displayedSlot,
             teamNamesBySlot = teamNamesBySlot,
             lobbySlotByTeamSlot = lobbySlotByTeamSlot,
             usesPairRelativeIdentity = usesPairRelativeIdentity,
         )
+    }
     val slotLabel = if (usesPairRelativeIdentity) {
         identityLabel
     } else {
-        suggestedSlot?.toString() ?: stringResource(R.string.match_ocr_review_compact_not_matched)
+        displayedSlot?.toString() ?: stringResource(R.string.match_ocr_review_compact_not_matched)
     }
-    val teamNameLabel = if (suggestedSlot == null) {
+    val teamNameLabel = if (displayedSlot == null) {
         stringResource(R.string.match_ocr_review_compact_not_matched)
     } else if (usesPairRelativeIdentity) {
         identityLabel
     } else {
-        teamNamesBySlot[suggestedSlot]
+        teamNamesBySlot[displayedSlot]
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?: stringResource(R.string.match_ocr_review_compact_not_named)
