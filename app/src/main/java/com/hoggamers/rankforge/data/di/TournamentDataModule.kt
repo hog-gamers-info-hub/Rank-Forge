@@ -106,6 +106,8 @@ import com.hoggamers.rankforge.domain.sync.GroupRotationV4SyncJournalRepository
 import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.export.DefaultGroupRotationV4OverallImageInputReader
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInputReader
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -169,6 +171,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindGroupRotationMatchIdentityPersistenceRepository(
         repository: RoomGroupRotationMatchIdentityRepository,
     ): GroupRotationMatchIdentityPersistenceRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationV4OverallImageInputReader(
+        reader: DefaultGroupRotationV4OverallImageInputReader,
+    ): GroupRotationV4OverallImageInputReader
 
     @Binds
     @Singleton

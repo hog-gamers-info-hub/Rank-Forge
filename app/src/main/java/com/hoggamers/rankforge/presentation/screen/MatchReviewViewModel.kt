@@ -65,6 +65,9 @@ import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueInput
 import com.hoggamers.rankforge.domain.tournament.SaveMatchDraftValueUseCase
 import com.hoggamers.rankforge.domain.export.MatchCsvExportFailure
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInput
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInputReader
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageReadResult
 import com.hoggamers.rankforge.domain.export.MatchCsvExportResult
 import com.hoggamers.rankforge.domain.export.MatchCsvExporter
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchInput
@@ -97,6 +100,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationR
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationValidator
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
+import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchParticipantResultsUseCase
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.finalizedParticipantResultsOrNull
@@ -214,6 +218,8 @@ class MatchReviewViewModel @Inject constructor(
     private val matchParentProvisioner: GroupRotationCloudMatchProvisioner = NoOpGroupRotationCloudMatchProvisioner,
     private val finalizeGroupRotationMatch: FinalizeGroupRotationMatchUseCase? = null,
     private val saveGroupRotationMatchParticipantResults: SaveGroupRotationMatchParticipantResultsUseCase? = null,
+    private val groupRotationV4OverallImageInputReader: GroupRotationV4OverallImageInputReader =
+        GroupRotationV4OverallImageInputReader.LegacyOnly,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MatchReviewUiState())
     val uiState: StateFlow<MatchReviewUiState> = _uiState.asStateFlow()
@@ -1298,6 +1304,22 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
 
+    private suspend fun readGroupRotationV4OverallImageInput(
+        tournament: Tournament,
+        matches: List<Match>,
+        persistedTeamSlots: List<com.hoggamers.rankforge.domain.tournament.TeamSlot>,
+    ): GroupRotationV4OverallImageInput? = when (
+        val result = groupRotationV4OverallImageInputReader.read(
+            tournament = tournament,
+            matches = matches,
+            persistedTeamSlots = persistedTeamSlots,
+        )
+    ) {
+        is GroupRotationV4OverallImageReadResult.Available -> result.input
+        GroupRotationV4OverallImageReadResult.Legacy -> null
+        GroupRotationV4OverallImageReadResult.Invalid -> GroupRotationV4OverallImageInput.Invalid
+    }
+
     fun requestResultDownload(
         scope: ResultDownloadScope,
         format: ResultExportFileFormat,
@@ -1334,6 +1356,16 @@ class MatchReviewViewModel @Inject constructor(
                     else -> {
                         val inputSlots = observeTournamentSlots(tournamentId).first()
                         val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
+                        val groupRotationV4OverallImageInput =
+                            if (scope == ResultDownloadScope.WHOLE_TOURNAMENT) {
+                                readGroupRotationV4OverallImageInput(
+                                    tournament = tournament,
+                                    matches = matches,
+                                    persistedTeamSlots = inputSlots,
+                                )
+                            } else {
+                                null
+                            }
                         val request = when (scope) {
                             ResultDownloadScope.CURRENT_MATCH -> ResultDownloadRequest.CurrentMatch(
                                 com.hoggamers.rankforge.domain.export.MatchCsvExportInput(
@@ -1349,6 +1381,7 @@ class MatchReviewViewModel @Inject constructor(
                                     matches = matches,
                                     teamSlots = inputSlots,
                                     rosterPlayers = rosterPlayers,
+                                    groupRotationV4OverallImageInput = groupRotationV4OverallImageInput,
                                 ),
                             )
                         }
@@ -1458,6 +1491,16 @@ class MatchReviewViewModel @Inject constructor(
                     else -> {
                         val inputSlots = observeTournamentSlots(tournamentId).first()
                         val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
+                        val groupRotationV4OverallImageInput =
+                            if (scope == ResultDownloadScope.WHOLE_TOURNAMENT) {
+                                readGroupRotationV4OverallImageInput(
+                                    tournament = tournament,
+                                    matches = matches,
+                                    persistedTeamSlots = inputSlots,
+                                )
+                            } else {
+                                null
+                            }
                         val request = when (scope) {
                             ResultDownloadScope.CURRENT_MATCH -> ResultDownloadRequest.CurrentMatch(
                                 com.hoggamers.rankforge.domain.export.MatchCsvExportInput(
@@ -1473,6 +1516,7 @@ class MatchReviewViewModel @Inject constructor(
                                     matches = matches,
                                     teamSlots = inputSlots,
                                     rosterPlayers = rosterPlayers,
+                                    groupRotationV4OverallImageInput = groupRotationV4OverallImageInput,
                                 ),
                             )
                         }
