@@ -380,6 +380,62 @@ class GroupRotationV4CloudUploadCoordinatorTest {
     }
 
     @Test
+    fun retryableMatchFailureDoesNotBlockIndependentLaterMatch() = runBlocking {
+        val fixture = Fixture()
+        fixture.addSingleDraftMatch()
+        fixture.addAdditionalDraftMatch()
+        fixture.matchRemote.failNextDraft(MATCH_ONE)
+
+        assertEquals(
+            GroupRotationV4CloudUploadResult.NetworkFailure,
+            fixture.coordinator().upload(TOURNAMENT_ID),
+        )
+        assertEquals(
+            listOf("draft:$MATCH_ONE", "draft:$MATCH_THREE"),
+            fixture.matchRemote.operations,
+        )
+        assertEquals(
+            GroupRotationV4SyncJournalStatus.RETRYABLE_FAILURE,
+            fixture.journal.entries.single { it.matchId == MATCH_ONE }.status,
+        )
+        assertEquals(
+            GroupRotationV4SyncJournalStatus.CONFIRMED,
+            fixture.journal.entries.single { it.matchId == MATCH_THREE }.status,
+        )
+    }
+
+    @Test
+    fun retryableRecoveredMatchDoesNotBlockNewerIndependentMatch() = runBlocking {
+        val fixture = Fixture()
+        fixture.addSingleDraftMatch()
+        fixture.matchRemote.failNextDraft(MATCH_ONE)
+        assertEquals(
+            GroupRotationV4CloudUploadResult.NetworkFailure,
+            fixture.coordinator().upload(TOURNAMENT_ID),
+        )
+
+        fixture.addAdditionalDraftMatch()
+        fixture.matchRemote.failNextDraft(MATCH_ONE)
+
+        assertEquals(
+            GroupRotationV4CloudUploadResult.NetworkFailure,
+            fixture.coordinator().upload(TOURNAMENT_ID),
+        )
+        assertEquals(
+            listOf("draft:$MATCH_ONE", "draft:$MATCH_ONE", "draft:$MATCH_THREE"),
+            fixture.matchRemote.operations,
+        )
+        assertEquals(
+            GroupRotationV4SyncJournalStatus.RETRYABLE_FAILURE,
+            fixture.journal.entries.single { it.matchId == MATCH_ONE }.status,
+        )
+        assertEquals(
+            GroupRotationV4SyncJournalStatus.CONFIRMED,
+            fixture.journal.entries.single { it.matchId == MATCH_THREE }.status,
+        )
+    }
+
+    @Test
     fun standardTournamentDoesNotEnterUuidCoordinator() = runBlocking {
         val fixture = Fixture(standard = true)
 
@@ -765,13 +821,30 @@ class GroupRotationV4CloudUploadCoordinatorTest {
         val finalParameters = mutableListOf<GroupRotationV4FinalizationParameters>()
         val draftExpectedRevisions = mutableListOf<Int>()
         val finalExpectedRevisions = mutableListOf<Int>()
-        override suspend fun writeDraftPrepared(parameters: GroupRotationV4DraftWriteParameters) =
-            GroupRotationMatchCloudV4ExecutionResult.Success(parameters.expectedRevision + 1).also {
-                check(parameters.match.id in provisioned)
-                operations += "draft:${parameters.match.id}"
-                draftParameters += parameters
-                draftExpectedRevisions += parameters.expectedRevision
-            }
+        private val draftFailures = mutableMapOf<
+            String,
+            ArrayDeque<GroupRotationMatchCloudV4ExecutionResult.Failure>,
+        >()
+
+        fun failNextDraft(
+            matchId: String,
+            category: GroupRotationMatchCloudV4FailureCategory = GroupRotationMatchCloudV4FailureCategory.NETWORK,
+        ) {
+            draftFailures.getOrPut(matchId) { ArrayDeque() }
+                .addLast(GroupRotationMatchCloudV4ExecutionResult.Failure(category = category))
+        }
+
+        override suspend fun writeDraftPrepared(
+            parameters: GroupRotationV4DraftWriteParameters,
+        ): GroupRotationMatchCloudV4ExecutionResult {
+            check(parameters.match.id in provisioned)
+            operations += "draft:${parameters.match.id}"
+            draftParameters += parameters
+            draftExpectedRevisions += parameters.expectedRevision
+            return draftFailures[parameters.match.id]
+                ?.removeFirstOrNull()
+                ?: GroupRotationMatchCloudV4ExecutionResult.Success(parameters.expectedRevision + 1)
+        }
 
         override suspend fun finalizePrepared(parameters: GroupRotationV4FinalizationParameters) =
             GroupRotationMatchCloudV4ExecutionResult.Success(parameters.expectedRevision + 1).also {

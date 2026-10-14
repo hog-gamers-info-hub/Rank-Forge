@@ -78,14 +78,23 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
             return GroupRotationV4CloudUploadResult.ValidationFailure
         }
 
+        var recoveryFailure: GroupRotationV4CloudUploadResult? = null
+        var recoveryMatchIdsToSkip = emptySet<String>()
         val recovered = journalRepository.recoverUnfinishedByOwner(ownerUserId, tournamentId)
         when (recovered) {
             is GroupRotationV4SyncJournalEntriesResult.Corrupt ->
                 return GroupRotationV4CloudUploadResult.ValidationFailure
             is GroupRotationV4SyncJournalEntriesResult.Loaded -> if (recovered.entries.isNotEmpty()) {
-                when (val recovery = processJournalEntries(recovered.entries, ownerUserId, tournamentId)) {
-                    is GroupRotationV4CloudUploadResult.Success -> Unit
-                    else -> return recovery
+                val recovery = processJournalEntries(recovered.entries, ownerUserId, tournamentId)
+                if (recovery.result !is GroupRotationV4CloudUploadResult.Success) {
+                    if (
+                        recovery.result !is GroupRotationV4CloudUploadResult.NetworkFailure ||
+                        recovery.unresolvedMatchIds.isEmpty()
+                    ) {
+                        return recovery.result
+                    }
+                    recoveryFailure = recovery.result
+                    recoveryMatchIdsToSkip = recovery.unresolvedMatchIds
                 }
             }
         }
@@ -177,7 +186,9 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
         }
 
         var revision = revisionAfterIdentity
+        var firstFailure = recoveryFailure
         uuidMatchSnapshots.forEach { (match, snapshot) ->
+            if (match.id in recoveryMatchIdsToSkip) return@forEach
             when (
                 val matchResult = synchronizeMatch(
                     tournament = tournament,
@@ -189,10 +200,15 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
                 )
             ) {
                 is OperationResult.Confirmed -> revision = matchResult.revision
-                is OperationResult.Failed -> return matchResult.result
+                is OperationResult.Failed -> {
+                    firstFailure = firstFailure ?: matchResult.result
+                    if (!matchResult.canContinueWithIndependentWork) {
+                        return matchResult.result
+                    }
+                }
             }
         }
-        return GroupRotationV4CloudUploadResult.Success(revision)
+        return firstFailure ?: GroupRotationV4CloudUploadResult.Success(revision)
     }
 
     private suspend fun synchronizeMatch(
@@ -220,7 +236,10 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
             GroupRotationCloudMatchRemoteStateResult.ValidationFailure ->
                 return OperationResult.Failed(GroupRotationV4CloudUploadResult.ValidationFailure)
             GroupRotationCloudMatchRemoteStateResult.NetworkFailure ->
-                return OperationResult.Failed(GroupRotationV4CloudUploadResult.NetworkFailure)
+                return OperationResult.Failed(
+                    result = GroupRotationV4CloudUploadResult.NetworkFailure,
+                    canContinueWithIndependentWork = true,
+                )
         }.let { remoteRevision ->
             if (remoteRevision <= 0) revision else remoteRevision
         }
@@ -413,21 +432,35 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
         entries: List<GroupRotationV4SyncJournalEntry>,
         ownerUserId: String,
         tournamentId: String,
-    ): GroupRotationV4CloudUploadResult {
+    ): JournalProcessingOutcome {
         var revision = entries.firstOrNull()?.expectedCloudRevision
-            ?: return GroupRotationV4CloudUploadResult.ValidationFailure
+            ?: return JournalProcessingOutcome(GroupRotationV4CloudUploadResult.ValidationFailure)
+        var firstFailure: GroupRotationV4CloudUploadResult? = null
+        val unresolvedMatchIds = mutableSetOf<String>()
         entries.sortedBy { it.createdAtEpochMillis }.forEach { entry ->
             if (entry.tournamentId != tournamentId || entry.ownerUserId != ownerUserId) {
-                return GroupRotationV4CloudUploadResult.AuthorizationFailure
+                return JournalProcessingOutcome(GroupRotationV4CloudUploadResult.AuthorizationFailure)
+            }
+            if (entry.matchId != null && entry.matchId in unresolvedMatchIds) {
+                return@forEach
             }
             when (
                 val result = dispatchEntry(entry, ownerUserId)
             ) {
                 is OperationResult.Confirmed -> revision = result.revision
-                is OperationResult.Failed -> return result.result
+                is OperationResult.Failed -> {
+                    if (!result.canContinueWithIndependentWork || entry.matchId == null) {
+                        return JournalProcessingOutcome(result.result, unresolvedMatchIds)
+                    }
+                    firstFailure = firstFailure ?: result.result
+                    unresolvedMatchIds += entry.matchId
+                }
             }
         }
-        return GroupRotationV4CloudUploadResult.Success(revision)
+        return JournalProcessingOutcome(
+            result = firstFailure ?: GroupRotationV4CloudUploadResult.Success(revision),
+            unresolvedMatchIds = unresolvedMatchIds,
+        )
     }
 
     private suspend fun dispatchEntry(
@@ -493,7 +526,10 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
                 ownerUserId = ownerUserId,
                 failureCategory = "network",
             )
-            OperationResult.Failed(GroupRotationV4CloudUploadResult.NetworkFailure)
+            OperationResult.Failed(
+                result = GroupRotationV4CloudUploadResult.NetworkFailure,
+                canContinueWithIndependentWork = true,
+            )
         }
     }
 
@@ -644,7 +680,10 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
         return if (result is GroupRotationV4SyncJournalMutationResult.Updated) {
             OperationResult.Confirmed(revision)
         } else {
-            OperationResult.Failed(GroupRotationV4CloudUploadResult.NetworkFailure)
+            OperationResult.Failed(
+                result = GroupRotationV4CloudUploadResult.NetworkFailure,
+                canContinueWithIndependentWork = true,
+            )
         }
     }
 
@@ -681,7 +720,10 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
         } else {
             journalRepository.recordRetryableFailure(entry.journalId, ownerUserId, category.name.lowercase())
         }
-        return OperationResult.Failed(mapped)
+        return OperationResult.Failed(
+            result = mapped,
+            canContinueWithIndependentWork = mapped is GroupRotationV4CloudUploadResult.NetworkFailure,
+        )
     }
 
     private suspend fun currentOwnerUserId(): String? =
@@ -705,9 +747,17 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
         -> error("Successful journal creation is handled before mapping the result.")
     }
 
+    private data class JournalProcessingOutcome(
+        val result: GroupRotationV4CloudUploadResult,
+        val unresolvedMatchIds: Set<String> = emptySet(),
+    )
+
     private sealed interface OperationResult {
         data class Confirmed(val revision: Int) : OperationResult
-        data class Failed(val result: GroupRotationV4CloudUploadResult) : OperationResult
+        data class Failed(
+            val result: GroupRotationV4CloudUploadResult,
+            val canContinueWithIndependentWork: Boolean = false,
+        ) : OperationResult
     }
 
     companion object {
