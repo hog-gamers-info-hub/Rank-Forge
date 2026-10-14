@@ -152,6 +152,31 @@ class GroupRotationMatchCloudV4Test {
     }
 
     @Test
+    fun clearedCurrentAssignmentDoesNotInvalidateImmutableMatchSnapshot() {
+        val saved = savedIdentitySnapshot(
+            assignments = listOf(
+                GroupRotationPairingAssignment(T, PAIRING, 1, U1, nameCleared = true),
+                GroupRotationPairingAssignment(T, PAIRING, 5, U2),
+                GroupRotationPairingAssignment(T, PAIRING, 12, U3),
+            ),
+        )
+
+        val result = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament(),
+            draftRequest(
+                persistence(lobbySlots = listOf(1, 5, 12)),
+                savedIdentitySnapshot = saved,
+            ),
+        )
+
+        assertTrue(result is GroupRotationV4MappingResult.Success)
+        assertEquals(
+            listOf(U1, U2, U3),
+            (result as GroupRotationV4MappingResult.Success).parameters.matchIdentity.map { it.teamUUID },
+        )
+    }
+
+    @Test
     fun unknownAndDuplicateUuidsAreRejected() {
         val unknown = "44444444-4444-4444-8444-444444444444"
         val unknownResult = GroupRotationMatchCloudV4Mapper.mapDraft(
