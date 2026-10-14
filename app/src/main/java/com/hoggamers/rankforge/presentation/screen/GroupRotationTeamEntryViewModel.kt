@@ -7,7 +7,6 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamEntry
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentitySetupSaveResult
-import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityNormalizer
 import com.hoggamers.rankforge.domain.tournament.toSetupCandidate
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupCandidate
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftRepository
@@ -73,12 +72,9 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
     val navigationEvents: Flow<GroupRotationTeamEntryNavigationEvent> = navigationEventsChannel.receiveAsFlow()
     private val draftWriteChannel = Channel<DraftWriteCommand>(Channel.UNLIMITED)
     private val validator = GroupRotationTeamSetupValidator()
-    private val identityNormalizer = GroupRotationTeamIdentityNormalizer()
     private val locallyEditedKeys = mutableSetOf<Pair<String, Int>>()
     private var loadJob: Job? = null
     private var loadedTournament: Tournament? = null
-    private var authoritativeIdentityCandidate: GroupRotationTeamSetupCandidate? = null
-    private var identityAuthoritative = false
     private var loadedTournamentId: String? = null
     private var loadGeneration = 0L
     private var editGeneration = 0L
@@ -248,17 +244,6 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                     return@launch
                 }
                 if (tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION) {
-                    val conflicts = if (identityAuthoritative) {
-                        identityConflicts(candidateFromState(tournament, savePairing))
-                    } else {
-                        emptyList()
-                    }
-                    if (conflicts.isNotEmpty()) {
-                        if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
-                            showValidationIssues(conflicts)
-                        }
-                        return@launch
-                    }
                     when (val result = saveGroupRotationTeamIdentitySetup(tournament, candidate, savePairing)) {
                         is GroupRotationTeamIdentitySetupSaveResult.Saved -> {
                             finishIdentitySave(
@@ -422,11 +407,9 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
     private suspend fun hydrate(
         tournament: Tournament,
         authoritativeCandidate: GroupRotationTeamSetupCandidate?,
-        identityAuthoritativeResult: Boolean,
+        identityAuthoritative: Boolean,
     ) {
         loadedTournament = tournament
-        identityAuthoritative = identityAuthoritativeResult
-        authoritativeIdentityCandidate = if (identityAuthoritativeResult) authoritativeCandidate else null
         val rawDraft = try {
             draftRepository.readDraft(tournament.id)
         } catch (throwable: Throwable) {
@@ -450,6 +433,24 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
         }
         val authoritative = authoritativeCandidate ?: blankCandidate(tournament)
         val effectiveDraftEntries = draftCandidate?.entries.orEmpty()
+        if (
+            tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION &&
+                identityAuthoritative
+        ) {
+            val authoritativeEntriesByKey = authoritative.entries.associateBy {
+                it.pairing.canonicalKey to it.lobbySlotNumber
+            }
+            effectiveDraftEntries
+                .filter { entry ->
+                    entry.teamName.isBlank() &&
+                        authoritativeEntriesByKey[entry.pairing.canonicalKey to entry.lobbySlotNumber]
+                            ?.teamName
+                            ?.isNotBlank() == true
+                }
+                .forEach { entry ->
+                    locallyEditedKeys += entry.pairing.canonicalKey to entry.lobbySlotNumber
+                }
+        }
         val hydratedCandidate = if (effectiveDraftEntries.isEmpty()) {
             authoritative
         } else {
@@ -464,29 +465,6 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
             )
         }
         publishLoadedState(tournament, hydratedCandidate)
-    }
-
-    private fun identityConflicts(
-        candidate: GroupRotationTeamSetupCandidate,
-    ): List<GroupRotationTeamSetupIssue> {
-        val baseline = authoritativeIdentityCandidate ?: return emptyList()
-        return candidate.entries.mapNotNull { entry ->
-            val baselineEntry = baseline.entries.firstOrNull {
-                it.pairing == entry.pairing && it.lobbySlotNumber == entry.lobbySlotNumber
-            } ?: return@mapNotNull null
-            val baselineName = identityNormalizer.normalize(baselineEntry.teamName)
-            val submittedName = identityNormalizer.normalize(entry.teamName)
-            if (baselineName.isNotBlank() && baselineName != submittedName) {
-                GroupRotationTeamSetupIssue(
-                    code = com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssueCode.AMBIGUOUS_EXISTING_IDENTITY,
-                    pairingKey = entry.pairing.canonicalKey,
-                    lobbySlotNumber = entry.lobbySlotNumber,
-                    normalizedIdentity = submittedName,
-                )
-            } else {
-                null
-            }
-        }.distinct()
     }
 
     private suspend fun finishIdentitySave(
@@ -526,19 +504,32 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                 },
             )
         }
+        val cloudResult: QueueAwareActionResult<TournamentCloudUploadResult> = try {
+            uploadTournament(tournamentId)
+        } catch (throwable: Throwable) {
+            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+            QueueAwareActionResult(
+                primaryResult = TournamentCloudUploadResult.PartialFailure(
+                    TournamentCloudUploadStage.TOURNAMENT,
+                ),
+                queueRecordingResult = QueueRecordingResult.PERSISTENCE_FAILED,
+            )
+        }
+        if (finishStaleSaveIfNeeded(tournamentId, expectedLoadGeneration, expectedEditGeneration)) return
+        val navigateAfterLocalSave = cloudResult.shouldNavigateAfterLocalSave()
         _uiState.update { state ->
-            val updated = state.copy(
+            state.copy(
                 pairingSections = sections,
                 uniqueTeamCount = state.copy(pairingSections = sections).uniqueNormalizedTeamCount(),
                 isSaving = false,
                 validationIssues = emptyList(),
                 saveError = null,
-                cloudSyncError = null,
+                cloudSyncError = if (navigateAfterLocalSave) null else cloudResult.toCloudSyncError(),
             )
-            updated
         }
-        authoritativeIdentityCandidate = snapshot.toSetupCandidate(tournament)
-        navigationEventsChannel.trySend(GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails)
+        if (navigateAfterLocalSave) {
+            navigationEventsChannel.trySend(GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails)
+        }
     }
 
     private fun publishLoadedState(

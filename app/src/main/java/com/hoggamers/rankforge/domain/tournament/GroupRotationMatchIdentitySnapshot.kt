@@ -159,6 +159,7 @@ class GroupRotationMatchIdentitySnapshotResolver {
                 tournamentId = tournament.id,
                 pairing = pairing,
                 teams = selectedAssignments
+                    .filterNot { it.nameCleared }
                     .sortedBy { it.lobbySlotNumber }
                     .map { assignment ->
                         val identity = identitiesByUuid.getValue(assignment.teamUUID)

@@ -131,8 +131,7 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
         val identityMapping = GroupRotationTeamIdentityCloudV4Mapper.map(
             request = GroupRotationTeamIdentityV4WriteRequest(
                 tournament = tournament,
-                pairingsToReplace = identitySnapshot.assignments
-                    .map { it.pairingKey }
+                pairingsToReplace = tournament.selectedGroupPairings
                     .distinct()
                     .sortedBy { it.canonicalKey },
                 expectedRevision = parentRevision,

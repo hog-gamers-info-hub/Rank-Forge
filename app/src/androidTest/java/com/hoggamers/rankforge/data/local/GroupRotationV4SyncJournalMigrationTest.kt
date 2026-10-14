@@ -124,6 +124,52 @@ class GroupRotationV4SyncJournalMigrationTest {
         migrated.close()
     }
 
+    @Test
+    fun migration34To35DefaultsNameClearedWithoutChangingAssignmentIdentity() {
+        migrationTestHelper().createDatabase(DATABASE_NAME, 34).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order, owner_user_id, format, group_count) " +
+                    "VALUES ('name-cleared-migration', 'Name Cleared', 'Stage', '123', 'DRAFT', 1, 'owner-a', 'GROUP_ROTATION', 3)",
+            )
+            database.execSQL(
+                "INSERT INTO tournament_group_pairings " +
+                    "(tournament_id, pairing_key, first_group, second_group) " +
+                    "VALUES ('name-cleared-migration', 'A:B', 'A', 'B')",
+            )
+            database.execSQL(
+                "INSERT INTO group_rotation_team_identities " +
+                    "(tournament_id, team_uuid, display_name, normalized_name) " +
+                    "VALUES ('name-cleared-migration', '00000000-0000-4000-8000-000000000201', 'Stable Team', 'stable team')",
+            )
+            database.execSQL(
+                "INSERT INTO group_rotation_pairing_team_identity_assignments " +
+                    "(tournament_id, pairing_key, lobby_slot_number, team_uuid) " +
+                    "VALUES ('name-cleared-migration', 'A:B', 3, '00000000-0000-4000-8000-000000000201')",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            DATABASE_NAME,
+            35,
+            true,
+            RankForgeDatabase.MIGRATION_34_35,
+        )
+
+        migrated.query(
+            "SELECT pairing_key, lobby_slot_number, team_uuid, name_cleared " +
+                "FROM group_rotation_pairing_team_identity_assignments " +
+                "WHERE tournament_id = 'name-cleared-migration'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("A:B", cursor.getString(0))
+            assertEquals(3, cursor.getInt(1))
+            assertEquals("00000000-0000-4000-8000-000000000201", cursor.getString(2))
+            assertEquals(0, cursor.getInt(3))
+        }
+        migrated.close()
+    }
+
     private fun migrationTestHelper() = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),
         RankForgeDatabase::class.java,

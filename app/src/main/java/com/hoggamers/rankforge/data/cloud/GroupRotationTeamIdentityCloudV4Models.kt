@@ -19,6 +19,7 @@ data class GroupRotationTeamIdentityV4Payload(
 data class GroupRotationPairingTeamAssignmentV4Payload(
     @SerialName("lobby_slot_number") val lobbySlotNumber: Int,
     @SerialName("team_uuid") val teamUUID: String,
+    @SerialName("name_cleared") val nameCleared: Boolean,
 )
 
 /** One explicit pairing replacement scope. */

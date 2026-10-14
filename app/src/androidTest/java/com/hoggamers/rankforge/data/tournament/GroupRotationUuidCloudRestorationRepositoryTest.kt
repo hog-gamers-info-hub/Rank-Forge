@@ -21,6 +21,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnaps
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchTeamIdentity
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityReadResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidLocalRestoreResult
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -34,6 +35,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import java.time.LocalDate
 import java.io.File
+import com.hoggamers.rankforge.domain.tournament.toSetupCandidate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -83,6 +85,83 @@ class GroupRotationUuidCloudRestorationRepositoryTest {
             database.groupRotationPairingTeamIdentityAssignmentDao().readByTournamentId(T),
         )
         assertEquals(18, database.teamSlotDao().readByTournamentId(T).size)
+    }
+
+    @Test
+    fun restoresPairingSpecificClearedNameWithoutClearingGlobalIdentity() = runBlocking {
+        repository = RoomTournamentRepository(database)
+        repository.observeAll().first()
+
+        val result = repository.restoreGroupRotationUuidSnapshot(
+            snapshot(
+                assignments = listOf(
+                    GroupRotationPairingAssignment(
+                        tournamentId = T,
+                        pairingKey = pairing("A:B"),
+                        lobbySlotNumber = 5,
+                        teamUUID = U1,
+                        nameCleared = true,
+                    ),
+                ),
+            ),
+            OWNER,
+        )
+
+        assertEquals(GroupRotationUuidLocalRestoreResult.Restored, result)
+        assertEquals(
+            listOf(GroupRotationTeamIdentityEntity(T, U1, "Phoenix", "phoenix")),
+            database.groupRotationTeamIdentityDao().readByTournamentId(T),
+        )
+        assertEquals(
+            listOf(GroupRotationPairingTeamIdentityAssignmentEntity(T, "A:B", 5, U1, true)),
+            database.groupRotationPairingTeamIdentityAssignmentDao().readByTournamentId(T),
+        )
+
+        val identityRead = RoomGroupRotationTeamIdentityRepository(database).read(tournament())
+        require(identityRead is GroupRotationTeamIdentityReadResult.Loaded)
+        assertEquals("", identityRead.snapshot.toSetupCandidate(tournament()).entries.single().teamName)
+    }
+
+    @Test
+    fun restoresCloudClearedStateOverCachedValueWithoutClearingDatabase() = runBlocking {
+        seedExistingTournament()
+        repository = RoomTournamentRepository(database)
+        repository.observeAll().first()
+        assertEquals(
+            false,
+            database.groupRotationPairingTeamIdentityAssignmentDao()
+                .readByTournamentId(T)
+                .single()
+                .nameCleared,
+        )
+
+        val result = repository.restoreGroupRotationUuidSnapshot(
+            snapshot(
+                assignments = listOf(
+                    GroupRotationPairingAssignment(
+                        tournamentId = T,
+                        pairingKey = pairing("A:B"),
+                        lobbySlotNumber = 5,
+                        teamUUID = U1,
+                        nameCleared = true,
+                    ),
+                ),
+            ),
+            OWNER,
+        )
+
+        assertEquals(GroupRotationUuidLocalRestoreResult.Restored, result)
+        assertEquals(
+            true,
+            database.groupRotationPairingTeamIdentityAssignmentDao()
+                .readByTournamentId(T)
+                .single()
+                .nameCleared,
+        )
+        assertEquals(
+            GroupRotationTeamIdentityEntity(T, U1, "Phoenix", "phoenix"),
+            database.groupRotationTeamIdentityDao().readByTournamentId(T).single(),
+        )
     }
 
     @Test
@@ -300,6 +379,8 @@ class GroupRotationUuidCloudRestorationRepositoryTest {
     private fun snapshot(
         identities: List<GroupRotationTeamIdentity> =
             listOf(GroupRotationTeamIdentity(T, U1, "Phoenix", "phoenix")),
+        assignments: List<GroupRotationPairingAssignment> =
+            listOf(GroupRotationPairingAssignment(T, pairing("A:B"), 5, U1)),
     ) = GroupRotationUuidCloudRestorationSnapshot(
         parent = TournamentCloudRestorationSnapshot(
             tournament = tournament(),
@@ -309,7 +390,7 @@ class GroupRotationUuidCloudRestorationRepositoryTest {
             pairingLobbySlots = emptyList(),
         ),
         identities = identities,
-        assignments = listOf(GroupRotationPairingAssignment(T, pairing("A:B"), 5, U1)),
+        assignments = assignments,
         matches = emptyList(),
         uuidMatches = emptyList(),
         cloudRevision = CloudRevision(7),

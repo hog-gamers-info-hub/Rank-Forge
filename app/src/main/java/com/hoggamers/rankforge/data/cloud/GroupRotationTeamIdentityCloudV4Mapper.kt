@@ -201,6 +201,7 @@ class GroupRotationTeamIdentityCloudV4Mapper(
                                         GroupRotationPairingTeamAssignmentV4Payload(
                                             lobbySlotNumber = assignment.lobbySlotNumber,
                                             teamUUID = assignment.teamUUID,
+                                            nameCleared = assignment.nameCleared,
                                         )
                                     },
                             )

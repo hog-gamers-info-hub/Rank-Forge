@@ -16,6 +16,7 @@ data class GroupRotationPairingAssignment(
     val pairingKey: GroupPairing,
     val lobbySlotNumber: Int,
     val teamUUID: String,
+    val nameCleared: Boolean = false,
 )
 
 /** A reviewed pairing entry. A null UUID means that the team is unassigned. */
@@ -191,14 +192,6 @@ class GroupRotationTeamIdentityResolver(
             val resolved: GroupRotationTeamIdentity?
 
             if (savedAssignment != null) {
-                if (entry.displayName.isBlank()) {
-                    issues += GroupRotationTeamIdentityIssue(
-                        GroupRotationTeamIdentityIssueCode.IMPLICIT_ASSIGNMENT_CLEAR,
-                        lobbySlotNumber = entry.lobbySlotNumber,
-                        pairingKey = pairingKey.canonicalKey,
-                    )
-                    return@forEach
-                }
                 if (entry.teamUUID != null && entry.teamUUID != savedAssignment.teamUUID) {
                     issues += GroupRotationTeamIdentityIssue(
                         GroupRotationTeamIdentityIssueCode.ASSIGNED_TEAM_UUID_CONFLICT,
@@ -216,6 +209,10 @@ class GroupRotationTeamIdentityResolver(
                         lobbySlotNumber = entry.lobbySlotNumber,
                         pairingKey = pairingKey.canonicalKey,
                     )
+                    return@forEach
+                }
+                if (cleanedDisplayName.isBlank()) {
+                    effectiveAssignmentByLobby[entry.lobbySlotNumber] = savedAssignment.copy(nameCleared = true)
                     return@forEach
                 }
                 resolved = if (savedTeam.displayName == cleanedDisplayName) {
@@ -301,6 +298,7 @@ class GroupRotationTeamIdentityResolver(
                     pairingKey = pairingKey,
                     lobbySlotNumber = entry.lobbySlotNumber,
                     teamUUID = resolved.teamUUID,
+                    nameCleared = cleanedDisplayName.isBlank(),
                 )
             }
         }

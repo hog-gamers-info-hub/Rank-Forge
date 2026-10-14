@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.cloud.TournamentCloudIdentity
+import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
 import com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity
 import com.hoggamers.rankforge.data.local.GroupRotationPairingLobbySlotEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
@@ -122,6 +123,99 @@ class GroupRotationTeamIdentityRepositoryTest {
         assertEquals(alphaUuid, third.teams.single().teamUUID)
         assertEquals("Alpha Renamed", third.teams.single().displayName)
         assertEquals(alphaUuid, third.assignments.single { it.pairingKey == pairing("A:C") }.teamUUID)
+    }
+
+    @Test
+    fun explicitClearsRemoveOnlyThatPairingAssignmentsAndPreserveIdentitiesAndHistory() = runBlocking {
+        repository.savePairing(tournament(), pairing("A:B"), entries(1 to "Alpha", 2 to "Beta"))
+        repository.savePairing(
+            tournament(),
+            pairing("A:C"),
+            entries(
+                1 to "alpha",
+                2 to "beta",
+                3 to "Team 3",
+                4 to "Team 4",
+                5 to "Team 5",
+                6 to "Team 6",
+            ),
+        )
+        val before = loaded()
+        val match = MatchEntity(
+            id = "history-match",
+            tournamentId = TOURNAMENT_ID,
+            matchNumber = 1,
+            date = "2026-10-01",
+            mapName = "Bermuda",
+            status = "FINALIZED",
+            groupPairingKey = "A:B",
+        )
+        database.matchDao().upsert(match)
+
+        val oneCleared = repository.savePairing(
+            tournament(),
+            pairing("A:C"),
+            entries(1 to ""),
+        )
+        assertTrue(oneCleared is GroupRotationTeamIdentityWriteResult.Saved)
+        val afterOne = loaded()
+        assertEquals(listOf(2, 3, 4, 5, 6), afterOne.assignments
+            .filter { it.pairingKey == pairing("A:C") }
+            .map { it.lobbySlotNumber })
+        assertEquals(
+            before.assignments.filter { it.pairingKey == pairing("A:B") },
+            afterOne.assignments.filter { it.pairingKey == pairing("A:B") },
+        )
+
+        val allCleared = repository.savePairing(
+            tournament(),
+            pairing("A:C"),
+            entries(2 to "", 3 to "", 4 to "", 5 to "", 6 to ""),
+        )
+        assertTrue(allCleared is GroupRotationTeamIdentityWriteResult.Saved)
+        val afterAll = loaded()
+        assertTrue(afterAll.assignments.none { it.pairingKey == pairing("A:C") })
+        assertEquals(before.teams, afterAll.teams)
+        assertEquals(
+            before.assignments.filter { it.pairingKey == pairing("A:B") },
+            afterAll.assignments.filter { it.pairingKey == pairing("A:B") },
+        )
+        assertEquals(match, database.matchDao().readForTournamentId(TOURNAMENT_ID).single())
+    }
+
+    @Test
+    fun pairingAssignmentNameClearedRoundTripsWithoutAffectingOtherPairings() = runBlocking {
+        val alphaUuid = UUID(0, 101).toString()
+        database.groupRotationTeamIdentityDao().upsertAll(
+            listOf(GroupRotationTeamIdentityEntity(TOURNAMENT_ID, alphaUuid, "Alpha", "alpha")),
+        )
+        database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
+            listOf(
+                GroupRotationPairingTeamIdentityAssignmentEntity(
+                    tournamentId = TOURNAMENT_ID,
+                    pairingKey = "A:B",
+                    lobbySlotNumber = 1,
+                    teamUUID = alphaUuid,
+                    nameCleared = false,
+                ),
+                GroupRotationPairingTeamIdentityAssignmentEntity(
+                    tournamentId = TOURNAMENT_ID,
+                    pairingKey = "A:C",
+                    lobbySlotNumber = 7,
+                    teamUUID = alphaUuid,
+                    nameCleared = true,
+                ),
+            ),
+        )
+
+        val assignments = database.groupRotationPairingTeamIdentityAssignmentDao()
+            .readByTournamentId(TOURNAMENT_ID)
+        assertEquals(false, assignments.single { it.pairingKey == "A:B" }.nameCleared)
+        assertEquals(true, assignments.single { it.pairingKey == "A:C" }.nameCleared)
+        assertEquals(alphaUuid, assignments.single { it.pairingKey == "A:B" }.teamUUID)
+        assertEquals(alphaUuid, assignments.single { it.pairingKey == "A:C" }.teamUUID)
+        assertEquals("Alpha", database.groupRotationTeamIdentityDao()
+            .readByTournamentId(TOURNAMENT_ID).single().displayName)
     }
 
     @Test

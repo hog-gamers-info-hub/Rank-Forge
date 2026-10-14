@@ -49,7 +49,7 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
                         validateStoredState(tournament, backfill.teams, merged.assignments)?.let { issues ->
                             return@withTransaction GroupRotationTeamIdentityReadResult.Invalid(issues)
                         }
-                        persist(backfill.teams, merged.assignments)
+                        persist(tournament.id, backfill.teams, merged.assignments)
                         return@withTransaction GroupRotationTeamIdentityReadResult.Loaded(
                             GroupRotationTeamIdentityLocalSnapshot(backfill.teams, merged.assignments),
                         )
@@ -96,7 +96,12 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
                         ) {
                             return@withTransaction GroupRotationTeamIdentityWriteResult.ProtectedHistory
                         }
-                        persist(planned.plan.teams, planned.plan.assignments)
+                        persist(
+                            tournamentId = tournament.id,
+                            teams = planned.plan.teams,
+                            assignments = planned.plan.assignments,
+                            pairingToReplace = pairingKey,
+                        )
                         GroupRotationTeamIdentityWriteResult.Saved(
                             GroupRotationTeamIdentityLocalSnapshot(
                                 planned.plan.teams,
@@ -136,7 +141,7 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
                         GroupRotationTeamIdentityWriteResult.Invalid(renamed.issues)
                     }
                     is GroupRotationTeamRenameResult.Renamed -> {
-                        persist(renamed.teams, renamed.assignments)
+                        persist(tournament.id, renamed.teams, renamed.assignments)
                         GroupRotationTeamIdentityWriteResult.Saved(
                             GroupRotationTeamIdentityLocalSnapshot(
                                 renamed.teams,
@@ -151,9 +156,15 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
     }
 
     private suspend fun persist(
+        tournamentId: String,
         teams: List<GroupRotationTeamIdentity>,
         assignments: List<GroupRotationPairingAssignment>,
+        pairingToReplace: GroupPairing? = null,
     ) {
+        pairingToReplace?.let { pairing ->
+            database.groupRotationPairingTeamIdentityAssignmentDao()
+                .deleteByTournamentIdAndPairing(tournamentId, pairing.canonicalKey)
+        }
         database.groupRotationTeamIdentityDao().upsertAll(teams.map { it.toEntity() })
         database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
             assignments.map { it.toEntity() },
@@ -336,6 +347,7 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
                 pairingKey = pairing,
                 lobbySlotNumber = entity.lobbySlotNumber,
                 teamUUID = entity.teamUUID,
+                nameCleared = entity.nameCleared,
             )
         }
 
@@ -405,4 +417,5 @@ private fun GroupRotationPairingAssignment.toEntity(): GroupRotationPairingTeamI
         pairingKey = pairingKey.canonicalKey,
         lobbySlotNumber = lobbySlotNumber,
         teamUUID = teamUUID,
+        nameCleared = nameCleared,
     )

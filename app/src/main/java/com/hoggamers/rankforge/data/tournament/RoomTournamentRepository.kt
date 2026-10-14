@@ -1205,6 +1205,7 @@ class RoomTournamentRepository @Inject constructor(
                             pairingKey = assignment.pairingKey.canonicalKey,
                             lobbySlotNumber = assignment.lobbySlotNumber,
                             teamUUID = assignment.teamUUID,
+                            nameCleared = assignment.nameCleared,
                         )
                     },
                 )

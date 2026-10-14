@@ -74,6 +74,28 @@ class GroupRotationTeamIdentityCloudV4Test {
     }
 
     @Test
+    fun assignmentPayloadCarriesClearedStateAndExplicitFalse() {
+        val parameters = (map(
+            loaded(
+                assignments = listOf(
+                    assignment(PAIRING_AB, 1, U1, nameCleared = true),
+                    assignment(PAIRING_AB, 2, U2),
+                ),
+            ),
+        ) as GroupRotationTeamIdentityV4MappingResult.Success).parameters
+
+        val assignments = parameters.pairingAssignments.single().assignments
+        assertTrue(assignments.first { it.teamUUID == U1 }.nameCleared)
+        assertFalse(assignments.first { it.teamUUID == U2 }.nameCleared)
+        val json = Json.encodeToString(parameters)
+        val assignmentJson = Json.parseToJsonElement(json).jsonObject
+            .getValue("p_pairing_assignments").jsonArray.first().jsonObject
+            .getValue("assignments").jsonArray
+        assertTrue("name_cleared" in assignmentJson[0].jsonObject.keys)
+        assertTrue("name_cleared" in assignmentJson[1].jsonObject.keys)
+    }
+
+    @Test
     fun sparseLobbyPositionsArePreservedNumerically() {
         val parameters = (map(
             loaded(assignments = listOf(assignment(PAIRING_AB, 2, U1), assignment(PAIRING_AB, 11, U2))),
@@ -375,8 +397,12 @@ class GroupRotationTeamIdentityCloudV4Test {
         GroupRotationTeamIdentityLocalSnapshot(teams = teams, assignments = assignments),
     )
 
-    private fun assignment(pairing: GroupPairing, lobbySlot: Int, teamUUID: String) =
-        GroupRotationPairingAssignment(T, pairing, lobbySlot, teamUUID)
+    private fun assignment(
+        pairing: GroupPairing,
+        lobbySlot: Int,
+        teamUUID: String,
+        nameCleared: Boolean = false,
+    ) = GroupRotationPairingAssignment(T, pairing, lobbySlot, teamUUID, nameCleared)
 
     private fun team(
         teamUUID: String,

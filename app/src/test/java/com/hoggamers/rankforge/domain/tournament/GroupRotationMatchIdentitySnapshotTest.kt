@@ -74,6 +74,18 @@ class GroupRotationMatchIdentitySnapshotTest {
     }
 
     @Test
+    fun clearedAssignmentRetainsUuidButIsNotEligibleForANewMatch() {
+        val uuid = "team-uuid-cleared"
+        val result = resolve(
+            teams = listOf(identity(uuid, "Alpha")),
+            assignments = listOf(assignment("A:B", 1, uuid, nameCleared = true)),
+        )
+
+        assertTrue(result is GroupRotationMatchIdentitySnapshotResult.Loaded)
+        assertTrue(loaded(result).teams.isEmpty())
+    }
+
+    @Test
     fun missingUuidFails() {
         val result = resolve(
             assignments = listOf(assignment("A:B", 1, "missing")),
@@ -165,11 +177,13 @@ class GroupRotationMatchIdentitySnapshotTest {
         lobbySlotNumber: Int,
         uuid: String,
         tournamentId: String = TOURNAMENT_ID,
+        nameCleared: Boolean = false,
     ) = GroupRotationPairingAssignment(
         tournamentId = tournamentId,
         pairingKey = pairing(pairingKey),
         lobbySlotNumber = lobbySlotNumber,
         teamUUID = uuid,
+        nameCleared = nameCleared,
     )
 
     private fun pairing(key: String): GroupPairing = GroupPairing.fromCanonicalKey(key)

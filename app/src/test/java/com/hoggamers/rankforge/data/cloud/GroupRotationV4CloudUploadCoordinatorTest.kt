@@ -81,6 +81,27 @@ class GroupRotationV4CloudUploadCoordinatorTest {
     }
 
     @Test
+    fun identityReplacementIncludesSelectedPairingWhenItsAssignmentsAreEmpty() = runBlocking {
+        val fixture = Fixture()
+        fixture.identitySnapshot = fixture.identitySnapshot.copy(
+            assignments = fixture.identitySnapshot.assignments.filter {
+                it.pairingKey == pairing("A:B")
+            },
+        )
+
+        assertEquals(
+            GroupRotationV4CloudUploadResult.Success(3),
+            fixture.coordinator().upload(TOURNAMENT_ID),
+        )
+        val identityParameters = fixture.identityRemote.parameters.single()
+        assertEquals(
+            listOf("A:B", "A:C"),
+            identityParameters.pairingAssignments.map { it.pairingKey },
+        )
+        assertTrue(identityParameters.pairingAssignments.last().assignments.isEmpty())
+    }
+
+    @Test
     fun provisionsNewMatchParentBeforeCreatingItsJournalEntry() = runBlocking {
         val fixture = Fixture()
         fixture.addSingleDraftMatch()

@@ -99,6 +99,7 @@ object GroupRotationUuidCloudRestorationMapper {
                 pairingKey = pairing,
                 lobbySlotNumber = payload.lobbySlotNumber,
                 teamUUID = payload.teamUUID,
+                nameCleared = payload.nameCleared,
             )
         }
         if (assignments.groupBy { it.pairingKey to it.lobbySlotNumber }.any { it.value.size > 1 } ||

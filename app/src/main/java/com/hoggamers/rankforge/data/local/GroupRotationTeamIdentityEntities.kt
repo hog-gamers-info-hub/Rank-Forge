@@ -80,6 +80,7 @@ data class GroupRotationPairingTeamIdentityAssignmentEntity(
     @ColumnInfo(name = "pairing_key") val pairingKey: String,
     @ColumnInfo(name = "lobby_slot_number") val lobbySlotNumber: Int,
     @ColumnInfo(name = "team_uuid") val teamUUID: String,
+    @ColumnInfo(name = "name_cleared") val nameCleared: Boolean = false,
 )
 
 @Dao
@@ -102,6 +103,12 @@ interface GroupRotationPairingTeamIdentityAssignmentDao {
 
     @Upsert
     suspend fun upsertAll(assignments: List<GroupRotationPairingTeamIdentityAssignmentEntity>)
+
+    @Query(
+        "DELETE FROM group_rotation_pairing_team_identity_assignments " +
+            "WHERE tournament_id = :tournamentId AND pairing_key = :pairingKey",
+    )
+    suspend fun deleteByTournamentIdAndPairing(tournamentId: String, pairingKey: String)
 
     @Query(
         "DELETE FROM group_rotation_pairing_team_identity_assignments " +

@@ -35,6 +35,24 @@ class GroupRotationUuidCloudRestorationMapperTest {
     }
 
     @Test
+    fun restoresPairingSpecificClearedStateWithoutChangingRegisteredUuid() {
+        val result = GroupRotationUuidCloudRestorationMapper.map(
+            payloads(
+                identities = listOf(identity(U1, "Phoenix")),
+                assignments = listOf(assignment(PAIRING_AB, 3, U1, nameCleared = true)),
+            ),
+            OWNER,
+        )
+
+        assertTrue(result is GroupRotationUuidCloudRestorationMappingResult.Success)
+        val snapshot = (result as GroupRotationUuidCloudRestorationMappingResult.Success).snapshot
+        val assignment = snapshot.assignments.single()
+        assertEquals(U1, assignment.teamUUID)
+        assertTrue(assignment.nameCleared)
+        assertEquals("Phoenix", snapshot.identities.single().displayName)
+    }
+
+    @Test
     fun emptyPairingAndZeroUuidMatchesAreValidWithoutPlaceholders() {
         val result = GroupRotationUuidCloudRestorationMapper.map(
             payloads(identities = listOf(identity(U1, "Phoenix"))),
@@ -324,8 +342,12 @@ class GroupRotationUuidCloudRestorationMapperTest {
         normalizedName = name.lowercase(),
     )
 
-    private fun assignment(pairing: GroupPairing, lobby: Int, uuid: String) =
-        GroupRotationUuidPairingAssignmentPayload(T, pairing.canonicalKey, lobby, uuid)
+    private fun assignment(
+        pairing: GroupPairing,
+        lobby: Int,
+        uuid: String,
+        nameCleared: Boolean = false,
+    ) = GroupRotationUuidPairingAssignmentPayload(T, pairing.canonicalKey, lobby, uuid, nameCleared)
 
     private fun baseMatch(
         pairing: GroupPairing,

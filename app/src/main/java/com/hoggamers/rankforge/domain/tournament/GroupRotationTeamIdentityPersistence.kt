@@ -60,7 +60,7 @@ fun GroupRotationTeamIdentityLocalSnapshot.toSetupCandidate(
             GroupRotationPairingTeamEntry(
                 pairing = assignment.pairingKey,
                 lobbySlotNumber = assignment.lobbySlotNumber,
-                teamName = team.displayName,
+                teamName = if (assignment.nameCleared) "" else team.displayName,
             )
         }
     },

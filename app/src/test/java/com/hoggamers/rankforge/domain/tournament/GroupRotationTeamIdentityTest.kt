@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.domain.tournament
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -395,7 +396,7 @@ class GroupRotationTeamIdentityTest {
     }
 
     @Test
-    fun conflictingRenameAndImplicitClearingAreRejected() {
+    fun conflictingRenameIsRejectedAndExplicitClearingIsPlanned() {
         val alpha = identity(1, "Alpha")
         val bravo = identity(2, "Bravo")
         val assignments = listOf(assignment("A:B", 1, alpha.teamUUID))
@@ -415,7 +416,44 @@ class GroupRotationTeamIdentityTest {
         )
 
         assertIssue(rename, GroupRotationTeamIdentityIssueCode.TEAM_NAME_COLLISION)
-        assertIssue(clear, GroupRotationTeamIdentityIssueCode.IMPLICIT_ASSIGNMENT_CLEAR)
+        assertTrue(clear is GroupRotationTeamIdentityPlanResult.Planned)
+        val clearedAssignment = (clear as GroupRotationTeamIdentityPlanResult.Planned).plan.assignments.single()
+        assertEquals(alpha.teamUUID, clearedAssignment.teamUUID)
+        assertTrue(clearedAssignment.nameCleared)
+    }
+
+    @Test
+    fun reenteringNameAfterClearReusesUuidAndClearsNameClearedFlag() {
+        val alpha = identity(1, "Alpha")
+        val cleared = assignment("A:B", 1, alpha.teamUUID).copy(nameCleared = true)
+
+        val result = resolver().planPairing(
+            tournament(3, listOf("A:B")),
+            pairing("A:B"),
+            listOf(entry(1, "Gamma")),
+            listOf(alpha),
+            listOf(cleared),
+        ) as GroupRotationTeamIdentityPlanResult.Planned
+
+        val assignment = result.plan.assignments.single()
+        assertEquals(alpha.teamUUID, assignment.teamUUID)
+        assertFalse(assignment.nameCleared)
+        assertEquals("Gamma", result.plan.teams.single().displayName)
+    }
+
+    @Test
+    fun clearedAssignmentHydratesAsBlankWithoutChangingRegisteredIdentity() {
+        val alpha = identity(1, "Alpha")
+        val snapshot = GroupRotationTeamIdentityLocalSnapshot(
+            teams = listOf(alpha),
+            assignments = listOf(assignment("A:B", 1, alpha.teamUUID).copy(nameCleared = true)),
+        )
+
+        val candidate = snapshot.toSetupCandidate(tournament(3, listOf("A:B")))
+
+        assertEquals("", candidate.entries.single().teamName)
+        assertEquals(alpha.displayName, snapshot.teams.single().displayName)
+        assertEquals(alpha.teamUUID, snapshot.assignments.single().teamUUID)
     }
 
     @Test

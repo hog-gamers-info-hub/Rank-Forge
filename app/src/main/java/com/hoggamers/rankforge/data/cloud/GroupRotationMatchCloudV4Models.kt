@@ -21,6 +21,7 @@ data class GroupRotationUuidPairingAssignmentPayload(
     @SerialName("pairing_key") val pairingKey: String,
     @SerialName("lobby_slot_number") val lobbySlotNumber: Int,
     @SerialName("team_uuid") val teamUUID: String,
+    @SerialName("name_cleared") val nameCleared: Boolean = false,
 )
 
 /** Immutable match-time lobby position to UUID snapshot sent to the V4 write RPC. */

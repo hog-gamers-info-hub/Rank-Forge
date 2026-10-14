@@ -64,7 +64,7 @@ interface RankForgeStateDao {
         PointTableDetailsEntity::class,
         PointTableLogoPlacementEntity::class,
     ],
-    version = 34,
+    version = 35,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -1167,6 +1167,15 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_group_rotation_v4_sync_journal_owner_user_id_match_id` " +
                         "ON `group_rotation_v4_sync_journal` (`owner_user_id`, `match_id`)",
+                )
+            }
+        }
+
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `group_rotation_pairing_team_identity_assignments` " +
+                        "ADD COLUMN `name_cleared` INTEGER NOT NULL DEFAULT 0",
                 )
             }
         }
