@@ -123,7 +123,7 @@ class GroupRotationMatchCloudV4Test {
     }
 
     @Test
-    fun changedSavedAssignmentCannotReplaceImmutableMatchSnapshot() {
+    fun changedCurrentAssignmentDoesNotInvalidateImmutableMatchSnapshot() {
         val saved = savedIdentitySnapshot(
             assignments = listOf(
                 GroupRotationPairingAssignment(T, PAIRING, 1, U1),
@@ -144,10 +144,11 @@ class GroupRotationMatchCloudV4Test {
             draftRequest(changed, savedIdentitySnapshot = saved),
         )
 
-        assertTrue(result is GroupRotationV4MappingResult.Invalid)
-        assertTrue((result as GroupRotationV4MappingResult.Invalid).issues.any {
-            it.code == GroupRotationMatchCloudV4IssueCode.MATCH_IDENTITY_MISMATCH
-        })
+        assertTrue(result is GroupRotationV4MappingResult.Success)
+        assertEquals(
+            listOf(U1, U3, U2),
+            (result as GroupRotationV4MappingResult.Success).parameters.matchIdentity.map { it.teamUUID },
+        )
     }
 
     @Test

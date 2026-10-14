@@ -177,7 +177,6 @@ object GroupRotationMatchCloudV4Mapper {
             issues = issues,
         )
 
-        val selectedAssignments = saved.assignments.filter { it.pairingKey == identity.pairing }
         val snapshotTeams = identity.teams
         snapshotTeams.groupBy { it.lobbySlotNumber }.filterValues { it.size > 1 }.keys.forEach { lobby ->
             issues += issue(GroupRotationMatchCloudV4IssueCode.DUPLICATE_LOBBY_SLOT, lobbySlotNumber = lobby)
@@ -201,15 +200,6 @@ object GroupRotationMatchCloudV4Mapper {
             }
         }
 
-        val assignmentShape = selectedAssignments
-            .map { it.lobbySlotNumber to it.teamUUID }
-            .sortedWith(compareBy<Pair<Int, String>> { it.first }.thenBy { it.second })
-        val snapshotShape = snapshotTeams
-            .map { it.lobbySlotNumber to it.teamUUID }
-            .sortedWith(compareBy<Pair<Int, String>> { it.first }.thenBy { it.second })
-        if (assignmentShape != snapshotShape) {
-            issues += issue(GroupRotationMatchCloudV4IssueCode.MATCH_IDENTITY_MISMATCH)
-        }
         if (matchId.isBlank()) issues += issue(GroupRotationMatchCloudV4IssueCode.INVALID_MATCH_ID)
         return issues
     }

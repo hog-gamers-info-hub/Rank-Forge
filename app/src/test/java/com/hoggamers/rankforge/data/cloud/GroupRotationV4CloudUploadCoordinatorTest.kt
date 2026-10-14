@@ -145,6 +145,37 @@ class GroupRotationV4CloudUploadCoordinatorTest {
     }
 
     @Test
+    fun alreadyFinalizedCloudMatchIsAcceptedWithoutComparingLocalHistoricalData() = runBlocking {
+        val fixture = Fixture()
+        fixture.addFinalizedFirstAndDraftSecondMatches()
+        fixture.setRemoteFinalizedState(
+            matchId = MATCH_ONE,
+            currentRevision = 3,
+            assignments = listOf(1 to TEAM_B, 2 to TEAM_A),
+            results = listOf(
+                GroupRotationMatchParticipantResult(
+                    TEAM_A,
+                    MatchParticipationStatus.PARTICIPATED,
+                    placement = 2,
+                    kills = 99,
+                ),
+                GroupRotationMatchParticipantResult(
+                    TEAM_B,
+                    MatchParticipationStatus.PARTICIPATED,
+                    placement = 1,
+                    kills = 88,
+                ),
+            ),
+        )
+
+        assertEquals(
+            GroupRotationV4CloudUploadResult.Success(4),
+            fixture.coordinator().upload(TOURNAMENT_ID),
+        )
+        assertEquals(listOf("draft:$MATCH_TWO"), fixture.matchRemote.operations)
+    }
+
+    @Test
     fun finalizedCloudDraftWithoutResultsUploadsResultsBeforeFinalizationAndContinuesInOrder() = runBlocking {
         val fixture = Fixture()
         fixture.addFinalizedFirstAndDraftSecondMatches()
@@ -199,7 +230,7 @@ class GroupRotationV4CloudUploadCoordinatorTest {
     }
 
     @Test
-    fun finalizedCloudDataMismatchReturnsConflictWithoutWriting() = runBlocking {
+    fun alreadyFinalizedCloudDataMismatchIsAcceptedWithoutWriting() = runBlocking {
         val fixture = Fixture()
         fixture.addDraftAndFinalizedMatches()
         fixture.setRemoteDraftState(MATCH_ONE, currentRevision = 3)
@@ -224,7 +255,7 @@ class GroupRotationV4CloudUploadCoordinatorTest {
 
         val result = fixture.coordinator().upload(TOURNAMENT_ID)
 
-        assertTrue(result is GroupRotationV4CloudUploadResult.Conflict)
+        assertEquals(GroupRotationV4CloudUploadResult.Success(3), result)
         assertTrue(fixture.matchRemote.operations.isEmpty())
     }
 
@@ -614,8 +645,15 @@ class GroupRotationV4CloudUploadCoordinatorTest {
         fun setRemoteFinalizedState(
             matchId: String,
             currentRevision: Int,
+            assignments: List<Pair<Int, String>>? = null,
             results: List<GroupRotationMatchParticipantResult>? = null,
-        ) = setRemoteState(matchId, currentRevision, status = "finalized", results = results)
+        ) = setRemoteState(
+            matchId = matchId,
+            currentRevision = currentRevision,
+            status = "finalized",
+            assignments = assignments,
+            results = results,
+        )
 
         private fun setRemoteState(
             matchId: String,

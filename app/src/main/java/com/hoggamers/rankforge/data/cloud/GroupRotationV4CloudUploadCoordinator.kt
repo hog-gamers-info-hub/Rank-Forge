@@ -256,16 +256,12 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
                 )
             }
             is GroupRotationCloudMatchRemoteStateResult.Loaded -> {
-                val identityMatches = remoteState.matchesIdentity(tournament.id, match.id, snapshot)
-                val resultsMatchDraft = remoteState.matchesDomainResults(snapshot.participantResults)
                 if (remoteState.snapshot.status == "finalized") {
-                    return if (match.status == MatchStatus.FINALIZED && identityMatches && resultsMatchDraft) {
-                        OperationResult.Confirmed(stateRevision)
-                    } else {
-                        finalizedDataConflict(stateRevision)
-                    }
+                    return OperationResult.Confirmed(stateRevision)
                 }
 
+                val identityMatches = remoteState.matchesIdentity(tournament.id, match.id, snapshot)
+                val resultsMatchDraft = remoteState.matchesDomainResults(snapshot.participantResults)
                 var currentRevision = stateRevision
                 if (!identityMatches && match.status == MatchStatus.FINALIZED) {
                     return finalizedDataConflict(stateRevision)
@@ -411,16 +407,6 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
             .sortedBy { it.teamUUID } ==
             results
                 .map { CloudResultShape(it.teamUUID, it.participationStatus.name, it.placement, it.kills, it.pointAdjustment) }
-                .sortedBy { it.teamUUID }
-
-    private fun GroupRotationCloudMatchRemoteStateResult.Loaded.matchesPayloadResults(
-        results: List<GroupRotationUuidParticipantResultPayload>,
-    ): Boolean =
-        this.results
-            .map { CloudResultShape(it.teamUUID, it.participationStatus, it.placement, it.kills, it.pointAdjustment) }
-            .sortedBy { it.teamUUID } ==
-            results
-                .map { CloudResultShape(it.teamUUID, it.participationStatus, it.placement, it.kills, it.pointAdjustment) }
                 .sortedBy { it.teamUUID }
 
     private suspend fun processJournalEntries(
@@ -607,14 +593,9 @@ class GroupRotationV4CloudUploadCoordinator @Inject constructor(
             )
         ) {
             is GroupRotationCloudMatchRemoteStateResult.Loaded -> {
-                val parameters = runCatching {
-                    json.decodeFromString<GroupRotationV4FinalizationParameters>(entry.payloadJson)
-                }.getOrNull()
-                if (parameters != null &&
-                    state.snapshot.status == "finalized" &&
-                    state.snapshot.matchId == parameters.matchId &&
-                    state.snapshot.tournamentId == parameters.tournamentId &&
-                    state.matchesPayloadResults(parameters.matchResults)
+                if (state.snapshot.status == "finalized" &&
+                    state.snapshot.matchId == matchId &&
+                    state.snapshot.tournamentId == entry.tournamentId
                 ) {
                     confirm(entry, ownerUserId, state.currentTournamentRevision)
                 } else {
