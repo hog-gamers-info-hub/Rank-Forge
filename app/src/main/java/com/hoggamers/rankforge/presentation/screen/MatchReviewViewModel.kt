@@ -269,6 +269,7 @@ class MatchReviewViewModel @Inject constructor(
     private var restoredMissingMarkedForMatchId: String? = null
     private val restoredResultMissingMarked = mutableSetOf<String>()
     private var loadedMatchKey: String? = null
+    private var protectedDeletionTransitionMatchKey: String? = null
     private var resultScreenshotBatchJob: Job? = null
     private var screenshotIntakeGeneration = 0L
     private var activeResultBatchGeneration: Long? = null
@@ -283,6 +284,7 @@ class MatchReviewViewModel @Inject constructor(
     fun load(tournamentId: String, matchId: String) {
         val matchKey = "$tournamentId:$matchId"
         if (loadedMatchKey == matchKey) return
+        protectedDeletionTransitionMatchKey = null
         loadedMatchKey = matchKey
         loadJob?.cancel()
         nextMatchCreationJob?.cancel()
@@ -554,6 +556,9 @@ class MatchReviewViewModel @Inject constructor(
                     )
                 }
             }.collect { state ->
+                if (shouldPreserveDeletedMatchDuringNavigation(tournamentId, matchId, state)) {
+                    return@collect
+                }
                 markRestoredMissingIfNeeded(state)
                 markRestoredResultMissingIfNeeded(state)
                 if (!state.isAvailable) {
@@ -1084,8 +1089,15 @@ class MatchReviewViewModel @Inject constructor(
 
     fun deleteMatch() {
         val current = _uiState.value
+        val tournamentId = current.tournamentId
         val matchId = current.matchId
-        if (current.isDeleting || !current.isAvailable || matchId.isNullOrBlank()) return
+        if (
+            current.isDeleting ||
+            !current.isAvailable ||
+            tournamentId.isNullOrBlank() ||
+            matchId.isNullOrBlank()
+        ) return
+        protectedDeletionTransitionMatchKey = "$tournamentId:$matchId"
         _uiState.update {
             it.copy(
                 isDeleting = true,
@@ -1094,6 +1106,7 @@ class MatchReviewViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val useCase = deleteMatchUseCase ?: run {
+                protectedDeletionTransitionMatchKey = null
                 _uiState.update {
                     it.copy(
                         isDeleting = false,
@@ -1107,6 +1120,7 @@ class MatchReviewViewModel @Inject constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
+                protectedDeletionTransitionMatchKey = null
                 _uiState.update {
                     it.copy(
                         isDeleting = false,
@@ -1123,14 +1137,29 @@ class MatchReviewViewModel @Inject constructor(
                         navigation = MatchReviewNavigation.DETAILS,
                     )
                 }
-                else -> _uiState.update {
-                    it.copy(
-                        isDeleting = false,
-                        deletionError = result.toUiError(),
-                    )
+                else -> {
+                    protectedDeletionTransitionMatchKey = null
+                    _uiState.update {
+                        it.copy(
+                            isDeleting = false,
+                            deletionError = result.toUiError(),
+                        )
+                    }
                 }
             }
         }
+    }
+
+    private fun shouldPreserveDeletedMatchDuringNavigation(
+        tournamentId: String,
+        matchId: String,
+        next: MatchReviewUiState,
+    ): Boolean {
+        if (next.isAvailable || protectedDeletionTransitionMatchKey != "$tournamentId:$matchId") {
+            return false
+        }
+        val current = _uiState.value
+        return current.tournamentId == tournamentId && current.matchId == matchId
     }
 
     fun onNavigationHandled() {
