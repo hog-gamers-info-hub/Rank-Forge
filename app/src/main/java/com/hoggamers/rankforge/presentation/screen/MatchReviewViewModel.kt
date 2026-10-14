@@ -56,6 +56,7 @@ import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.nextAvailableMatchNumber
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
@@ -393,6 +394,7 @@ class MatchReviewViewModel @Inject constructor(
                             tournamentId = tournamentId,
                             tournamentFormat = tournamentFormat,
                             matchId = matchId,
+                            groupPairing = match.groupPairing,
                             activeTeamCount = rows.size,
                             finalizedParticipantSlotNumbers = uuidDraft.state.participantResults
                                 .mapNotNull { result ->
@@ -518,6 +520,7 @@ class MatchReviewViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         tournamentFormat = tournamentFormat,
                         matchId = matchId,
+                        groupPairing = match.groupPairing,
                         activeTeamCount = slots
                             .filter { slot -> canonicalTeamSlotNumbers.contains(slot.slotNumber) }
                             .analyzeTeamSlotParticipation(canonicalTeamSlotNumbers)
@@ -755,13 +758,16 @@ class MatchReviewViewModel @Inject constructor(
         if (nextMatchCreationJob?.isActive == true) return
         _uiState.update { it.copy(nextMatchCreationMessage = null) }
         nextMatchCreationJob = viewModelScope.launch {
-            val confirmation = workflow.teamCountConfirmationOrNull(tournamentId)
+            val confirmation = workflow.teamCountConfirmationOrNull(
+                tournamentId = tournamentId,
+                groupPairing = state.groupPairing,
+            )
             if (confirmation != null) {
                 _uiState.update {
                     it.copy(pendingNextMatchTeamCountConfirmation = confirmation)
                 }
             } else {
-                createNextMatch(tournamentId, workflow)
+                createNextMatch(tournamentId, workflow, state.groupPairing)
             }
         }
     }
@@ -783,7 +789,7 @@ class MatchReviewViewModel @Inject constructor(
             it.copy(pendingNextMatchTeamCountConfirmation = null)
         }
         nextMatchCreationJob = viewModelScope.launch {
-            createNextMatch(tournamentId, workflow)
+            createNextMatch(tournamentId, workflow, state.groupPairing)
         }
     }
 
@@ -800,13 +806,13 @@ class MatchReviewViewModel @Inject constructor(
             it.copy(pendingNextMatchTeamCountConfirmation = null)
         }
         nextMatchCreationJob = viewModelScope.launch {
-            if (!workflow.applyDefaults(tournamentId)) {
+            if (!workflow.applyDefaults(tournamentId, state.groupPairing)) {
                 _uiState.update {
                     it.copy(nextMatchCreationMessage = CalculatePointsMessage.VALIDATION_FAILED)
                 }
             } else {
                 _uiState.update { it.copy(nextMatchCreationMessage = null) }
-                createNextMatch(tournamentId, workflow)
+                createNextMatch(tournamentId, workflow, state.groupPairing)
             }
         }
     }
@@ -818,6 +824,7 @@ class MatchReviewViewModel @Inject constructor(
     private suspend fun createNextMatch(
         tournamentId: String,
         workflow: CreateNextMatchWorkflow,
+        groupPairing: GroupPairing?,
     ) {
         _uiState.update {
             it.copy(
@@ -825,7 +832,7 @@ class MatchReviewViewModel @Inject constructor(
                 nextMatchCreationMessage = null,
             )
         }
-        when (val result = workflow.create(tournamentId)) {
+        when (val result = workflow.create(tournamentId, groupPairing)) {
             is CreateNextMatchResult.Created -> _uiState.update {
                 it.copy(
                     isCreatingNextMatch = false,

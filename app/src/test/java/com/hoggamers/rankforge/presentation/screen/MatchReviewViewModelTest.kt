@@ -360,6 +360,62 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun groupRotationReviewPassesCurrentPairingToNextMatchWorkflow() = runTest {
+        val tournamentId = "rotation-next-match"
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+        repository.create(
+            Tournament(
+                id = tournamentId,
+                name = "Rotation Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.CONFIRMED,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = listOf(pairing),
+            ),
+        )
+        repository.saveTeamNames(tournamentId, canonicalSlots.associateWith { slot -> "Team $slot" })
+        repository.replaceGroupRotationPairingLobbySlots(
+            canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(tournamentId, pairing, index + 1, teamSlotNumber)
+            },
+        )
+        val currentMatchId = "rotation-next-current"
+        repository.createDraftMatch(
+            Match(
+                id = currentMatchId,
+                tournamentId = tournamentId,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 14),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            ),
+        )
+
+        val viewModel = reviewViewModel()
+        viewModel.load(tournamentId, currentMatchId)
+        advanceUntilIdle()
+
+        assertEquals(pairing, viewModel.uiState.value.groupPairing)
+        viewModel.requestNextMatchCreation()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.pendingNextMatchTeamCountConfirmation)
+        assertNull(viewModel.uiState.value.nextMatchCreationMessage)
+        val created = repository.observeMatchesByTournamentId(tournamentId).first()
+            .single { it.id != currentMatchId }
+        assertEquals(pairing, created.groupPairing)
+        assertEquals(
+            MatchReviewRequest(tournamentId, created.id),
+            viewModel.uiState.value.nextMatchReviewRequest,
+        )
+    }
+
+    @Test
     fun reviewUsesHighestObservedMatchNumberRegardlessOfCurrentStatus() = runTest {
         (2..5).forEach { number ->
             repository.createDraftMatch(
@@ -3871,6 +3927,8 @@ class MatchReviewViewModelTest {
             createNextMatch = CreateNextMatchUseCase(
                 repository,
                 SignedInTournamentTestAuthRepository(),
+                java.time.Clock.systemUTC(),
+                repository,
             ),
             syncDraftMatches = DraftMatchCloudSyncAction {
                 QueueAwareActionResult(
