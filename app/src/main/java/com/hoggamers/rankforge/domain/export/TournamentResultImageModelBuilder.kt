@@ -142,15 +142,24 @@ class TournamentResultImageModelBuilder(
         }
         val identities = v4Input.teamIdentitySnapshot.teams
         val identitiesByUuid = identities.associateBy { it.teamUUID }
+        val activeAssignedTeamUUIDs = v4Input.teamIdentitySnapshot.assignments
+            .filterNot { it.nameCleared }
+            .map { it.teamUUID }
+            .toSet()
+        val fullyClearedAssignedTeamUUIDs = v4Input.teamIdentitySnapshot.assignments
+            .groupBy { it.teamUUID }
+            .filterValues { assignments -> assignments.all { it.nameCleared } }
+            .keys
         if (
             identities.size != capacity ||
             identitiesByUuid.size != identities.size ||
             identities.any { identity ->
                 identity.tournamentId != input.tournament.id ||
                     identity.teamUUID.isBlank() ||
-                    identity.displayName.trim().isBlank() ||
-                    GroupRotationTeamIdentityNormalizer().normalize(identity.displayName) !=
-                    identity.normalizedName
+                    (identity.displayName.trim().isBlank() && identity.teamUUID in activeAssignedTeamUUIDs) ||
+                    (identity.displayName.trim().isNotBlank() &&
+                        GroupRotationTeamIdentityNormalizer().normalize(identity.displayName) !=
+                        identity.normalizedName)
             } ||
             identities.map { it.normalizedName }.filter { it.isNotBlank() }.let { names ->
                 names.size != names.toSet().size
@@ -241,7 +250,11 @@ class TournamentResultImageModelBuilder(
                     val identity = identityByOrdinal.getValue(tieBreakStanding.standing.teamSlotNumber)
                     tieBreakStanding.toResultExportRow(
                         rank = index + 1,
-                        teamName = identity.displayName.trim(),
+                        teamName = if (identity.teamUUID in fullyClearedAssignedTeamUUIDs) {
+                            ""
+                        } else {
+                            identity.displayName.trim()
+                        },
                     )
                 },
             ),

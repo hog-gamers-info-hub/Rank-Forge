@@ -442,6 +442,74 @@ class GroupRotationTeamIdentityTest {
     }
 
     @Test
+    fun clearingAllOccurrencesForgetsActiveNameForFutureRegistration() {
+        val resolver = resolver(uuid(2))
+        val alpha = identity(1, "Alpha")
+        val saved = listOf(
+            assignment("A:B", 1, alpha.teamUUID),
+            assignment("A:C", 2, alpha.teamUUID),
+        )
+
+        val result = resolver.planPairings(
+            tournament(3, listOf("A:B", "A:C")),
+            mapOf(
+                pairing("A:B") to listOf(entry(1, ""), entry(2, "Alpha")),
+                pairing("A:C") to listOf(entry(2, "")),
+            ),
+            listOf(alpha),
+            saved,
+        ) as GroupRotationTeamIdentityPlanResult.Planned
+
+        val cleared = result.plan.assignments.first { it.pairingKey == pairing("A:B") && it.lobbySlotNumber == 1 }
+        assertTrue(cleared.nameCleared)
+        assertNotEquals(alpha.teamUUID, result.plan.assignments.first {
+            it.pairingKey == pairing("A:B") && it.lobbySlotNumber == 2
+        }.teamUUID)
+        assertEquals("", result.plan.teams.first { it.teamUUID == alpha.teamUUID }.displayName)
+    }
+
+    @Test
+    fun simultaneousNameSwapIsValidatedAgainstFinalState() {
+        val alpha = identity(1, "Alpha")
+        val bravo = identity(2, "Bravo")
+        val result = resolver().planPairing(
+            tournament(3, listOf("A:B")),
+            pairing("A:B"),
+            listOf(
+                entry(1, "Bravo"),
+                entry(2, "Alpha"),
+            ),
+            listOf(alpha, bravo),
+            listOf(
+                assignment("A:B", 1, alpha.teamUUID),
+                assignment("A:B", 2, bravo.teamUUID),
+            ),
+        ) as GroupRotationTeamIdentityPlanResult.Planned
+
+        assertEquals("Bravo", result.plan.teams.first { it.teamUUID == alpha.teamUUID }.displayName)
+        assertEquals("Alpha", result.plan.teams.first { it.teamUUID == bravo.teamUUID }.displayName)
+    }
+
+    @Test
+    fun sameUuidRenameAcrossPairingsPreservesClearedOccurrence() {
+        val alpha = identity(1, "Alpha")
+        val result = resolver().planPairing(
+            tournament(3, listOf("A:B", "A:C")),
+            pairing("A:B"),
+            listOf(entry(1, "Gamma")),
+            listOf(alpha),
+            listOf(
+                assignment("A:B", 1, alpha.teamUUID),
+                assignment("A:C", 2, alpha.teamUUID).copy(nameCleared = true),
+            ),
+        ) as GroupRotationTeamIdentityPlanResult.Planned
+
+        assertEquals("Gamma", result.plan.teams.single().displayName)
+        assertTrue(result.plan.assignments.first { it.pairingKey == pairing("A:C") }.nameCleared)
+        assertEquals(alpha.teamUUID, result.plan.assignments.first { it.pairingKey == pairing("A:C") }.teamUUID)
+    }
+
+    @Test
     fun clearedAssignmentHydratesAsBlankWithoutChangingRegisteredIdentity() {
         val alpha = identity(1, "Alpha")
         val snapshot = GroupRotationTeamIdentityLocalSnapshot(

@@ -80,6 +80,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationF
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationValidator
+import com.hoggamers.rankforge.domain.tournament.InvalidPersistedMatchDataException
 import com.hoggamers.rankforge.domain.tournament.GroupRotationRestorationValidator
 import com.hoggamers.rankforge.domain.tournament.LegacyGroupRotationFinalizedRestorationValidator
 import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidCloudRestorationLocalRepository
@@ -2059,8 +2060,8 @@ class RoomTournamentRepository @Inject constructor(
             database.matchDao().observeResultAggregatesByTournamentId(tournamentId).map { aggregates ->
                 aggregates.map { aggregate ->
                     readMatchWithUuidFallback(aggregate)
-                }.toCompleteMatchListOrNull()
-            }.filterNotNull(),
+                }.toCompleteMatchListOrThrow()
+            },
         )
     }
 
@@ -4011,7 +4012,10 @@ class RoomTournamentRepository @Inject constructor(
             is GroupRotationMatchPersistenceResult.Loaded -> {
                 if (
                     GroupRotationMatchFinalizationValidator()
-                        .validate(persisted.snapshot.identity, persisted.snapshot.participantResults)
+                        .validatePersistedSnapshot(
+                            persisted.snapshot.identity,
+                            persisted.snapshot.participantResults,
+                        )
                         .isEmpty()
                 ) {
                     aggregate.match.toDomain()
@@ -4194,6 +4198,9 @@ internal fun List<Match?>.toCompleteMatchListOrNull(): List<Match>? {
     }
     return complete
 }
+
+internal fun List<Match?>.toCompleteMatchListOrThrow(): List<Match> =
+    toCompleteMatchListOrNull() ?: throw InvalidPersistedMatchDataException()
 
 private fun buildLegacyParticipantResults(
     registeredTeamSlots: Set<Int>,

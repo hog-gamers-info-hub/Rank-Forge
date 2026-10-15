@@ -97,6 +97,22 @@ class GroupRotationMatchFinalizationTest {
     }
 
     @Test
+    fun finalizedUuidMatchRemainsObservableWhenCurrentIdentityNameIsCleared() = runBlocking {
+        createMatch(MATCH_ONE, pairing("A:B"), 1 to alpha())
+        assertTrue(finalize(MATCH_ONE, participated(ALPHA_UUID, 1, 3)) is GroupRotationMatchFinalizationResult.Finalized)
+
+        database.groupRotationTeamIdentityDao().upsertAll(listOf(identity(ALPHA_UUID, "")))
+
+        val match = repository.observeMatchesByTournamentId(TOURNAMENT_ID).first().single()
+        assertEquals(MATCH_ONE, match.id)
+        assertEquals(MatchStatus.FINALIZED, match.status)
+        val restored = identityRepository.read(tournament(), MATCH_ONE) as GroupRotationMatchPersistenceResult.Loaded
+        assertEquals(ALPHA_UUID, restored.snapshot.identity.teams.single().teamUUID)
+        assertEquals(ALPHA_UUID, restored.snapshot.participantResults.single().teamUUID)
+        assertEquals(3, restored.snapshot.participantResults.single().kills)
+    }
+
+    @Test
     fun sameUuidAcrossPairingsKeepsEachSavedMatchIdentity() = runBlocking {
         createMatch(MATCH_ONE, pairing("A:B"), 2 to alpha())
         createMatch(MATCH_TWO, pairing("A:C"), 9 to alpha())

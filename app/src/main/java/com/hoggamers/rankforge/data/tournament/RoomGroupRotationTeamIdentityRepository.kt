@@ -63,6 +63,14 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
         tournament: Tournament,
         pairingKey: GroupPairing,
         entries: List<GroupRotationPairingTeamIdentityEntry>,
+    ): GroupRotationTeamIdentityWriteResult = savePairings(
+        tournament = tournament,
+        entriesByPairing = mapOf(pairingKey to entries),
+    )
+
+    override suspend fun savePairings(
+        tournament: Tournament,
+        entriesByPairing: Map<GroupPairing, List<GroupRotationPairingTeamIdentityEntry>>,
     ): GroupRotationTeamIdentityWriteResult = database.withTransaction {
         if (tournament.format != TournamentFormat.GROUP_ROTATION) {
             return@withTransaction invalid(GroupRotationTeamIdentityIssueCode.NOT_GROUP_ROTATION)
@@ -73,10 +81,9 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
                 when (val merged = mergeLegacyAssignments(tournament, backfill.teams)) {
                     is LegacyAssignmentMerge.Invalid -> return@withTransaction invalid(merged.issues)
                     is LegacyAssignmentMerge.Ready -> when (
-                    val planned = resolver.planPairing(
+                    val planned = resolver.planPairings(
                         tournament = tournament,
-                        pairingKey = pairingKey,
-                        entries = entries,
+                        entriesByPairing = entriesByPairing,
                         existingTeams = backfill.teams,
                         existingAssignments = merged.assignments,
                     )
@@ -85,14 +92,14 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
                         GroupRotationTeamIdentityWriteResult.Invalid(planned.issues)
                     }
                     is GroupRotationTeamIdentityPlanResult.Planned -> {
-                        val existingPairingAssignments = merged.assignments
-                            .filter { it.pairingKey == pairingKey }
-                        val plannedPairingAssignments = planned.plan.assignments
-                            .filter { it.pairingKey == pairingKey }
-                        if (
-                            database.matchDao().readForTournamentId(tournament.id)
-                                .any { it.groupPairingKey == pairingKey.canonicalKey } &&
-                            existingPairingAssignments != plannedPairingAssignments
+                        val matches = database.matchDao().readForTournamentId(tournament.id)
+                        if (entriesByPairing.keys.any { pairing ->
+                                matches.any { it.groupPairingKey == pairing.canonicalKey } &&
+                                    !sameIdentityAssignments(
+                                        merged.assignments.filter { it.pairingKey == pairing },
+                                        planned.plan.assignments.filter { it.pairingKey == pairing },
+                                    )
+                            }
                         ) {
                             return@withTransaction GroupRotationTeamIdentityWriteResult.ProtectedHistory
                         }
@@ -100,7 +107,7 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
                             tournamentId = tournament.id,
                             teams = planned.plan.teams,
                             assignments = planned.plan.assignments,
-                            pairingToReplace = pairingKey,
+                            pairingsToReplace = entriesByPairing.keys,
                         )
                         GroupRotationTeamIdentityWriteResult.Saved(
                             GroupRotationTeamIdentityLocalSnapshot(
@@ -159,9 +166,9 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
         tournamentId: String,
         teams: List<GroupRotationTeamIdentity>,
         assignments: List<GroupRotationPairingAssignment>,
-        pairingToReplace: GroupPairing? = null,
+        pairingsToReplace: Set<GroupPairing> = emptySet(),
     ) {
-        pairingToReplace?.let { pairing ->
+        pairingsToReplace.forEach { pairing ->
             database.groupRotationPairingTeamIdentityAssignmentDao()
                 .deleteByTournamentIdAndPairing(tournamentId, pairing.canonicalKey)
         }
@@ -381,6 +388,12 @@ class RoomGroupRotationTeamIdentityRepository @Inject constructor(
         issues: List<GroupRotationTeamIdentityIssue>,
     ): GroupRotationTeamIdentityWriteResult.Invalid =
         GroupRotationTeamIdentityWriteResult.Invalid(issues)
+
+    private fun sameIdentityAssignments(
+        left: List<GroupRotationPairingAssignment>,
+        right: List<GroupRotationPairingAssignment>,
+    ): Boolean = left.associate { it.lobbySlotNumber to it.teamUUID } ==
+        right.associate { it.lobbySlotNumber to it.teamUUID }
 
     private sealed interface LegacyIdentityBackfill {
         data class Ready(val teams: List<GroupRotationTeamIdentity>) : LegacyIdentityBackfill

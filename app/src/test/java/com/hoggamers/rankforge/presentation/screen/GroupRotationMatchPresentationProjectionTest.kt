@@ -50,6 +50,40 @@ class GroupRotationMatchPresentationProjectionTest {
     }
 
     @Test
+    fun clearedCurrentNameRemainsAccessibleForFinalizedUuidPairings() {
+        listOf("A:B", "B:C").forEach { pairingKey ->
+            val result = GroupRotationMatchPresentationProjection.project(
+                state(
+                    pairing = GroupPairing.fromCanonicalKey(pairingKey),
+                    teams = listOf(
+                        team(2, "uuid-cleared", ""),
+                        team(9, "uuid-active", "ACTIVE"),
+                    ),
+                    participants = listOf(
+                        GroupRotationMatchParticipantResult(
+                            teamUUID = "uuid-cleared",
+                            participationStatus = MatchParticipationStatus.PARTICIPATED,
+                            placement = 1,
+                            kills = 6,
+                        ),
+                        GroupRotationMatchParticipantResult(
+                            teamUUID = "uuid-active",
+                            participationStatus = MatchParticipationStatus.PARTICIPATED,
+                            placement = 2,
+                            kills = 4,
+                        ),
+                    ),
+                ),
+            ) as GroupRotationMatchPresentationProjectionResult.Loaded
+
+            assertEquals(listOf("uuid-cleared", "uuid-active"), result.rows.map { it.teamUUID })
+            assertEquals(listOf("", "ACTIVE"), result.rows.map { it.displayName })
+            assertEquals(listOf(1, 2), result.rows.map { it.placementInput.toInt() })
+            assertEquals(listOf(6, 4), result.rows.map { it.killsInput.toInt() })
+        }
+    }
+
+    @Test
     fun staleLobbyDraftAndDuplicateUuidFailClosed() {
         val stale = GroupRotationMatchPresentationProjection.project(
             state(
@@ -74,10 +108,11 @@ class GroupRotationMatchPresentationProjectionTest {
         teams: List<GroupRotationMatchTeamIdentity>,
         participants: List<GroupRotationMatchParticipantResult> = emptyList(),
         values: Map<Int, MatchDraftFieldValues> = emptyMap(),
+        pairing: GroupPairing = GroupPairing.fromCanonicalKey("A:B"),
     ) = GroupRotationMatchDraftState(
         snapshot = GroupRotationMatchIdentitySnapshot(
             tournamentId = "tournament-1",
-            pairing = GroupPairing.fromCanonicalKey("A:B"),
+            pairing = pairing,
             teams = teams,
         ),
         participantResults = participants,

@@ -65,6 +65,10 @@ class GroupRotationMatchIdentitySnapshotResolver {
         }
 
         val identitiesByUuid = linkedMapOf<String, GroupRotationTeamIdentity>()
+        val activeAssignedTeamUUIDs = saved.assignments
+            .filterNot { it.nameCleared }
+            .map { it.teamUUID }
+            .toSet()
         saved.teams.forEach { identity ->
             if (identity.tournamentId != tournament.id) {
                 issues += issue(
@@ -74,9 +78,10 @@ class GroupRotationMatchIdentitySnapshotResolver {
             }
             if (
                 identity.teamUUID.isBlank() ||
-                    identity.displayName.isBlank() ||
-                    identity.normalizedName.isBlank() ||
-                    identity.normalizedName != normalizer.normalize(identity.displayName)
+                    (identity.displayName.isBlank() && identity.teamUUID in activeAssignedTeamUUIDs) ||
+                    (identity.displayName.isNotBlank() &&
+                        (identity.normalizedName.isBlank() ||
+                            identity.normalizedName != normalizer.normalize(identity.displayName)))
             ) {
                 issues += issue(
                     GroupRotationMatchIdentitySnapshotIssueCode.INVALID_TEAM_IDENTITY,

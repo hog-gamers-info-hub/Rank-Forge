@@ -265,8 +265,9 @@ class TournamentResultImageModelBuilderTest {
 
         val model = success(builder.build(input))
         assertEquals(24, model.rows.size)
-        assertEquals("Renamed Team 1", model.rows.first { it.teamName == "Renamed Team 1" }.teamName)
-        assertEquals(17, model.rows.first { it.teamName == "Renamed Team 1" }.totalPoints)
+        val clearedNameRow = model.rows.single { it.totalPoints == 17 }
+        assertEquals("", clearedNameRow.teamName)
+        assertEquals(17, clearedNameRow.totalPoints)
         assertEquals(0, model.rows.first { it.teamName == "Team 24" }.totalPoints)
     }
 

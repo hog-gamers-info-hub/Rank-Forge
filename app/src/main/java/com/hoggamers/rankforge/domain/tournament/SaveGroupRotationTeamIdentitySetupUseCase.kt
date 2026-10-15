@@ -62,6 +62,59 @@ class SaveGroupRotationTeamIdentitySetupUseCase @Inject constructor(
                 GroupRotationTeamIdentitySetupSaveResult.Unsupported
         }
     }
+
+    suspend fun savePairings(
+        tournament: Tournament,
+        candidatesByPairing: Map<GroupPairing, GroupRotationTeamSetupCandidate>,
+    ): GroupRotationTeamIdentitySetupSaveResult {
+        val signedInUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
+            ?.user
+            ?.id
+            ?.takeIf { it.isNotBlank() }
+        if (signedInUserId == null) {
+            return GroupRotationTeamIdentitySetupSaveResult.AuthenticationRequired
+        }
+        if (tournament.ownerUserId != null && tournament.ownerUserId != signedInUserId) {
+            return GroupRotationTeamIdentitySetupSaveResult.OwnershipMismatch
+        }
+        val invalidCandidate = candidatesByPairing.entries.firstNotNullOfOrNull { (pairing, candidate) ->
+            candidate.entries.firstOrNull { it.pairing != pairing }?.let { entry ->
+                GroupRotationTeamSetupIssue(
+                    code = GroupRotationTeamSetupIssueCode.EXTRA_PAIRING,
+                    pairingKey = entry.pairing.canonicalKey,
+                )
+            }
+        }
+        if (invalidCandidate != null) {
+            return GroupRotationTeamIdentitySetupSaveResult.InvalidSetup(listOf(invalidCandidate))
+        }
+        val result = repository.savePairings(
+            tournament = tournament,
+            entriesByPairing = candidatesByPairing.mapValues { (_, candidate) ->
+                candidate.entries.map {
+                    GroupRotationPairingTeamIdentityEntry(
+                        lobbySlotNumber = it.lobbySlotNumber,
+                        displayName = it.teamName,
+                    )
+                }
+            },
+        )
+        val fallbackPairing = candidatesByPairing.keys.firstOrNull()
+            ?: tournament.selectedGroupPairings.firstOrNull()
+            ?: return GroupRotationTeamIdentitySetupSaveResult.Unsupported
+        return when (result) {
+            is GroupRotationTeamIdentityWriteResult.Saved ->
+                GroupRotationTeamIdentitySetupSaveResult.Saved(result.snapshot)
+            GroupRotationTeamIdentityWriteResult.ProtectedHistory ->
+                GroupRotationTeamIdentitySetupSaveResult.ProtectedHistory
+            is GroupRotationTeamIdentityWriteResult.Invalid ->
+                GroupRotationTeamIdentitySetupSaveResult.InvalidSetup(
+                    result.issues.toTeamSetupIssues(fallbackPairing),
+                )
+            GroupRotationTeamIdentityWriteResult.Unsupported ->
+                GroupRotationTeamIdentitySetupSaveResult.Unsupported
+        }
+    }
 }
 
 sealed interface GroupRotationTeamIdentitySetupSaveResult {

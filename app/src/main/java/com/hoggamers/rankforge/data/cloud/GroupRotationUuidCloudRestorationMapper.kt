@@ -58,9 +58,8 @@ object GroupRotationUuidCloudRestorationMapper {
             if (payload.tournamentId != tournament.id || !isCanonicalUuid(payload.teamUUID)) {
                 return invalid("IDENTITY_ROW_INVALID")
             }
-            if (normalizer.cleanDisplayName(payload.displayName).isBlank() ||
-                payload.normalizedName != normalizer.normalize(payload.displayName)
-            ) {
+            val cleanedName = normalizer.cleanDisplayName(payload.displayName)
+            if (payload.normalizedName != normalizer.normalize(cleanedName)) {
                 return invalid("IDENTITY_NAME_INVALID")
             }
             GroupRotationTeamIdentity(
@@ -77,7 +76,8 @@ object GroupRotationUuidCloudRestorationMapper {
         }
         if (identities.size > capacity ||
             identities.map { it.teamUUID }.distinct().size != identities.size ||
-            identities.map { it.normalizedName }.distinct().size != identities.size
+            identities.map { it.normalizedName }.filter { it.isNotBlank() }.distinct().size !=
+                identities.count { it.normalizedName.isNotBlank() }
         ) {
             return invalid("IDENTITY_POOL_INVALID")
         }
@@ -106,6 +106,13 @@ object GroupRotationUuidCloudRestorationMapper {
             assignments.groupBy { it.pairingKey to it.teamUUID }.any { it.value.size > 1 }
         ) {
             return invalid("ASSIGNMENT_DUPLICATE")
+        }
+        val activeAssignedTeamUUIDs = assignments
+            .filterNot { it.nameCleared }
+            .map { it.teamUUID }
+            .toSet()
+        if (identities.any { it.displayName.isBlank() && it.teamUUID in activeAssignedTeamUUIDs }) {
+            return invalid("IDENTITY_ACTIVE_NAME_BLANK")
         }
 
         val baseMatches = payloads.matches

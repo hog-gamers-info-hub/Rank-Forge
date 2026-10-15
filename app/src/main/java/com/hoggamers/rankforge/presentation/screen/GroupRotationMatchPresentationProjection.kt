@@ -27,7 +27,7 @@ internal object GroupRotationMatchPresentationProjection {
         state: GroupRotationMatchDraftState,
     ): GroupRotationMatchPresentationProjectionResult {
         val snapshot = state.snapshot
-        if (snapshot.teams.any { it.lobbySlotNumber !in 1..12 || it.teamUUID.isBlank() || it.displayName.isBlank() }) {
+        if (snapshot.teams.any { it.lobbySlotNumber !in 1..12 || it.teamUUID.isBlank() }) {
             return GroupRotationMatchPresentationProjectionResult.Invalid
         }
         if (snapshot.teams.groupBy { it.lobbySlotNumber }.any { it.value.size > 1 } ||

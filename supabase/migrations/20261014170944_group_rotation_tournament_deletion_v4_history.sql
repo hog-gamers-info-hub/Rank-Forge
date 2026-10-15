@@ -1,0 +1,1 @@
+-- Already applied on hosted PointIQ; equivalent deletion RPC is defined in migration 20261014112000.
