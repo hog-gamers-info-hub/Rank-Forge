@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(35, cursor.getInt(0))
+                assertEquals(36, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -1078,6 +1078,121 @@ class RankForgeDatabaseMigrationTest {
                 "index_group_rotation_match_participant_results_match_id_placement",
             ),
         )
+        migrated.query("PRAGMA foreign_key_check").use { cursor ->
+            assertEquals(0, cursor.count)
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion35PreservesUuidAssignmentsHistoryAndAllowsMultipleClearedNames() {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 35).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order, format, group_count) " +
+                    "VALUES ('rotation-35', 'Rotation 35', 'Stage', '123', 'CONFIRMED', 1, 'GROUP_ROTATION', 3)",
+            )
+            database.execSQL(
+                "INSERT INTO tournament_group_pairings " +
+                    "(tournament_id, pairing_key, first_group, second_group) " +
+                    "VALUES " +
+                    "('rotation-35', 'A:B', 'A', 'B'), " +
+                    "('rotation-35', 'A:C', 'A', 'C')",
+            )
+            database.execSQL(
+                "INSERT INTO group_rotation_team_identities " +
+                    "(tournament_id, team_uuid, display_name, normalized_name) " +
+                    "VALUES " +
+                    "('rotation-35', 'rotation-team-35-a', 'Alpha', 'alpha'), " +
+                    "('rotation-35', 'rotation-team-35-b', 'Beta', 'beta'), " +
+                    "('rotation-35', 'rotation-team-35-c', 'Gamma', 'gamma')",
+            )
+            database.execSQL(
+                "INSERT INTO group_rotation_pairing_team_identity_assignments " +
+                    "(tournament_id, pairing_key, lobby_slot_number, team_uuid, name_cleared) " +
+                    "VALUES " +
+                    "('rotation-35', 'A:B', 1, 'rotation-team-35-a', 1), " +
+                    "('rotation-35', 'A:C', 1, 'rotation-team-35-b', 1)",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status, group_pairing_key) " +
+                    "VALUES ('rotation-match-35', 'rotation-35', 1, '2026-10-15', 'Bermuda', 'FINALIZED', 'A:B')",
+            )
+            database.execSQL(
+                "INSERT INTO match_placements (match_id, team_slot_number, position) " +
+                    "VALUES ('rotation-match-35', 1, 1)",
+            )
+            database.execSQL(
+                "INSERT INTO match_kills (match_id, team_slot_number, kills) " +
+                    "VALUES ('rotation-match-35', 1, 17)",
+            )
+        }
+
+        val migrated = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            36,
+            true,
+            RankForgeDatabase.MIGRATION_35_36,
+        )
+        migrated.query(
+            "SELECT team_uuid, display_name, normalized_name " +
+                "FROM group_rotation_team_identities WHERE tournament_id = 'rotation-35' " +
+                "ORDER BY team_uuid",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("rotation-team-35-a", cursor.getString(0))
+            assertEquals("Alpha", cursor.getString(1))
+            assertEquals("alpha", cursor.getString(2))
+            assertTrue(cursor.moveToNext())
+            assertEquals("rotation-team-35-b", cursor.getString(0))
+            assertEquals("Beta", cursor.getString(1))
+            assertEquals("beta", cursor.getString(2))
+            assertTrue(cursor.moveToNext())
+            assertEquals("rotation-team-35-c", cursor.getString(0))
+            assertEquals("Gamma", cursor.getString(1))
+            assertEquals("gamma", cursor.getString(2))
+        }
+        migrated.query(
+            "SELECT pairing_key, lobby_slot_number, team_uuid, name_cleared " +
+                "FROM group_rotation_pairing_team_identity_assignments " +
+                "WHERE tournament_id = 'rotation-35' ORDER BY pairing_key",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("A:B", cursor.getString(0))
+            assertEquals(1, cursor.getInt(1))
+            assertEquals("rotation-team-35-a", cursor.getString(2))
+            assertEquals(1, cursor.getInt(3))
+            assertTrue(cursor.moveToNext())
+            assertEquals("A:C", cursor.getString(0))
+            assertEquals(1, cursor.getInt(1))
+            assertEquals("rotation-team-35-b", cursor.getString(2))
+            assertEquals(1, cursor.getInt(3))
+        }
+        migrated.execSQL(
+            "UPDATE group_rotation_team_identities SET display_name = '', normalized_name = '' " +
+                "WHERE tournament_id = 'rotation-35' AND team_uuid IN " +
+                "('rotation-team-35-a', 'rotation-team-35-b')",
+        )
+        migrated.query(
+            "SELECT COUNT(*) FROM group_rotation_team_identities " +
+                "WHERE tournament_id = 'rotation-35' AND normalized_name = ''",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(2, cursor.getInt(0))
+        }
+        migrated.query(
+            "SELECT status FROM matches WHERE id = 'rotation-match-35'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("FINALIZED", cursor.getString(0))
+        }
+        migrated.query(
+            "SELECT kills FROM match_kills WHERE match_id = 'rotation-match-35'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(17, cursor.getInt(0))
+        }
         migrated.query("PRAGMA foreign_key_check").use { cursor ->
             assertEquals(0, cursor.count)
         }

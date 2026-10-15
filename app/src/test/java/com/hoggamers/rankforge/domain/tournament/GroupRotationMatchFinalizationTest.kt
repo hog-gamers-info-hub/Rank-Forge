@@ -59,6 +59,18 @@ class GroupRotationMatchFinalizationTest {
     }
 
     @Test
+    fun persistedFinalizedSnapshotAllowsBlankCurrentDisplayName() {
+        val snapshot = snapshot(team(3, ALPHA_UUID, ""))
+        val results = listOf(participated(ALPHA_UUID, 1, 0))
+
+        assertTrue(validator.validatePersistedSnapshot(snapshot, results).isEmpty())
+        assertTrue(
+            validator.validate(snapshot, results)
+                .any { it.code == GroupRotationMatchFinalizationIssueCode.INVALID_IDENTITY_SNAPSHOT },
+        )
+    }
+
+    @Test
     fun duplicateUuidResultsAreRejected() {
         val snapshot = snapshot(team(1, ALPHA_UUID, "Alpha"), team(2, BETA_UUID, "Beta"))
 

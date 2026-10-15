@@ -87,6 +87,26 @@ class GroupRotationMatchFinalizationValidator {
     fun validate(
         snapshot: GroupRotationMatchIdentitySnapshot,
         participantResults: List<GroupRotationMatchParticipantResult>,
+    ): List<GroupRotationMatchFinalizationIssue> = validateInternal(
+        snapshot = snapshot,
+        participantResults = participantResults,
+        requireDisplayNames = true,
+    )
+
+    /** Validate a persisted finalized snapshot without requiring a current registry name. */
+    fun validatePersistedSnapshot(
+        snapshot: GroupRotationMatchIdentitySnapshot,
+        participantResults: List<GroupRotationMatchParticipantResult>,
+    ): List<GroupRotationMatchFinalizationIssue> = validateInternal(
+        snapshot = snapshot,
+        participantResults = participantResults,
+        requireDisplayNames = false,
+    )
+
+    private fun validateInternal(
+        snapshot: GroupRotationMatchIdentitySnapshot,
+        participantResults: List<GroupRotationMatchParticipantResult>,
+        requireDisplayNames: Boolean,
     ): List<GroupRotationMatchFinalizationIssue> {
         val issues = mutableListOf<GroupRotationMatchFinalizationIssue>()
         val teams = snapshot.teams
@@ -97,7 +117,7 @@ class GroupRotationMatchFinalizationValidator {
             teams.any {
                 it.lobbySlotNumber !in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS ||
                     it.teamUUID.isBlank() ||
-                    it.displayName.isBlank()
+                    (requireDisplayNames && it.displayName.isBlank())
             } ||
             teams.groupBy { it.lobbySlotNumber }.any { it.value.size > 1 } ||
             teams.groupBy { it.teamUUID }.any { it.value.size > 1 }

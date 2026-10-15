@@ -165,8 +165,14 @@ class GroupRotationTeamEntryViewModelTest {
         advanceUntilIdle()
 
         assertEquals(2, identityRepository.saveCalls)
-        assertEquals(listOf("Alpha"), identityRepository.savedEntriesByPairing["A:B"]?.map { it.displayName })
-        assertEquals(listOf("Beta"), identityRepository.savedEntriesByPairing["A:C"]?.map { it.displayName })
+        assertEquals(
+            listOf("Alpha") + List(11) { "" },
+            identityRepository.savedEntriesByPairing["A:B"]?.map { it.displayName },
+        )
+        assertEquals(
+            listOf("Beta") + List(11) { "" },
+            identityRepository.savedEntriesByPairing["A:C"]?.map { it.displayName },
+        )
         assertEquals(1, uploadAction.calls)
         assertEquals(
             "Alpha",

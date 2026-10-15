@@ -49,6 +49,10 @@ data class MatchReviewRequest(
     val matchId: String,
 )
 
+enum class TournamentDetailsLoadError {
+    INVALID_PERSISTED_DATA,
+}
+
 data class TournamentDetailsUiState(
     val isLoading: Boolean = true,
     val tournament: TournamentDetailsItemUiState? = null,
@@ -61,6 +65,7 @@ data class TournamentDetailsUiState(
     val isDeleting: Boolean = false,
     val deletionError: TournamentDeletionUiError? = null,
     val pendingGroupPairing: GroupPairing? = null,
+    val loadError: TournamentDetailsLoadError? = null,
 ) {
     val isNotFound: Boolean
         get() = !isLoading && tournament == null

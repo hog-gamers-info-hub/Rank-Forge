@@ -325,7 +325,7 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                     team.teamUUID,
                 )
             }
-            if (team.teamUUID.isBlank() || team.displayName.isBlank()) {
+            if (team.teamUUID.isBlank()) {
                 issues += issue(
                     GroupRotationMatchPersistenceIssueCode.INVALID_TEAM_IDENTITY,
                     matchId,
@@ -351,8 +351,9 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                     )
                 }
                 if (
-                    identity.displayName.isBlank() ||
-                        identity.normalizedName != normalizer.normalize(identity.displayName)
+                    (identity.displayName.isBlank() && team.displayName.isNotBlank()) ||
+                        (identity.displayName.isNotBlank() &&
+                            identity.normalizedName != normalizer.normalize(identity.displayName))
                 ) {
                     issues += issue(
                         GroupRotationMatchPersistenceIssueCode.INVALID_TEAM_IDENTITY,

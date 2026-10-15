@@ -117,8 +117,9 @@ class GroupRotationTeamIdentityResolver(
         tournament: Tournament,
         displayName: String,
         existingTeams: List<GroupRotationTeamIdentity>,
+        existingAssignments: List<GroupRotationPairingAssignment> = emptyList(),
     ): GroupRotationTeamRegistrationResult {
-        val issues = validateTournamentAndTeams(tournament, existingTeams)
+        val issues = validateTournamentAndTeams(tournament, existingTeams, existingAssignments)
         if (issues.isNotEmpty()) return GroupRotationTeamRegistrationResult.Invalid(issues)
 
         val cleanedName = normalizer.cleanDisplayName(displayName)
@@ -128,7 +129,16 @@ class GroupRotationTeamIdentityResolver(
             )
         }
         val normalizedName = normalizer.normalize(cleanedName)
-        existingTeams.firstOrNull { it.normalizedName == normalizedName }?.let { existing ->
+        val activeTeamUUIDs = existingAssignments
+            .filterNot { it.nameCleared }
+            .map { it.teamUUID }
+            .toSet()
+        val assignedTeamUUIDs = existingAssignments.map { it.teamUUID }.toSet()
+        existingTeams.firstOrNull {
+            it.normalizedName == normalizedName &&
+                (it.teamUUID in activeTeamUUIDs ||
+                    (it.teamUUID !in assignedTeamUUIDs && it.normalizedName.isNotBlank()))
+        }?.let { existing ->
             return GroupRotationTeamRegistrationResult.Registered(existing, existingTeams)
         }
         if (existingTeams.size >= capacityFor(tournament)) {
@@ -163,33 +173,89 @@ class GroupRotationTeamIdentityResolver(
         entries: List<GroupRotationPairingTeamIdentityEntry>,
         existingTeams: List<GroupRotationTeamIdentity>,
         existingAssignments: List<GroupRotationPairingAssignment>,
+    ): GroupRotationTeamIdentityPlanResult = planPairings(
+        tournament = tournament,
+        entriesByPairing = mapOf(pairingKey to entries),
+        existingTeams = existingTeams,
+        existingAssignments = existingAssignments,
+    )
+
+    fun planPairings(
+        tournament: Tournament,
+        entriesByPairing: Map<GroupPairing, List<GroupRotationPairingTeamIdentityEntry>>,
+        existingTeams: List<GroupRotationTeamIdentity>,
+        existingAssignments: List<GroupRotationPairingAssignment>,
     ): GroupRotationTeamIdentityPlanResult {
         val issues = (
-            validateTournamentAndTeams(tournament, existingTeams) +
+            validateTournamentAndTeams(tournament, existingTeams, existingAssignments) +
                 validateAssignments(tournament, existingTeams, existingAssignments) +
-                validatePairing(pairingKey, tournament) +
-                validateLobbyShape(pairingKey, entries) +
-                duplicateEntryNameIssues(pairingKey, entries)
+                if (tournament.selectedGroupPairings.isEmpty()) {
+                    listOf(
+                        GroupRotationTeamIdentityIssue(
+                            GroupRotationTeamIdentityIssueCode.UNSELECTED_PAIRING,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                } +
+                entriesByPairing.entries.flatMap { (pairingKey, entries) ->
+                    validatePairing(pairingKey, tournament) +
+                        validateLobbyShape(pairingKey, entries) +
+                        duplicateEntryNameIssues(pairingKey, entries) +
+                        if (entries.size > GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS.count()) {
+                            listOf(
+                                GroupRotationTeamIdentityIssue(
+                                    GroupRotationTeamIdentityIssueCode.INVALID_PAIRING_ENTRY_COUNT,
+                                    pairingKey = pairingKey.canonicalKey,
+                                ),
+                            )
+                        } else {
+                            emptyList()
+                        }
+                }
             ).toMutableList()
-        if (entries.size > GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS.count()) {
-            issues += GroupRotationTeamIdentityIssue(
-                GroupRotationTeamIdentityIssueCode.INVALID_PAIRING_ENTRY_COUNT,
-                pairingKey = pairingKey.canonicalKey,
-            )
-        }
         if (issues.isNotEmpty()) return GroupRotationTeamIdentityPlanResult.Invalid(issues.distinct())
 
         var teams = existingTeams
-        val existingAssignmentByLobby = existingAssignments
-            .filter { it.pairingKey == pairingKey }
-            .associateBy { it.lobbySlotNumber }
-        val effectiveAssignmentByLobby = existingAssignmentByLobby.toMutableMap()
+        val explicitEntriesByAssignment = entriesByPairing
+            .flatMap { (pairingKey, entries) ->
+                entries.map { entry -> (pairingKey to entry.lobbySlotNumber) to entry }
+            }
+            .toMap()
+        val plannedAssignments = existingAssignments.map { assignment ->
+            val entry = explicitEntriesByAssignment[assignment.pairingKey to assignment.lobbySlotNumber]
+            when {
+                entry == null -> assignment
+                normalizer.cleanDisplayName(entry.displayName).isBlank() -> assignment.copy(nameCleared = true)
+                else -> assignment.copy(nameCleared = false)
+            }
+        }.toMutableList()
+        val proposedNamesByUuid = linkedMapOf<String, String>()
+        val previouslyAssignedUuids = existingAssignments.map { it.teamUUID }.toSet()
 
-        entries.sortedBy { it.lobbySlotNumber }.forEach { entry ->
+        fun replaceAssignment(assignment: GroupRotationPairingAssignment) {
+            val index = plannedAssignments.indexOfFirst {
+                it.pairingKey == assignment.pairingKey &&
+                    it.lobbySlotNumber == assignment.lobbySlotNumber
+            }
+            if (index >= 0) {
+                plannedAssignments[index] = assignment
+            } else {
+                plannedAssignments += assignment
+            }
+        }
+
+        entriesByPairing.entries
+            .sortedBy { it.key.canonicalKey }
+            .forEach { (pairingKey, entries) ->
+                val existingAssignmentByLobby = existingAssignments
+                    .filter { it.pairingKey == pairingKey }
+                    .associateBy { it.lobbySlotNumber }
+                entries.sortedBy { it.lobbySlotNumber }.forEach { entry ->
             val cleanedDisplayName = normalizer.cleanDisplayName(entry.displayName)
             val normalizedName = normalizer.normalize(cleanedDisplayName)
             val savedAssignment = existingAssignmentByLobby[entry.lobbySlotNumber]
-            val resolved: GroupRotationTeamIdentity?
+            var resolved: GroupRotationTeamIdentity? = null
 
             if (savedAssignment != null) {
                 if (entry.teamUUID != null && entry.teamUUID != savedAssignment.teamUUID) {
@@ -212,24 +278,10 @@ class GroupRotationTeamIdentityResolver(
                     return@forEach
                 }
                 if (cleanedDisplayName.isBlank()) {
-                    effectiveAssignmentByLobby[entry.lobbySlotNumber] = savedAssignment.copy(nameCleared = true)
+                    replaceAssignment(savedAssignment.copy(nameCleared = true))
                     return@forEach
                 }
-                resolved = if (savedTeam.displayName == cleanedDisplayName) {
-                    savedTeam
-                } else {
-                    when (val rename = renameTeamInternal(tournament, savedTeam.teamUUID, entry.displayName, teams)) {
-                        is GroupRotationTeamRenameResult.Renamed -> {
-                            teams = rename.teams
-                            rename.identity
-                        }
-
-                        is GroupRotationTeamRenameResult.Invalid -> {
-                            issues += rename.issues
-                            null
-                        }
-                    }
-                }
+                resolved = savedTeam
             } else {
                 if (entry.displayName.isBlank() && entry.teamUUID != null) {
                     issues += GroupRotationTeamIdentityIssue(
@@ -246,7 +298,24 @@ class GroupRotationTeamIdentityResolver(
                 }
 
                 if (entry.teamUUID == null) {
-                    resolved = when (val result = registerUnassignedTeam(tournament, entry.displayName, teams)) {
+                    val activeUuids = plannedAssignments
+                        .filterNot { it.nameCleared }
+                        .map { it.teamUUID }
+                        .toSet()
+                    val existingAssignmentUuids = existingAssignments.map { it.teamUUID }.toSet()
+                    val activeMatch = teams.firstOrNull {
+                        it.normalizedName == normalizedName &&
+                            (it.teamUUID in activeUuids ||
+                                (it.teamUUID !in existingAssignmentUuids && it.normalizedName.isNotBlank()))
+                    }
+                    resolved = activeMatch ?: when (
+                        val result = registerUnassignedTeam(
+                            tournament,
+                            entry.displayName,
+                            teams,
+                            plannedAssignments,
+                        )
+                    ) {
                         is GroupRotationTeamRegistrationResult.Registered -> {
                             teams = result.teams
                             result.identity
@@ -292,36 +361,55 @@ class GroupRotationTeamIdentityResolver(
                     }
                 }
             }
-            if (resolved != null) {
-                effectiveAssignmentByLobby[entry.lobbySlotNumber] = GroupRotationPairingAssignment(
+            if (resolved != null && cleanedDisplayName.isNotBlank()) {
+                val previousName = proposedNamesByUuid[resolved.teamUUID]
+                if (previousName != null && previousName != cleanedDisplayName) {
+                    issues += GroupRotationTeamIdentityIssue(
+                        GroupRotationTeamIdentityIssueCode.TEAM_NAME_COLLISION,
+                        teamUUID = resolved.teamUUID,
+                        normalizedName = normalizedName,
+                        pairingKey = pairingKey.canonicalKey,
+                        lobbySlotNumber = entry.lobbySlotNumber,
+                    )
+                } else {
+                    proposedNamesByUuid[resolved.teamUUID] = cleanedDisplayName
+                }
+                replaceAssignment(
+                    GroupRotationPairingAssignment(
                     tournamentId = tournament.id,
                     pairingKey = pairingKey,
                     lobbySlotNumber = entry.lobbySlotNumber,
                     teamUUID = resolved.teamUUID,
-                    nameCleared = cleanedDisplayName.isBlank(),
+                        nameCleared = false,
+                    ),
                 )
+            }
             }
         }
-        effectiveAssignmentByLobby.values
-            .groupBy { it.teamUUID }
-            .filterValues { it.size > 1 }
-            .keys
-            .forEach { teamUUID ->
-                issues += GroupRotationTeamIdentityIssue(
-                    GroupRotationTeamIdentityIssueCode.DUPLICATE_TEAM_IN_PAIRING,
-                    teamUUID = teamUUID,
-                    pairingKey = pairingKey.canonicalKey,
-                )
+
+        val finalActiveUuids = plannedAssignments.filterNot { it.nameCleared }.map { it.teamUUID }.toSet()
+        teams = teams.map { team ->
+            when {
+                team.teamUUID in finalActiveUuids -> {
+                    val displayName = proposedNamesByUuid[team.teamUUID] ?: team.displayName
+                    val cleanedName = normalizer.cleanDisplayName(displayName)
+                    team.copy(
+                        displayName = cleanedName,
+                        normalizedName = normalizer.normalize(cleanedName),
+                    )
+                }
+                team.teamUUID in previouslyAssignedUuids -> team.copy(displayName = "", normalizedName = "")
+                else -> team
             }
+        }
+        issues += validateAssignments(tournament, teams, plannedAssignments)
+        issues += validateTournamentAndTeams(tournament, teams, plannedAssignments)
         if (issues.isNotEmpty()) return GroupRotationTeamIdentityPlanResult.Invalid(issues.distinct())
 
         return GroupRotationTeamIdentityPlanResult.Planned(
             GroupRotationTeamIdentityPlan(
                 teams = teams,
-                assignments = (
-                    existingAssignments.filter { it.pairingKey != pairingKey } +
-                        effectiveAssignmentByLobby.values
-                    )
+                assignments = plannedAssignments
                     .sortedWith(
                         compareBy<GroupRotationPairingAssignment> { it.pairingKey.canonicalKey }
                             .thenBy { it.lobbySlotNumber },
@@ -337,7 +425,7 @@ class GroupRotationTeamIdentityResolver(
         existingTeams: List<GroupRotationTeamIdentity>,
         existingAssignments: List<GroupRotationPairingAssignment>,
     ): GroupRotationTeamRenameResult {
-        val issues = validateTournamentAndTeams(tournament, existingTeams) +
+        val issues = validateTournamentAndTeams(tournament, existingTeams, existingAssignments) +
             validateAssignments(tournament, existingTeams, existingAssignments)
         if (issues.isNotEmpty()) return GroupRotationTeamRenameResult.Invalid(issues)
         return renameTeamInternal(tournament, teamUUID, displayName, existingTeams, existingAssignments)
@@ -393,6 +481,7 @@ class GroupRotationTeamIdentityResolver(
     private fun validateTournamentAndTeams(
         tournament: Tournament,
         teams: List<GroupRotationTeamIdentity>,
+        assignments: List<GroupRotationPairingAssignment> = emptyList(),
     ): List<GroupRotationTeamIdentityIssue> {
         val issues = mutableListOf<GroupRotationTeamIdentityIssue>()
         if (tournament.format != TournamentFormat.GROUP_ROTATION) {
@@ -404,6 +493,7 @@ class GroupRotationTeamIdentityResolver(
                 teamUUID = team.teamUUID,
             )
         }
+        val activeTeamUUIDs = assignments.filterNot { it.nameCleared }.map { it.teamUUID }.toSet()
         teams.forEach { team ->
             val normalized = normalizer.normalize(team.displayName)
             if (!isCanonicalUuid(team.teamUUID)) {
@@ -412,10 +502,12 @@ class GroupRotationTeamIdentityResolver(
                     teamUUID = team.teamUUID,
                 )
             }
+            val cleanedName = normalizer.cleanDisplayName(team.displayName)
             if (
-                normalizer.cleanDisplayName(team.displayName).isBlank() ||
-                team.normalizedName.isBlank() ||
-                team.normalizedName != normalized
+                (cleanedName.isBlank() &&
+                    (team.normalizedName.isNotBlank() || team.teamUUID in activeTeamUUIDs)) ||
+                    (cleanedName.isNotBlank() &&
+                        (team.normalizedName.isBlank() || team.normalizedName != normalized))
             ) {
                 issues += GroupRotationTeamIdentityIssue(
                     GroupRotationTeamIdentityIssueCode.INVALID_REGISTERED_TEAM,

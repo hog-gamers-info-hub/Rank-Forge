@@ -96,6 +96,25 @@ class GroupRotationTeamIdentityCloudV4Test {
     }
 
     @Test
+    fun retainedClearedIdentityMayBeBlankOnlyWhenItsAssignmentsAreCleared() {
+        val cleared = map(
+            loaded(
+                teams = listOf(team(U1, "", normalizedName = ""), team(U2, "Bravo")),
+                assignments = listOf(assignment(PAIRING_AB, 1, U1, nameCleared = true)),
+            ),
+        )
+        assertTrue(cleared is GroupRotationTeamIdentityV4MappingResult.Success)
+
+        val active = map(
+            loaded(
+                teams = listOf(team(U1, "", normalizedName = ""), team(U2, "Bravo")),
+                assignments = listOf(assignment(PAIRING_AB, 1, U1)),
+            ),
+        )
+        assertInvalidWith(active, GroupRotationTeamIdentityV4IssueCode.BLANK_TEAM_NAME)
+    }
+
+    @Test
     fun sparseLobbyPositionsArePreservedNumerically() {
         val parameters = (map(
             loaded(assignments = listOf(assignment(PAIRING_AB, 2, U1), assignment(PAIRING_AB, 11, U2))),

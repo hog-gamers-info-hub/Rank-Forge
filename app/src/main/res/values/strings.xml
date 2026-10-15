@@ -132,6 +132,8 @@
     <string name="download_action">Download</string>
     <string name="tournament_details_title">Tournament Details</string>
     <string name="tournament_details_loading">Loading tournament</string>
+    <string name="tournament_details_data_error_title">Tournament data unavailable</string>
+    <string name="tournament_details_data_error_message">Saved match data could not be read safely. No data was changed.</string>
     <string name="tournament_details_scoring_rules_action">Scoring Rules</string>
     <string name="scoring_rules_title">Scoring Rules</string>
     <string name="scoring_rules_placement_points_title">Placement Points</string>

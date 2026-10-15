@@ -28,6 +28,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
+import com.hoggamers.rankforge.domain.tournament.InvalidPersistedMatchDataException
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
@@ -81,6 +82,22 @@ class TournamentDetailsViewModelTest {
 
         assertEquals("Summer Cup", viewModel.uiState.value.tournament?.name)
         assertEquals("123", viewModel.uiState.value.tournament?.organizerContactNumber)
+    }
+
+    @Test
+    fun invalidPersistedMatchDataStopsDetailsLoadingWithExplicitError() = runTest {
+        repository.create(tournament(id = "stable-id"))
+        repository.failMatchObservation = true
+        val viewModel = detailsViewModel()
+
+        viewModel.load("stable-id")
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isLoading)
+        assertEquals(
+            TournamentDetailsLoadError.INVALID_PERSISTED_DATA,
+            viewModel.uiState.value.loadError,
+        )
     }
 
     @Test
@@ -652,6 +669,7 @@ class TournamentDetailsViewModelTest {
         val releaseMatchCreation = CompletableDeferred<Unit>()
         var blockMatchCreation = false
         var rejectMatchCreation = false
+        var failMatchObservation = false
 
         override suspend fun create(tournament: Tournament) {
             state.value = state.value + tournament
@@ -663,7 +681,11 @@ class TournamentDetailsViewModelTest {
             state.map { tournaments -> tournaments.firstOrNull { it.id == tournamentId } }
 
         override fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
-            matchesState.map { matches -> matches[tournamentId].orEmpty() }
+            if (failMatchObservation) {
+                kotlinx.coroutines.flow.flow { throw InvalidPersistedMatchDataException() }
+            } else {
+                matchesState.map { matches -> matches[tournamentId].orEmpty() }
+            }
 
         fun setMatches(tournamentId: String, matches: List<Match>) {
             matchesState.value = matchesState.value + (tournamentId to matches)

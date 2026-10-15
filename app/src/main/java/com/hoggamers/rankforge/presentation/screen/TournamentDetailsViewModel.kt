@@ -20,6 +20,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.InvalidPersistedMatchDataException
 import com.hoggamers.rankforge.domain.tournament.CloudDeletionFailureCategory
 import com.hoggamers.rankforge.domain.tournament.DeleteTournamentResult
 import com.hoggamers.rankforge.domain.tournament.DeleteTournamentUseCase
@@ -30,6 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -105,6 +107,19 @@ class TournamentDetailsViewModel @Inject constructor(
                         tournament = tournament.toDetailsItemUiState(slots, matches),
                     )
                 }
+            }.catch { throwable ->
+                if (throwable is CancellationException) throw throwable
+                if (throwable is InvalidPersistedMatchDataException) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            tournament = null,
+                            loadError = TournamentDetailsLoadError.INVALID_PERSISTED_DATA,
+                        )
+                    }
+                } else {
+                    throw throwable
+                }
             }.collect { state ->
                 _uiState.update { current ->
                     state.copy(
@@ -117,6 +132,7 @@ class TournamentDetailsViewModel @Inject constructor(
                         navigation = current.navigation,
                         isDeleting = current.isDeleting,
                         deletionError = current.deletionError,
+                        loadError = current.loadError,
                     )
                 }
             }

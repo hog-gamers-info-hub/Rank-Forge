@@ -54,6 +54,10 @@ class GroupRotationTeamIdentityCloudV4Mapper(
             val issues = validateRequest(request)
             val normalizer = GroupRotationTeamIdentityNormalizer()
             val teamsByUuid = snapshot.teams.associateBy { it.teamUUID }
+            val activeAssignedTeamUuids = snapshot.assignments
+                .filterNot { it.nameCleared }
+                .map { it.teamUUID }
+                .toSet()
 
             snapshot.teams.forEach { team ->
                 if (team.tournamentId != request.tournament.id) {
@@ -68,13 +72,14 @@ class GroupRotationTeamIdentityCloudV4Mapper(
                         teamUUID = team.teamUUID,
                     )
                 }
-                if (normalizer.cleanDisplayName(team.displayName).isBlank()) {
+                val cleanedName = normalizer.cleanDisplayName(team.displayName)
+                if (cleanedName.isBlank() && team.teamUUID in activeAssignedTeamUuids) {
                     issues += GroupRotationTeamIdentityV4Issue(
                         code = GroupRotationTeamIdentityV4IssueCode.BLANK_TEAM_NAME,
                         teamUUID = team.teamUUID,
                     )
                 }
-                if (team.normalizedName != normalizer.normalize(team.displayName)) {
+                if (team.normalizedName != normalizer.normalize(cleanedName)) {
                     issues += GroupRotationTeamIdentityV4Issue(
                         code = GroupRotationTeamIdentityV4IssueCode.INVALID_NORMALIZED_NAME,
                         teamUUID = team.teamUUID,

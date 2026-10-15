@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.Flow
         ),
     ],
     indices = [
-        Index(value = ["tournament_id", "normalized_name"], unique = true),
+        Index(value = ["tournament_id", "normalized_name"], unique = false),
     ],
 )
 data class GroupRotationTeamIdentityEntity(

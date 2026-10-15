@@ -44,6 +44,28 @@ interface GroupRotationTeamIdentityLocalRepository {
         entries: List<GroupRotationPairingTeamIdentityEntry>,
     ): GroupRotationTeamIdentityWriteResult
 
+    /**
+     * Saves all changed pairing scopes as one local transaction when supported
+     * by the backing store. The default keeps existing compatibility fakes
+     * source-compatible while the Room implementation provides the atomic
+     * implementation.
+     */
+    suspend fun savePairings(
+        tournament: Tournament,
+        entriesByPairing: Map<GroupPairing, List<GroupRotationPairingTeamIdentityEntry>>,
+    ): GroupRotationTeamIdentityWriteResult {
+        var saved: GroupRotationTeamIdentityWriteResult? = null
+        entriesByPairing.toList()
+            .sortedBy { it.first.canonicalKey }
+            .forEach { (pairing, entries) ->
+                when (val result = savePairing(tournament, pairing, entries)) {
+                    is GroupRotationTeamIdentityWriteResult.Saved -> saved = result
+                    else -> return result
+                }
+            }
+        return saved ?: GroupRotationTeamIdentityWriteResult.Unsupported
+    }
+
     suspend fun renameTeam(
         tournament: Tournament,
         teamUUID: String,

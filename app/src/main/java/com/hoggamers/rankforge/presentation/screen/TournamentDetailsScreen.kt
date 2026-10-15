@@ -323,6 +323,8 @@ fun TournamentDetailsScreen(
     when {
         uiState.isLoading -> PointIqTournamentDetailsLoadingState()
 
+        uiState.loadError != null -> TournamentDetailsLoadErrorState(onBackToList)
+
         uiState.isNotFound -> TournamentDetailsNotFoundState(onBackToList)
 
         uiState.tournament != null -> TournamentDetailsContent(
@@ -1857,6 +1859,42 @@ private fun TournamentDetailsNotFoundState(
         Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
         Text(
             text = stringResource(R.string.tournament_not_found_message),
+            color = PointIqDetailsSubtitle,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+        )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
+        Button(
+            onClick = onBackToList,
+            colors = ButtonDefaults.buttonColors(containerColor = PointIqDetailsBlue),
+        ) {
+            Text(text = stringResource(R.string.back_to_tournament_list_action))
+        }
+    }
+}
+
+@Composable
+private fun TournamentDetailsLoadErrorState(
+    onBackToList: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PointIqDetailsBackground)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.tournament_details_data_error_title),
+            color = PointIqDetailsHeader,
+            fontSize = 24.sp,
+            lineHeight = 28.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
+        Text(
+            text = stringResource(R.string.tournament_details_data_error_message),
             color = PointIqDetailsSubtitle,
             fontSize = 14.sp,
             lineHeight = 20.sp,
