@@ -19,6 +19,10 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
     private val cloudSyncRepository: FinalizedMatchCloudSyncRepository,
     private val queueRecorder: RecordSyncQueueOutcome,
     private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
+    private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
+        NoOpMatchTeamIdentityContextRepository,
+    private val groupRotationMatchIdentityRepository: GroupRotationMatchIdentityPersistenceRepository =
+        NoOpGroupRotationMatchIdentityPersistenceRepository,
 ) : FinalizedMatchCloudSyncAction, FinalizedMatchCloudSyncRetryAction {
     override suspend operator fun invoke(
         tournamentId: String,
@@ -56,13 +60,45 @@ class SyncFinalizedMatchesUseCase @Inject constructor(
         val snapshot = try {
             val tournament = tournamentRepository.observeByIdAndOwner(tournamentId, expectedOwnerUserId).first()
                 ?: return FinalizedMatchCloudSyncResult.ValidationFailure
+            val teamSlots = tournamentRepository
+                .observeSlotsByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)
+                .first()
+            val matches = tournamentRepository
+                .observeMatchesByTournamentIdAndOwner(tournamentId, expectedOwnerUserId)
+                .first()
+            if (
+                tournament.format == TournamentFormat.GROUP_ROTATION &&
+                matches.filter { it.status == MatchStatus.FINALIZED }.any { match ->
+                    groupRotationMatchIdentityRepository.readIdentityMode(tournament, match) !=
+                        GroupRotationMatchIdentityMode.Legacy
+                }
+            ) {
+                return FinalizedMatchCloudSyncResult.ValidationFailure
+            }
+            val identityContextsByMatchId = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                val contexts = mutableMapOf<String, MatchTeamIdentityContext>()
+                matches.filter { it.status == MatchStatus.FINALIZED }.forEach { match ->
+                    when (val contextResult = matchIdentityContextRepository.readForMatch(
+                        match.id,
+                        expectedOwnerUserId,
+                    )) {
+                        is MatchTeamIdentityContextReadResult.Loaded ->
+                            contexts[match.id] = contextResult.context
+                        else -> return FinalizedMatchCloudSyncResult.ValidationFailure
+                    }
+                }
+                contexts
+            } else {
+                emptyMap()
+            }
             FinalizedMatchCloudSyncSnapshot(
                 tournament = tournament,
-                teamSlots = tournamentRepository.observeSlotsByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
-                matches = tournamentRepository.observeMatchesByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
+                teamSlots = teamSlots,
+                matches = matches,
                 expectedCloudRevision = tournamentRepository
                     .readLocalRevisionState(tournamentId)
                     .expectedRevisionForWrite(),
+                identityContextsByMatchId = identityContextsByMatchId,
             )
         } catch (cancellation: CancellationException) {
             throw cancellation

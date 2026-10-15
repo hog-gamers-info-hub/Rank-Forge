@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
+import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
@@ -368,9 +369,37 @@ class RestoreTournamentUseCaseTest {
     }
 
     @Test
-    fun childRetryableFailureLeavesSuccessfullyRestoredParentIntact() = runTest {
+    fun childNetworkFailureMakesParentRetryableAndQueuesOnlyTournamentRestore() = runTest {
         val child = RecordingMatchRestorationAction(
             result = MatchCloudRestorationResult.NetworkFailure,
+        )
+        val local = RecordingLocalRepository()
+        val queue = RecordingTestQueueRepository()
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = local,
+            queueRecorder = queue.recorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.restore(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.NetworkFailure, result.primaryResult)
+        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertTrue(local.restoreCalled)
+        assertEquals(snapshot(), local.snapshot)
+        assertEquals(1, child.invocationCount)
+        assertEquals(
+            listOf(SyncQueueOperationType.TOURNAMENT_RESTORATION),
+            queue.entries.map { it.operationType },
+        )
+    }
+
+    @Test
+    fun childGenerationMismatchMakesParentRetryableAndReceivesAcceptedRevision() = runTest {
+        val child = RecordingMatchRestorationAction(
+            result = MatchCloudRestorationResult.GenerationMismatch,
         )
         val local = RecordingLocalRepository()
         val useCase = RestoreTournamentUseCase(
@@ -383,10 +412,41 @@ class RestoreTournamentUseCaseTest {
 
         val result = useCase.executeForRetry(TOURNAMENT_ID)
 
-        assertEquals(TournamentCloudRestorationResult.Success("Summer Cup"), result)
+        assertEquals(TournamentCloudRestorationResult.NetworkFailure, result)
         assertTrue(local.restoreCalled)
-        assertEquals(snapshot(), local.snapshot)
-        assertEquals(1, child.invocationCount)
+        assertEquals(listOf(TOURNAMENT_ID), child.tournamentIds)
+        assertEquals(listOf(CloudRevision(1)), child.parentCloudRevisions)
+    }
+
+    @Test
+    fun parentBoundGenerationMismatchRecordsOnlyTournamentRetry() = runTest {
+        val parentQueue = RecordingTestQueueRepository()
+        val childQueue = RecordingTestQueueRepository()
+        val child = RestoreMatchesUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingMatchCloudRepository(
+                snapshot = matchSnapshot(cloudRevision = CloudRevision(2)),
+            ),
+            localRepository = NoOpMatchLocalRepository(),
+            queueRecorder = childQueue.recorder(),
+        )
+        val useCase = RestoreTournamentUseCase(
+            authRepository = FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            cloudRepository = RecordingCloudRepository(snapshot = snapshot()),
+            localRepository = RecordingLocalRepository(),
+            queueRecorder = parentQueue.recorder(),
+            matchCloudRestorationAction = child,
+        )
+
+        val result = useCase.restore(TOURNAMENT_ID)
+
+        assertEquals(TournamentCloudRestorationResult.NetworkFailure, result.primaryResult)
+        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(
+            listOf(SyncQueueOperationType.TOURNAMENT_RESTORATION),
+            parentQueue.entries.map { it.operationType },
+        )
+        assertTrue(childQueue.entries.isEmpty())
     }
 
     @Test
@@ -426,6 +486,21 @@ class RestoreTournamentUseCaseTest {
         cloudRevision = com.hoggamers.rankforge.domain.sync.CloudRevision(1),
     )
 
+    private fun matchSnapshot(cloudRevision: CloudRevision) = MatchCloudRestorationSnapshot(
+        tournamentId = TOURNAMENT_ID,
+        matches = listOf(
+            Match(
+                id = "match-$TOURNAMENT_ID",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 8, 15),
+                mapName = "",
+                status = MatchStatus.DRAFT,
+            ),
+        ),
+        cloudRevision = cloudRevision,
+    )
+
     private class RecordingCloudRepository(
         private val snapshot: TournamentCloudRestorationSnapshot? = null,
         private val readResult: TournamentCloudRestorationRemoteResult<TournamentCloudRestorationSnapshot>? = null,
@@ -447,6 +522,17 @@ class RestoreTournamentUseCaseTest {
             readCalled = true
             readResult ?: TournamentCloudRestorationRemoteResult.Success(snapshot ?: error("snapshot required"))
         }
+    }
+
+    private class RecordingMatchCloudRepository(
+        private val snapshot: MatchCloudRestorationSnapshot,
+    ) : MatchCloudRestorationRepository {
+        override suspend fun readOwnedMatches(tournamentId: String) =
+            MatchCloudRestorationRemoteResult.Success(snapshot)
+    }
+
+    private class NoOpMatchLocalRepository : MatchRestorationLocalRepository {
+        override suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot) = Unit
     }
 
     private class SuspendingCloudRepository(
@@ -493,6 +579,7 @@ class RestoreTournamentUseCaseTest {
     ) : MatchCloudRestorationAction {
         var invocationCount = 0
         val tournamentIds = mutableListOf<String>()
+        val parentCloudRevisions = mutableListOf<CloudRevision>()
 
         override suspend fun invoke(tournamentId: String): QueueAwareActionResult<MatchCloudRestorationResult> {
             invocationCount += 1
@@ -509,6 +596,15 @@ class RestoreTournamentUseCaseTest {
             tournamentId: String,
             expectedOwnerUserId: String,
         ): QueueAwareActionResult<MatchCloudRestorationResult> = invoke(tournamentId)
+
+        override suspend fun invoke(
+            tournamentId: String,
+            expectedOwnerUserId: String,
+            expectedParentCloudRevision: CloudRevision,
+        ): QueueAwareActionResult<MatchCloudRestorationResult> {
+            parentCloudRevisions += expectedParentCloudRevision
+            return invoke(tournamentId, expectedOwnerUserId)
+        }
     }
 
     private class FakeAuthRepository(

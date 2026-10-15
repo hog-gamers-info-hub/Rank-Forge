@@ -30,6 +30,8 @@ class FinalizeMatchUseCase(
     private val repository: TournamentRepository,
     private val validateMatchResult: ValidateMatchResultUseCase,
     private val authRepository: AuthRepository,
+    private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
+        NoOpMatchTeamIdentityContextRepository,
 ) {
     constructor(
         repository: TournamentRepository,
@@ -63,9 +65,12 @@ class FinalizeMatchUseCase(
         val persistedSlots = repository
             .observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId)
             .first()
-        val eligibleSlotNumbers = runCatching {
-            MatchEligibleTeamSlotResolver().resolve(tournament, persistedSlots, match)
-        }.getOrElse {
+        val eligibleSlotNumbers = matchIdentityContextRepository.resolveEligibleTeamSlotNumbers(
+            tournament = tournament,
+            persistedTeamSlots = persistedSlots,
+            match = match,
+            ownerUserId = ownerUserId,
+        ) ?: run {
             return FinalizeMatchResult.Invalid(
                 validation = MatchResultValidation(),
                 globalError = FinalizeMatchGlobalError.INVALID_DATA,

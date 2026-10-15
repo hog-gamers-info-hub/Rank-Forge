@@ -4,13 +4,10 @@ import com.hoggamers.rankforge.domain.matching.LobbyTeamSlotMatchCandidate
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotMatchInput
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotMatchResult
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotMatcher
-import com.hoggamers.rankforge.domain.matching.RowTeamMatchConfidenceAssessment
-import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyEvaluator
-import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
 import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
-import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTierClassifier
 import com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestionProvider
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 
 /**
@@ -25,9 +22,10 @@ object MatchResultLobbyOcrSlotRanker {
         permanentTeamCandidates: Collection<TeamCandidateRosterInput>? = null,
         allRosterTeamCandidates: Collection<TeamCandidateRosterInput> =
             permanentTeamCandidates.orEmpty(),
+        matchIdentityContext: MatchTeamIdentityContext? = null,
     ): ResultLobbySlotMatchResult {
         val orderedEligibleSlots = eligibleTeamSlots.distinct().sorted()
-        if (permanentTeamCandidates == null) {
+        if (matchIdentityContext == null) {
             require(orderedEligibleSlots == TeamSlot.SLOT_NUMBERS.toList()) {
                 "Standard lobby matching requires the twelve local team slots."
             }
@@ -48,23 +46,12 @@ object MatchResultLobbyOcrSlotRanker {
                 ),
             )
         }
-
         require(orderedEligibleSlots.size == TeamSlot.SLOT_NUMBERS.count()) {
             "A match must expose exactly twelve eligible permanent team slots."
         }
         require(orderedEligibleSlots.all { it in TeamSlot.TOURNAMENT_SLOT_NUMBERS }) {
             "Eligible permanent team slots must be between 1 and 24."
         }
-
-        val selectedCandidates = orderedEligibleSlots.map { slotNumber ->
-            permanentTeamCandidates
-                .firstOrNull { candidate -> candidate.teamSlot == slotNumber }
-                ?: TeamCandidateRosterInput(slotNumber, emptyList())
-        }
-        val allCandidates = allRosterTeamCandidates
-            .distinctBy { candidate -> candidate.teamSlot }
-            .ifEmpty { selectedCandidates }
-
         val orderedLobbySlots = lobbyOcrResult.slots.sortedBy { it.slotNumber }
         require(orderedLobbySlots.size == TeamSlot.SLOT_NUMBERS.count()) {
             "Lobby OCR must expose exactly twelve local slots."
@@ -76,80 +63,55 @@ object MatchResultLobbyOcrSlotRanker {
             "Lobby OCR local slot numbers must be between 1 and 12."
         }
 
-        val resolvedLobbyCandidates = orderedLobbySlots.mapNotNull { lobbySlot ->
-            resolvePermanentTeamSlot(
-                lobbySlot = lobbySlot,
-                eligibleTeamSlots = orderedEligibleSlots.toSet(),
-                selectedCandidates = selectedCandidates,
-                allCandidates = allCandidates,
-            )?.let { permanentTeamSlot ->
-                LobbyTeamSlotMatchCandidate(
-                    teamSlotNumber = permanentTeamSlot,
-                    playerNames = lobbySlot.players
-                        .sortedBy { player -> player.playerNumber }
-                        .map { player -> player.playerName },
-                )
-            }
+        val identityContext = matchIdentityContext
+        require(identityContext.eligibleTeamSlotNumbers == orderedEligibleSlots.toSet()) {
+            "Lobby matching requires the persisted identity context for the selected team slots."
         }
-        val duplicateResolvedSlots = resolvedLobbyCandidates
-            .groupingBy { candidate -> candidate.teamSlotNumber }
-            .eachCount()
-            .filterValues { count -> count > 1 }
-            .keys
+
+        val rosterCandidates = allRosterTeamCandidates
+            .distinctBy { candidate -> candidate.teamSlot }
+        val resolvedLobbyCandidates = orderedLobbySlots.mapNotNull { lobbySlot ->
+            val canonicalTeamSlot = requireNotNull(
+                identityContext.canonicalTeamSlotForLobby(lobbySlot.slotNumber),
+            ) {
+                "Persisted identity context is missing lobby slot ${lobbySlot.slotNumber}."
+            }
+            val lobbyPlayerNames = lobbySlot.players
+                .sortedBy { player -> player.playerNumber }
+                .mapNotNull { player -> player.playerName?.takeIf { it.isNotBlank() } }
+            val rosterTopCandidate = if (lobbyPlayerNames.isNotEmpty() && rosterCandidates.isNotEmpty()) {
+                TopTeamCandidateSuggestionProvider.suggestTopThree(
+                    detectedPlayerNames = lobbyPlayerNames,
+                    candidateTeams = rosterCandidates,
+                ).suggestions.firstOrNull()?.teamCandidateScore
+            } else {
+                null
+            }
+            if (
+                rosterTopCandidate != null &&
+                rosterTopCandidate.contributingMatchCount > 0 &&
+                rosterTopCandidate.candidateTeamSlot != canonicalTeamSlot
+            ) {
+                // The persisted lineup is authoritative. A roster hit for another permanent
+                // team is contradictory evidence, so leave this local slot out of matching
+                // instead of silently replacing the out-of-group team with an eligible one.
+                return@mapNotNull null
+            }
+            LobbyTeamSlotMatchCandidate(
+                teamSlotNumber = canonicalTeamSlot,
+                playerNames = lobbySlot.players
+                    .sortedBy { player -> player.playerNumber }
+                    .map { player -> player.playerName },
+            )
+        }
 
         return ResultLobbySlotMatcher.rank(
             ResultLobbySlotMatchInput(
                 resultPosition = resultRow.position,
                 resultPlayerNames = resultPlayerNames(resultRow),
-                lobbyCandidates = resolvedLobbyCandidates.filterNot { candidate ->
-                    candidate.teamSlotNumber in duplicateResolvedSlots
-                },
+                lobbyCandidates = resolvedLobbyCandidates,
             ),
         )
-    }
-
-    private fun resolvePermanentTeamSlot(
-        lobbySlot: MatchLobbyPlayersOcrSlot,
-        eligibleTeamSlots: Set<Int>,
-        selectedCandidates: List<TeamCandidateRosterInput>,
-        allCandidates: List<TeamCandidateRosterInput>,
-    ): Int? {
-        val lobbyPlayerNames = lobbySlot.players
-            .sortedBy { player -> player.playerNumber }
-            .mapNotNull { player -> player.playerName?.takeIf { it.isNotBlank() } }
-        if (lobbyPlayerNames.isEmpty()) return null
-
-        val selectedSuggestion = TopTeamCandidateSuggestionProvider.suggestTopThree(
-            detectedPlayerNames = lobbyPlayerNames,
-            candidateTeams = selectedCandidates,
-        )
-        val selectedConfidence = TeamMatchConfidenceTierClassifier.classify(selectedSuggestion)
-        val selectedSafety = TeamAssignmentSafetyEvaluator.evaluate(
-            listOf(
-                RowTeamMatchConfidenceAssessment(
-                    rowIndex = 0,
-                    confidenceAssessment = selectedConfidence,
-                ),
-            ),
-        ).rowResults.single()
-        val selectedPermanentSlot = selectedSafety.proposedTeamSlot
-            ?.takeIf { it in eligibleTeamSlots }
-            ?.takeIf { selectedSafety.safetyStatus == TeamAssignmentSafetyStatus.SAFE_AUTOMATIC_ASSIGNMENT }
-            ?: return null
-
-        val allTopCandidate = TopTeamCandidateSuggestionProvider.suggestTopThree(
-            detectedPlayerNames = lobbyPlayerNames,
-            candidateTeams = allCandidates,
-        ).suggestions.firstOrNull()?.teamCandidateScore
-        if (
-            allTopCandidate != null &&
-            allTopCandidate.contributingMatchCount > 0 &&
-            allTopCandidate.candidateTeamSlot !in eligibleTeamSlots
-        ) {
-            return null
-        }
-
-        return selectedPermanentSlot
     }
 
     private fun resultPlayerNames(resultRow: MatchResultOcrRow): List<String?> =

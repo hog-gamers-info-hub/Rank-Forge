@@ -8,7 +8,6 @@ import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.RecordSyncQueueOutcome
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
-import com.hoggamers.rankforge.domain.sync.expectedRevisionForWrite
 import com.hoggamers.rankforge.domain.sync.queueFailureCategory
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -16,10 +15,11 @@ import kotlinx.coroutines.flow.first
 
 class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
     private val tournamentRepository: TournamentRepository,
+    private val localSnapshotRepository: TournamentCloudUploadLocalSnapshotRepository,
     private val authRepository: AuthRepository,
     private val cloudReplacementRepository: TournamentRosterCloudReplacementRepository,
-    private val cloudUploadRepository: TournamentCloudUploadRepository,
     private val cloudRestorationRepository: TournamentCloudRestorationRepository,
+    private val tournamentUploadRetryAction: TournamentCloudUploadRetryAction,
     private val queueRecorder: RecordSyncQueueOutcome,
     private val deletionIntentRepository: DeletionIntentRepository = NoOpDeletionIntentRepository,
 ) : TournamentRosterCloudReplacementAction, TournamentRosterCloudReplacementRetryAction {
@@ -54,16 +54,10 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
         }
 
         val snapshot = try {
-            val tournament = tournamentRepository.observeByIdAndOwner(tournamentId, expectedOwnerUserId).first()
-                ?: return TournamentRosterCloudReplacementResult.ValidationFailure
-            TournamentRosterCloudReplacement(
-                tournament = tournament,
-                slots = tournamentRepository.observeSlotsByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
-                rosters = tournamentRepository.observeRosterByTournamentIdAndOwner(tournamentId, expectedOwnerUserId).first(),
-                expectedCloudRevision = tournamentRepository
-                    .readLocalRevisionState(tournamentId)
-                    .expectedRevisionForWrite()
-            )
+            localSnapshotRepository.readCloudUploadSnapshotByOwner(
+                tournamentId = tournamentId,
+                ownerUserId = expectedOwnerUserId,
+            ) ?: return TournamentRosterCloudReplacementResult.ValidationFailure
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
@@ -75,7 +69,7 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
             if (snapshot.expectedCloudRevision == 0) {
                 synchronizeFirstCloud(snapshot, expectedOwnerUserId)
             } else {
-                cloudReplacementRepository.replace(snapshot, expectedOwnerUserId)
+                replaceRosterIfOwner(snapshot.toRosterReplacement(), expectedOwnerUserId)
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -100,7 +94,7 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
     }
 
     private suspend fun synchronizeFirstCloud(
-        snapshot: TournamentRosterCloudReplacement,
+        snapshot: TournamentCloudUploadSnapshot,
         ownerId: String,
     ): TournamentRosterCloudReplacementResult = when (
         val cloud = cloudRestorationRepository.readOwnedTournament(snapshot.tournament.id)
@@ -128,22 +122,43 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
             ) {
                 return TournamentRosterCloudReplacementResult.AuthorizationFailure
             }
-            cloudReplacementRepository.replace(
-                snapshot.copy(expectedCloudRevision = cloudRevision),
-                ownerId,
-            )
+            if (currentOwnerUserId() != ownerId) {
+                return TournamentRosterCloudReplacementResult.AuthorizationFailure
+            }
+            val freshSnapshot = localSnapshotRepository.readCloudUploadSnapshotByOwner(
+                tournamentId = snapshot.tournament.id,
+                ownerUserId = ownerId,
+            ) ?: return TournamentRosterCloudReplacementResult.ValidationFailure
+            if (currentOwnerUserId() != ownerId) {
+                return TournamentRosterCloudReplacementResult.AuthorizationFailure
+            }
+            when {
+                freshSnapshot.tournament.format == TournamentFormat.STANDARD ->
+                    replaceRosterIfOwner(freshSnapshot.toRosterReplacement(), ownerId)
+                freshSnapshot.pairingLobbySlots.isEmpty() ->
+                    replaceRosterIfOwner(freshSnapshot.toRosterReplacement(), ownerId)
+                else -> {
+                    when (val upload = tournamentUploadRetryAction.executeForRetry(snapshot.tournament.id, ownerId)) {
+                        is TournamentCloudUploadResult.Success -> {
+                            val postUploadSnapshot = localSnapshotRepository.readCloudUploadSnapshotByOwner(
+                                tournamentId = snapshot.tournament.id,
+                                ownerUserId = ownerId,
+                            ) ?: return TournamentRosterCloudReplacementResult.ValidationFailure
+                            if (postUploadSnapshot.expectedCloudRevision != upload.confirmedCloudRevision) {
+                                return TournamentRosterCloudReplacementResult.Conflict(
+                                    com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision,
+                                )
+                            }
+                            replaceRosterIfOwner(postUploadSnapshot.toRosterReplacement(), ownerId)
+                        }
+                        else -> upload.toRosterResult()
+                    }
+                }
+            }
         }
         is TournamentCloudRestorationRemoteResult.Failure -> when (cloud.category) {
             TournamentCloudRestorationFailureCategory.NOT_FOUND ->
-                cloudUploadRepository.upload(
-                    TournamentCloudUploadSnapshot(
-                        tournament = snapshot.tournament,
-                        slots = snapshot.slots,
-                        rosters = snapshot.rosters,
-                        expectedCloudRevision = 0,
-                    ),
-                    ownerId,
-                ).toRosterResult()
+                tournamentUploadRetryAction.executeForRetry(snapshot.tournament.id, ownerId).toRosterResult()
             TournamentCloudRestorationFailureCategory.AUTHENTICATION ->
                 TournamentRosterCloudReplacementResult.AuthenticationRequired
             TournamentCloudRestorationFailureCategory.AUTHORIZATION ->
@@ -181,7 +196,25 @@ class ReplaceTournamentRosterInCloudUseCase @Inject constructor(
 
     private suspend fun hasOwnedTournament(tournamentId: String, ownerUserId: String): Boolean =
         tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first() != null
+
+    private suspend fun replaceRosterIfOwner(
+        snapshot: TournamentRosterCloudReplacement,
+        expectedOwnerUserId: String,
+    ): TournamentRosterCloudReplacementResult =
+        if (currentOwnerUserId() != expectedOwnerUserId) {
+            TournamentRosterCloudReplacementResult.AuthorizationFailure
+        } else {
+            cloudReplacementRepository.replace(snapshot, expectedOwnerUserId)
+        }
 }
+
+private fun TournamentCloudUploadSnapshot.toRosterReplacement(): TournamentRosterCloudReplacement =
+    TournamentRosterCloudReplacement(
+        tournament = tournament,
+        slots = slots,
+        rosters = rosters,
+        expectedCloudRevision = expectedCloudRevision,
+    )
 
 private fun TournamentRosterCloudReplacementResult.queueStatus() = when (this) {
     is TournamentRosterCloudReplacementResult.Success -> SyncQueueStatus.COMPLETED

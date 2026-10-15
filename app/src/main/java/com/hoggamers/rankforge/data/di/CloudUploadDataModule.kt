@@ -1,7 +1,24 @@
 package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.GroupRotationDevDraftMatchCloudSyncAction
+import com.hoggamers.rankforge.data.cloud.GroupRotationDevFinalizedMatchCloudSyncAction
+import com.hoggamers.rankforge.data.cloud.GroupRotationDevTournamentCloudRestorationAction
+import com.hoggamers.rankforge.data.cloud.GroupRotationDevTournamentCloudUploadAction
+import com.hoggamers.rankforge.data.cloud.GroupRotationMatchCloudV4PreparedRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.GroupRotationMatchCloudV4RpcInvoker
+import com.hoggamers.rankforge.data.cloud.GroupRotationCloudMatchProvisioner
+import com.hoggamers.rankforge.data.cloud.SupabaseGroupRotationCloudMatchProvisioner
+import com.hoggamers.rankforge.data.cloud.GroupRotationTeamIdentityCloudV4PreparedRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.GroupRotationTeamIdentityCloudV4RpcInvoker
+import com.hoggamers.rankforge.data.cloud.GroupRotationUuidCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseGroupRotationMatchCloudV4RemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseGroupRotationMatchCloudV4RpcInvoker
+import com.hoggamers.rankforge.data.cloud.SupabaseGroupRotationTeamIdentityCloudV4RemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseGroupRotationTeamIdentityCloudV4RpcInvoker
+import com.hoggamers.rankforge.data.cloud.SupabaseGroupRotationUuidCloudRestorationRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentSnapshotRpcInvoker
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentStandingsShareGateway
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentStandingsShareRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareGateway
@@ -24,6 +41,7 @@ import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudUploadRepositor
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentQuotaRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudUploadRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.TournamentSnapshotRpcInvoker
+import com.hoggamers.rankforge.data.cloud.MatchSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.DraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseDraftMatchCloudSyncRepository
@@ -31,35 +49,47 @@ import com.hoggamers.rankforge.data.cloud.FinalizedMatchCloudSyncRemoteDataSourc
 import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseFinalizedMatchCloudSyncRepository
 import com.hoggamers.rankforge.data.cloud.SupabaseProtectedMatchCorrectionAction
+import com.hoggamers.rankforge.data.cloud.SupabaseProtectedMatchCorrectionRpcInvoker
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRemoteReader
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentCloudRestorationRepository
 import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.TournamentCloudRestorationRemoteReader
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentQuotaRepository
 import com.hoggamers.rankforge.domain.tournament.UploadTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
 import com.hoggamers.rankforge.domain.tournament.RestoreTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRetryAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRetryAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
+import com.hoggamers.rankforge.data.cloud.ProtectedMatchCorrectionRpcInvoker
 import com.hoggamers.rankforge.data.cloud.MatchCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.MatchCloudRestorationRemoteReader
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRemoteReader
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchCloudRestorationRepository
 import com.hoggamers.rankforge.data.cloud.SupabaseMatchScreenshotRestorationAction
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationRepository
 import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationAction
+import com.hoggamers.rankforge.domain.tournament.MatchCloudRestorationRetryAction
 import com.hoggamers.rankforge.domain.tournament.RestoreMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchScreenshotRestorationAction
 import com.hoggamers.rankforge.domain.tournament.DraftConflictResolver
 import com.hoggamers.rankforge.domain.tournament.ResolveDraftConflictUseCase
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRemoteDataSource
 import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterCloudReplacementRepository
+import com.hoggamers.rankforge.data.cloud.SupabaseTournamentRosterSnapshotRpcInvoker
 import com.hoggamers.rankforge.data.cloud.CloudStorageObjectDeleter
 import com.hoggamers.rankforge.data.cloud.SupabaseCloudStorageObjectDeleter
 import com.hoggamers.rankforge.data.cloud.CustomDesignImagePreparer
@@ -79,6 +109,7 @@ import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryCoordinato
 import com.hoggamers.rankforge.data.cloud.SupabaseCloudDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.CloudDeletionRepository
 import com.hoggamers.rankforge.data.cloud.TournamentRosterCloudReplacementRemoteDataSource
+import com.hoggamers.rankforge.data.cloud.TournamentRosterSnapshotRpcInvoker
 import com.hoggamers.rankforge.domain.tournament.ReplaceTournamentRosterInCloudUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementAction
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
@@ -93,9 +124,51 @@ import javax.inject.Singleton
 abstract class CloudUploadDataBindingsModule {
     @Binds
     @Singleton
+    abstract fun bindGroupRotationCloudMatchProvisioner(
+        provisioner: SupabaseGroupRotationCloudMatchProvisioner,
+    ): GroupRotationCloudMatchProvisioner
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationMatchCloudV4RpcInvoker(
+        invoker: SupabaseGroupRotationMatchCloudV4RpcInvoker,
+    ): GroupRotationMatchCloudV4RpcInvoker
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationMatchCloudV4PreparedRemoteDataSource(
+        dataSource: SupabaseGroupRotationMatchCloudV4RemoteDataSource,
+    ): GroupRotationMatchCloudV4PreparedRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamIdentityCloudV4RpcInvoker(
+        invoker: SupabaseGroupRotationTeamIdentityCloudV4RpcInvoker,
+    ): GroupRotationTeamIdentityCloudV4RpcInvoker
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamIdentityCloudV4PreparedRemoteDataSource(
+        dataSource: SupabaseGroupRotationTeamIdentityCloudV4RemoteDataSource,
+    ): GroupRotationTeamIdentityCloudV4PreparedRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationUuidCloudRestorationRemoteDataSource(
+        dataSource: SupabaseGroupRotationUuidCloudRestorationRemoteDataSource,
+    ): GroupRotationUuidCloudRestorationRemoteDataSource
+
+    @Binds
+    @Singleton
     abstract fun bindTournamentSnapshotRpcInvoker(
         invoker: SupabaseTournamentSnapshotRpcInvoker,
     ): TournamentSnapshotRpcInvoker
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchSnapshotRpcInvoker(
+        invoker: SupabaseMatchSnapshotRpcInvoker,
+    ): MatchSnapshotRpcInvoker
 
     @Binds
     @Singleton
@@ -231,8 +304,26 @@ abstract class CloudUploadDataBindingsModule {
     @Binds
     @Singleton
     abstract fun bindTournamentCloudUploadAction(
-        useCase: UploadTournamentUseCase,
+        useCase: GroupRotationDevTournamentCloudUploadAction,
     ): TournamentCloudUploadAction
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentCloudUploadRetryAction(
+        useCase: GroupRotationDevTournamentCloudUploadAction,
+    ): TournamentCloudUploadRetryAction
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentCloudRestorationRemoteReader(
+        reader: SupabaseTournamentCloudRestorationRemoteReader,
+    ): TournamentCloudRestorationRemoteReader
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentRosterSnapshotRpcInvoker(
+        invoker: SupabaseTournamentRosterSnapshotRpcInvoker,
+    ): TournamentRosterSnapshotRpcInvoker
 
     @Binds
     @Singleton
@@ -267,8 +358,14 @@ abstract class CloudUploadDataBindingsModule {
     @Binds
     @Singleton
     abstract fun bindDraftMatchCloudSyncAction(
-        useCase: SyncDraftMatchesUseCase,
+        useCase: GroupRotationDevDraftMatchCloudSyncAction,
     ): DraftMatchCloudSyncAction
+
+    @Binds
+    @Singleton
+    abstract fun bindDraftMatchCloudSyncRetryAction(
+        useCase: GroupRotationDevDraftMatchCloudSyncAction,
+    ): DraftMatchCloudSyncRetryAction
 
     @Binds
     @Singleton
@@ -285,14 +382,26 @@ abstract class CloudUploadDataBindingsModule {
     @Binds
     @Singleton
     abstract fun bindFinalizedMatchCloudSyncAction(
-        useCase: SyncFinalizedMatchesUseCase,
+        useCase: GroupRotationDevFinalizedMatchCloudSyncAction,
     ): FinalizedMatchCloudSyncAction
+
+    @Binds
+    @Singleton
+    abstract fun bindFinalizedMatchCloudSyncRetryAction(
+        useCase: GroupRotationDevFinalizedMatchCloudSyncAction,
+    ): FinalizedMatchCloudSyncRetryAction
 
     @Binds
     @Singleton
     abstract fun bindProtectedMatchCorrectionAction(
         action: SupabaseProtectedMatchCorrectionAction,
     ): ProtectedMatchCorrectionAction
+
+    @Binds
+    @Singleton
+    abstract fun bindProtectedMatchCorrectionRpcInvoker(
+        invoker: SupabaseProtectedMatchCorrectionRpcInvoker,
+    ): ProtectedMatchCorrectionRpcInvoker
 
     @Binds
     @Singleton
@@ -309,17 +418,31 @@ abstract class CloudUploadDataBindingsModule {
     @Binds
     @Singleton
     abstract fun bindTournamentCloudRestorationAction(
-        useCase: RestoreTournamentUseCase,
+        useCase: GroupRotationDevTournamentCloudRestorationAction,
     ): TournamentCloudRestorationAction
+
+    @Binds
+    @Singleton
+    abstract fun bindTournamentCloudRestorationRetryAction(
+        useCase: GroupRotationDevTournamentCloudRestorationAction,
+    ): TournamentCloudRestorationRetryAction
 
     @Binds @Singleton
     abstract fun bindMatchCloudRestorationRemoteDataSource(dataSource: SupabaseMatchCloudRestorationRemoteDataSource): MatchCloudRestorationRemoteDataSource
+
+    @Binds @Singleton
+    abstract fun bindMatchCloudRestorationRemoteReader(
+        reader: SupabaseMatchCloudRestorationRemoteReader,
+    ): MatchCloudRestorationRemoteReader
 
     @Binds @Singleton
     abstract fun bindMatchCloudRestorationRepository(repository: SupabaseMatchCloudRestorationRepository): MatchCloudRestorationRepository
 
     @Binds @Singleton
     abstract fun bindMatchCloudRestorationAction(useCase: RestoreMatchesUseCase): MatchCloudRestorationAction
+
+    @Binds @Singleton
+    abstract fun bindMatchCloudRestorationRetryAction(useCase: RestoreMatchesUseCase): MatchCloudRestorationRetryAction
 
     @Binds @Singleton
     abstract fun bindDraftConflictResolver(useCase: ResolveDraftConflictUseCase): DraftConflictResolver

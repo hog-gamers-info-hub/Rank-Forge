@@ -6,6 +6,8 @@ import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AuthUser
+import com.hoggamers.rankforge.domain.sync.CloudRevision
+import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
@@ -106,6 +108,137 @@ class RestoreMatchesUseCaseTest {
         assertEquals(MatchCloudRestorationResult.NoCloudMatches, result.primaryResult)
         assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
         assertTrue(queue.entries.isEmpty())
+    }
+
+    @Test
+    fun parentRevisionMismatchDoesNotReplaceMatches() = runTest {
+        val local = RecordingLocalRepository()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(
+                MatchCloudRestorationRemoteResult.Success(
+                    snapshotWithMatch().copy(cloudRevision = CloudRevision(2)),
+                ),
+            ),
+            local,
+            RecordingTestQueueRepository().recorder(),
+        ).executeForRetry(TOURNAMENT_ID, OWNER_ID, CloudRevision(1))
+
+        assertEquals(MatchCloudRestorationResult.GenerationMismatch, result)
+        assertEquals(0, local.ownerBoundReplacementCount)
+    }
+
+    @Test
+    fun parentBoundGenerationMismatchDoesNotRecordStandaloneMatchRetry() = runTest {
+        val queue = RecordingTestQueueRepository()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(
+                MatchCloudRestorationRemoteResult.Success(
+                    snapshotWithMatch().copy(cloudRevision = CloudRevision(2)),
+                ),
+            ),
+            RecordingLocalRepository(),
+            queue.recorder(),
+        )(
+            tournamentId = TOURNAMENT_ID,
+            expectedOwnerUserId = OWNER_ID,
+            expectedParentCloudRevision = CloudRevision(1),
+        )
+
+        assertEquals(MatchCloudRestorationResult.GenerationMismatch, result.primaryResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
+        assertTrue(queue.entries.isEmpty())
+    }
+
+    @Test
+    fun parentBoundNetworkFailureDoesNotRecordStandaloneMatchRetry() = runTest {
+        val queue = RecordingTestQueueRepository()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(
+                MatchCloudRestorationRemoteResult.Failure(
+                    MatchCloudRestorationFailureCategory.NETWORK,
+                ),
+            ),
+            RecordingLocalRepository(),
+            queue.recorder(),
+        )(
+            tournamentId = TOURNAMENT_ID,
+            expectedOwnerUserId = OWNER_ID,
+            expectedParentCloudRevision = CloudRevision(1),
+        )
+
+        assertEquals(MatchCloudRestorationResult.NetworkFailure, result.primaryResult)
+        assertEquals(QueueRecordingResult.NOT_REQUIRED, result.queueRecordingResult)
+        assertTrue(queue.entries.isEmpty())
+    }
+
+    @Test
+    fun revisionAwareDefaultsFailClosed() = runTest {
+        val action = MatchCloudRestorationAction {
+            QueueAwareActionResult(
+                primaryResult = MatchCloudRestorationResult.Success,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        }
+        val retryAction = MatchCloudRestorationRetryAction {
+            MatchCloudRestorationResult.Success
+        }
+        val local = MinimalLocalRepository()
+
+        assertTrue(
+            runCatching {
+                action(TOURNAMENT_ID, OWNER_ID, CloudRevision(1))
+            }.exceptionOrNull() is SecurityException,
+        )
+        assertTrue(
+            runCatching {
+                retryAction.executeForRetry(TOURNAMENT_ID, OWNER_ID, CloudRevision(1))
+            }.exceptionOrNull() is SecurityException,
+        )
+        assertTrue(
+            runCatching {
+                local.replaceMatchesByOwnerAtCloudRevision(
+                    tournamentId = TOURNAMENT_ID,
+                    expectedOwnerUserId = OWNER_ID,
+                    snapshot = snapshotWithMatch(),
+                    expectedParentCloudRevision = CloudRevision(1),
+                )
+            }.exceptionOrNull() is SecurityException,
+        )
+    }
+
+    @Test
+    fun matchingParentRevisionAllowsOwnerBoundReplacement() = runTest {
+        val local = RecordingLocalRepository()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(MatchCloudRestorationRemoteResult.Success(snapshotWithMatch())),
+            local,
+            RecordingTestQueueRepository().recorder(),
+        ).executeForRetry(TOURNAMENT_ID, OWNER_ID, CloudRevision(1))
+
+        assertEquals(MatchCloudRestorationResult.Success, result)
+        assertEquals(1, local.ownerBoundReplacementCount)
+    }
+
+    @Test
+    fun standaloneRestoreAcceptsNewerStableCloudRevision() = runTest {
+        val local = RecordingLocalRepository()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(
+                MatchCloudRestorationRemoteResult.Success(
+                    snapshotWithMatch().copy(cloudRevision = CloudRevision(2)),
+                ),
+            ),
+            local,
+            RecordingTestQueueRepository().recorder(),
+        ).executeForRetry(TOURNAMENT_ID, OWNER_ID)
+
+        assertEquals(MatchCloudRestorationResult.Success, result)
+        assertEquals(1, local.ownerBoundReplacementCount)
     }
 
     @Test
@@ -251,6 +384,20 @@ class RestoreMatchesUseCaseTest {
             replaceMatches(snapshot)
         }
 
+        override suspend fun replaceMatchesByOwnerAtCloudRevision(
+            tournamentId: String,
+            expectedOwnerUserId: String,
+            snapshot: MatchCloudRestorationSnapshot,
+            expectedParentCloudRevision: CloudRevision,
+        ): MatchRestorationLocalWriteResult {
+            ownerBoundReplacementCount += 1
+            replaceMatches(snapshot)
+            return MatchRestorationLocalWriteResult.Replaced
+        }
+    }
+
+    private class MinimalLocalRepository : MatchRestorationLocalRepository {
+        override suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot) = Unit
     }
 
     private class RecordingScreenshotRestorationAction(

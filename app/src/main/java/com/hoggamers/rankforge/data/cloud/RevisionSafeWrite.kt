@@ -20,6 +20,16 @@ data class TournamentSnapshotWriteParameters(
 )
 
 @Serializable
+data class TournamentSnapshotWriteV2Parameters(
+    @SerialName("p_tournament") val tournament: TournamentUploadPayload,
+    @SerialName("p_team_slots") val teamSlots: List<TeamSlotUploadPayload>,
+    @SerialName("p_players") val players: List<PlayerUploadPayload>,
+    @SerialName("p_pairing_lobby_slots")
+    val pairingLobbySlots: List<GroupPairingLobbySlotUploadPayload>,
+    @SerialName("p_expected_revision") val expectedRevision: Int,
+)
+
+@Serializable
 data class MatchSnapshotWriteParameters<M, R>(
     @SerialName("p_tournament_id") val tournamentId: String,
     @SerialName("p_matches") val matches: List<M>,

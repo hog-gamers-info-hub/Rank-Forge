@@ -56,7 +56,8 @@ import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationFailu
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRemoteResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
-import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadLocalSnapshotRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadRetryAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadSnapshot
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.TournamentRosterCloudReplacementRepository
@@ -607,14 +608,14 @@ class RosterOcrReviewViewModelTest {
         )
         val cloud = ReplaceTournamentRosterInCloudUseCase(
             tournamentRepository = repository,
+            localSnapshotRepository = object : TournamentCloudUploadLocalSnapshotRepository {
+                override suspend fun readCloudUploadSnapshotByOwner(
+                    tournamentId: String,
+                    ownerUserId: String,
+                ): TournamentCloudUploadSnapshot? = null
+            },
             authRepository = FakeAuthRepository(),
             cloudReplacementRepository = cloudRepository,
-            cloudUploadRepository = object : TournamentCloudUploadRepository {
-                override suspend fun upload(
-                    snapshot: TournamentCloudUploadSnapshot,
-                    ownerId: String,
-                ) = TournamentCloudUploadResult.Success(2)
-            },
             cloudRestorationRepository = object : TournamentCloudRestorationRepository {
                 override suspend fun listOwnedTournaments() =
                     TournamentCloudRestorationRemoteResult.Success(emptyList<TournamentCloudRestorationSummary>())
@@ -623,6 +624,9 @@ class RosterOcrReviewViewModelTest {
                     TournamentCloudRestorationRemoteResult.Failure(
                         TournamentCloudRestorationFailureCategory.NOT_FOUND,
                     )
+            },
+            tournamentUploadRetryAction = TournamentCloudUploadRetryAction {
+                TournamentCloudUploadResult.Success(2)
             },
             queueRecorder = RecordSyncQueueOutcome(queueRepository),
         )

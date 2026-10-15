@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.data.local.MatchDraftValueEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.MatchKillEntity
 import com.hoggamers.rankforge.data.local.MatchPlacementEntity
+import com.hoggamers.rankforge.data.local.GroupRotationPairingLobbySlotEntity
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -22,6 +23,8 @@ import com.hoggamers.rankforge.domain.tournament.MatchPlacement
 import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamEntry
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupCandidate
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentConfirmationResult
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedMatchMutationResult
 import com.hoggamers.rankforge.domain.tournament.OwnerScopedTournamentMutationResult
@@ -406,6 +409,238 @@ class RoomTournamentRepositoryTest {
                     .first()
                     .map { it.pairingKey },
             )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationMatchMutationsUsePersistedLobbyMappingForCanonicalIdentity() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-match-identity.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "group-rotation-match-identity"
+            val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+            val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+            repository.create(
+                Tournament(
+                    id = tournamentId,
+                    name = "Rotation Cup",
+                    stageName = "Organizer",
+                    organizerContactNumber = "123",
+                    status = TournamentStatus.DRAFT,
+                    format = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 3,
+                    selectedGroupPairings = listOf(pairing),
+                    ownerUserId = "user-a",
+                ),
+            )
+            repository.saveTeamNames(
+                tournamentId,
+                canonicalSlots.associateWith { slot -> "Team $slot" },
+            )
+            database.groupRotationPairingLobbySlotDao().upsertAll(
+                canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                    GroupRotationPairingLobbySlotEntity(
+                        tournamentId = tournamentId,
+                        pairingKey = pairing.canonicalKey,
+                        lobbySlotNumber = index + 1,
+                        teamSlotNumber = teamSlotNumber,
+                    )
+                },
+            )
+            val match = Match(
+                id = "group-rotation-match-identity-1",
+                tournamentId = tournamentId,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 7),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            )
+
+            assertEquals(CreateMatchRepositoryResult.Created, repository.createDraftMatch(match))
+            database.groupRotationPairingLobbySlotDao()
+                .deleteByTournamentAndPairing(tournamentId, pairing.canonicalKey)
+            assertEquals(
+                OwnerScopedMatchMutationResult.InvalidData,
+                repository.saveDraftMatchValueByOwner(
+                    tournamentId,
+                    match.id,
+                    "user-a",
+                    14,
+                    "1",
+                    "7",
+                ),
+            )
+            database.groupRotationPairingLobbySlotDao().upsertAll(
+                canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                    GroupRotationPairingLobbySlotEntity(
+                        tournamentId = tournamentId,
+                        pairingKey = pairing.canonicalKey,
+                        lobbySlotNumber = index + 1,
+                        teamSlotNumber = teamSlotNumber,
+                    )
+                },
+            )
+            assertEquals(
+                SaveMatchPlacementsRepositoryResult.Saved,
+                repository.saveDraftMatchPlacements(match.id, listOf(MatchPlacement(14, 1))),
+            )
+            assertEquals(
+                SaveMatchPlacementsRepositoryResult.Rejected(SaveMatchPlacementsFailure.INVALID_TEAM_SLOT),
+                repository.saveDraftMatchPlacements(match.id, listOf(MatchPlacement(7, 2))),
+            )
+            assertEquals(
+                SaveMatchKillsRepositoryResult.Saved,
+                repository.saveDraftMatchKills(match.id, listOf(MatchKill(14, 7))),
+            )
+            repository.saveDraftMatchValue(
+                tournamentId = tournamentId,
+                matchId = match.id,
+                teamSlotNumber = 14,
+                placementInput = "1",
+                killsInput = "7",
+            )
+            val draftBeforeOutOfPairWrite = repository.observeDraftMatchValues(tournamentId, match.id).first()
+            assertEquals(
+                OwnerScopedMatchMutationResult.InvalidData,
+                repository.saveDraftMatchValueByOwner(
+                    tournamentId,
+                    match.id,
+                    "user-a",
+                    7,
+                    "9",
+                    "9",
+                ),
+            )
+            assertEquals(
+                draftBeforeOutOfPairWrite,
+                repository.observeDraftMatchValues(tournamentId, match.id).first(),
+            )
+            val finalized = repository.finalizeDraftMatch(
+                match.id,
+                canonicalSlots.mapIndexed { index, teamSlotNumber -> MatchPlacement(teamSlotNumber, index + 1) },
+                canonicalSlots.map { teamSlotNumber -> MatchKill(teamSlotNumber, 0) },
+            ) as FinalizeMatchRepositoryResult.Finalized
+
+            assertEquals(canonicalSlots.toSet(), finalized.match.participantResults.map { it.teamSlotNumber }.toSet())
+            assertEquals(14, finalized.match.placements.first().teamSlotNumber)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationCanonicalIdentityAndPreservedOcrEvidenceSurviveRoomReopen() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-ocr-identity.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "group-rotation-ocr-identity"
+            val matchId = "group-rotation-ocr-identity-match"
+            val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+            val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+            repository.create(
+                Tournament(
+                    id = tournamentId,
+                    name = "Rotation OCR Cup",
+                    stageName = "Organizer",
+                    organizerContactNumber = "123",
+                    status = TournamentStatus.DRAFT,
+                    format = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 3,
+                    selectedGroupPairings = listOf(pairing),
+                    ownerUserId = "user-a",
+                ),
+            )
+            repository.saveTeamNames(
+                tournamentId,
+                canonicalSlots.associateWith { slot -> "Team $slot" },
+            )
+            database.groupRotationPairingLobbySlotDao().upsertAll(
+                canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                    GroupRotationPairingLobbySlotEntity(
+                        tournamentId = tournamentId,
+                        pairingKey = pairing.canonicalKey,
+                        lobbySlotNumber = index + 1,
+                        teamSlotNumber = teamSlotNumber,
+                    )
+                },
+            )
+            val match = Match(
+                id = matchId,
+                tournamentId = tournamentId,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 7),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            )
+            assertEquals(CreateMatchRepositoryResult.Created, repository.createDraftMatch(match))
+
+            val placements = canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                MatchPlacement(teamSlotNumber, index + 1)
+            }
+            val kills = canonicalSlots.map { teamSlotNumber -> MatchKill(teamSlotNumber, 0) }
+            val evidence = PreservedMatchOcrEvidence(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                sourceScreenshotId = "group-rotation-ocr-screenshot",
+                preservedAt = 1L,
+                provenance = "OCR_REVIEW_FINALIZATION",
+                rows = (0 until 12).map { rowIndex ->
+                    PreservedMatchOcrRowEvidence(
+                        rowIndex = rowIndex,
+                        originalOcrText = "Lobby row $rowIndex",
+                        originalPlacement = rowIndex + 1,
+                        originalKills = 0,
+                        originalSuggestedTeamSlot = canonicalSlots[rowIndex],
+                        confidenceSummary = null,
+                        safetySummary = null,
+                        manualReviewRequired = false,
+                    )
+                },
+                correctionSnapshots = (0 until 12).map { rowIndex ->
+                    PreservedMatchOcrCorrectionSnapshot(
+                        rowIndex = rowIndex,
+                        correctedPlacement = rowIndex + 1,
+                        correctedKills = 0,
+                        correctedTeamSlot = canonicalSlots[rowIndex],
+                        placementChanged = false,
+                        killsChanged = false,
+                        teamSlotChanged = false,
+                    )
+                },
+            )
+
+            assertTrue(
+                repository.finalizeDraftMatchWithOcrEvidence(
+                    matchId = matchId,
+                    placements = placements,
+                    kills = kills,
+                    evidence = evidence,
+                ) is FinalizeMatchRepositoryResult.Finalized,
+            )
+
+            databases.last().close()
+            val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            val reopenedMatch = reopenedRepository.observeMatchById(matchId).first { it != null }!!
+            val reopenedEvidence = reopenedRepository.readPreservedMatchOcrEvidence(tournamentId, matchId)!!
+            assertEquals(18, reopenedMatch.placements[2].teamSlotNumber)
+            assertEquals(18, reopenedMatch.kills[2].teamSlotNumber)
+            assertTrue(reopenedMatch.participantResults.any { it.teamSlotNumber == 18 })
+            assertEquals(18, reopenedEvidence.rows[2].originalSuggestedTeamSlot)
+            assertEquals(18, reopenedEvidence.correctionSnapshots[2].correctedTeamSlot)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -1013,6 +1248,192 @@ class RoomTournamentRepositoryTest {
                 )
             }
             assertEquals(expectedRevision, reopenedRepository.readLocalRevisionState(tournamentId).localRevision)
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationRosterReplacementChangesPlayersWithoutChangingNullTeamIdentityPool() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-roster-replacement-null.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "group-rotation-roster-replacement-null"
+            val tournament = groupRotationTournament(tournamentId)
+            repository.create(tournament)
+            assertEquals(
+                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalSaveResult.Saved,
+                repository.saveGroupRotationTeamSetup(
+                    completeGroupRotationSetupCandidate(tournamentId),
+                    "group-rotation-owner",
+                ),
+            )
+            seedRoster(repository, tournamentId, "Before")
+            assertTrue(repository.confirmTournament(tournamentId))
+
+            val beforeSlots = database.teamSlotDao().readByTournamentId(tournamentId)
+            val beforeMappings = database.groupRotationPairingLobbySlotDao().readByTournamentId(tournamentId)
+            val beforeRevision = repository.readLocalRevisionState(tournamentId)
+            val result = repository.replaceConfirmedTournamentRoster(
+                groupRotationReplacementCandidate(tournamentId, "After"),
+            )
+
+            assertEquals(ReplaceConfirmedTournamentRosterRepositoryResult.Replaced, result)
+            assertEquals(beforeSlots, database.teamSlotDao().readByTournamentId(tournamentId))
+            assertEquals(beforeMappings, database.groupRotationPairingLobbySlotDao().readByTournamentId(tournamentId))
+            assertEquals(
+                listOf("After Player 1-1", "After Player 1-2", "After Player 1-3", "After Player 1-4"),
+                repository.observeRosterByTournamentAndSlot(tournamentId, 1).first().map { it.displayName },
+            )
+            assertEquals(TournamentStatus.CONFIRMED, repository.observeById(tournamentId).first()!!.status)
+            assertTrue(
+                repository.readLocalRevisionState(tournamentId).localRevision!! >
+                    checkNotNull(beforeRevision.localRevision),
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationRosterReplacementPreservesLegacyGroupMetadata() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-roster-replacement-legacy.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "group-rotation-roster-replacement-legacy"
+            repository.create(groupRotationTournament(tournamentId))
+            repository.saveGroupRotationTeamSetup(
+                completeGroupRotationSetupCandidate(tournamentId),
+                "group-rotation-owner",
+            )
+            seedRoster(repository, tournamentId, "Before")
+            val legacySlots = database.teamSlotDao().readByTournamentId(tournamentId).map { slot ->
+                slot.copy(
+                    group = when (slot.slotNumber) {
+                        in 1..6 -> "A"
+                        in 7..12 -> "B"
+                        else -> "C"
+                    },
+                )
+            }
+            database.teamSlotDao().upsertAll(legacySlots)
+            assertTrue(repository.confirmTournament(tournamentId))
+
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.Replaced,
+                repository.replaceConfirmedTournamentRoster(
+                    groupRotationReplacementCandidate(tournamentId, "After"),
+                ),
+            )
+            assertEquals(legacySlots, database.teamSlotDao().readByTournamentId(tournamentId))
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationRosterReplacementRejectsIdentityChangesAndLeavesLocalStateUnchanged() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-roster-replacement-invalid.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournamentId = "group-rotation-roster-replacement-invalid"
+            val tournament = groupRotationTournament(tournamentId, pairings = listOf(GroupPairing(TournamentGroup.A, TournamentGroup.B)))
+            repository.create(tournament)
+            repository.saveGroupRotationTeamSetup(
+                singlePairingGroupRotationSetupCandidate(tournamentId),
+                "group-rotation-owner",
+            )
+            seedRoster(repository, tournamentId, "Before")
+            assertTrue(repository.confirmTournament(tournamentId))
+
+            val beforeSlots = database.teamSlotDao().readByTournamentId(tournamentId)
+            val beforeRosters = database.rosterPlayerDao().observeByTournamentId(tournamentId).first()
+            val beforeMappings = database.groupRotationPairingLobbySlotDao().readByTournamentId(tournamentId)
+            val beforeRevision = repository.readLocalRevisionState(tournamentId)
+            val beforeStatus = repository.observeById(tournamentId).first()!!.status
+
+            val renamed = groupRotationReplacementCandidate(tournamentId, "Before").copy(
+                teamNamesBySlotNumber = groupRotationReplacementCandidate(tournamentId, "Before")
+                    .teamNamesBySlotNumber
+                    .toMutableMap()
+                    .also { it[1] = "Renamed Team" },
+            )
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.InvalidCandidate,
+                repository.replaceConfirmedTournamentRoster(renamed),
+            )
+            assertEquals(beforeSlots, database.teamSlotDao().readByTournamentId(tournamentId))
+            assertEquals(beforeRosters, database.rosterPlayerDao().observeByTournamentId(tournamentId).first())
+            assertEquals(beforeMappings, database.groupRotationPairingLobbySlotDao().readByTournamentId(tournamentId))
+            assertEquals(beforeRevision, repository.readLocalRevisionState(tournamentId))
+            assertEquals(beforeStatus, repository.observeById(tournamentId).first()!!.status)
+
+            val blankToNamed = singlePairingGroupRotationReplacementCandidate(tournamentId, "Before").copy(
+                teamNamesBySlotNumber = singlePairingGroupRotationReplacementCandidate(tournamentId, "Before")
+                    .teamNamesBySlotNumber
+                    .toMutableMap()
+                    .also { it[13] = "Allocated Team" },
+            )
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.InvalidCandidate,
+                repository.replaceConfirmedTournamentRoster(blankToNamed),
+            )
+            assertEquals(beforeSlots, database.teamSlotDao().readByTournamentId(tournamentId))
+            assertEquals(beforeRosters, database.rosterPlayerDao().observeByTournamentId(tournamentId).first())
+            assertEquals(beforeMappings, database.groupRotationPairingLobbySlotDao().readByTournamentId(tournamentId))
+            assertEquals(beforeRevision, repository.readLocalRevisionState(tournamentId))
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun groupRotationRosterReplacementRemainsBlockedWhenMatchExists() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-roster-replacement-match.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
+            val tournamentId = "group-rotation-roster-replacement-match"
+            val tournament = groupRotationTournament(tournamentId)
+            repository.create(tournament)
+            repository.saveGroupRotationTeamSetup(
+                completeGroupRotationSetupCandidate(tournamentId),
+                "group-rotation-owner",
+            )
+            seedRoster(repository, tournamentId, "Before")
+            assertTrue(repository.confirmTournament(tournamentId))
+            assertTrue(
+                repository.createDraftMatch(
+                    draftMatch(tournamentId, "group-rotation-roster-replacement-match-1", 1).copy(
+                        groupPairing = tournament.selectedGroupPairings.first(),
+                    ),
+                ) is CreateMatchRepositoryResult.Created,
+            )
+
+            assertEquals(
+                ReplaceConfirmedTournamentRosterRepositoryResult.BlockedByExistingMatches,
+                repository.replaceConfirmedTournamentRoster(
+                    groupRotationReplacementCandidate(tournamentId, "After"),
+                ),
+            )
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -2842,6 +3263,99 @@ class RoomTournamentRepositoryTest {
         status = status,
         ownerUserId = ownerUserId,
     )
+
+    private fun groupRotationTournament(
+        id: String,
+        pairings: List<GroupPairing> = listOf(
+            GroupPairing(TournamentGroup.A, TournamentGroup.B),
+            GroupPairing(TournamentGroup.A, TournamentGroup.C),
+        ),
+    ) = Tournament(
+        id = id,
+        name = "Rotation Cup",
+        stageName = "Organizer",
+        organizerContactNumber = "123",
+        status = TournamentStatus.DRAFT,
+        ownerUserId = "group-rotation-owner",
+        format = TournamentFormat.GROUP_ROTATION,
+        groupCount = 3,
+        selectedGroupPairings = pairings,
+    )
+
+    private fun completeGroupRotationSetupCandidate(
+        tournamentId: String,
+    ): GroupRotationTeamSetupCandidate {
+        val firstPairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val secondPairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val entries = listOf(
+            firstPairing to (1..12).map { slotNumber -> "Before Team $slotNumber" },
+            secondPairing to (
+                (1..6).map { slotNumber -> "Before Team $slotNumber" } +
+                    (13..18).map { slotNumber -> "Before Team $slotNumber" }
+                ),
+        ).flatMap { (pairing, names) ->
+            names.mapIndexed { index, name ->
+                GroupRotationPairingTeamEntry(pairing, index + 1, name)
+            }
+        }
+        return GroupRotationTeamSetupCandidate(tournamentId = tournamentId, entries = entries)
+    }
+
+    private fun singlePairingGroupRotationSetupCandidate(
+        tournamentId: String,
+    ): GroupRotationTeamSetupCandidate {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        return GroupRotationTeamSetupCandidate(
+            tournamentId = tournamentId,
+            entries = (1..12).map { lobbySlot ->
+                GroupRotationPairingTeamEntry(pairing, lobbySlot, "Before Team $lobbySlot")
+            },
+        )
+    }
+
+    private fun groupRotationReplacementCandidate(
+        tournamentId: String,
+        playerPrefix: String,
+    ) = ConfirmedRosterReplacementCandidate(
+        tournamentId = tournamentId,
+        teamNamesBySlotNumber = (1..18).associateWith { slotNumber -> "Before Team $slotNumber" },
+        rosterPlayersBySlotNumber = (1..18).associateWith { slotNumber ->
+            (1..4).map { playerNumber ->
+                RosterPlayer(tournamentId, slotNumber, "$playerPrefix Player $slotNumber-$playerNumber")
+            }
+        },
+    )
+
+    private fun singlePairingGroupRotationReplacementCandidate(
+        tournamentId: String,
+        playerPrefix: String,
+    ) = ConfirmedRosterReplacementCandidate(
+        tournamentId = tournamentId,
+        teamNamesBySlotNumber = (1..18).associateWith { slotNumber ->
+            if (slotNumber <= 12) "Before Team $slotNumber" else ""
+        },
+        rosterPlayersBySlotNumber = (1..18).associateWith { slotNumber ->
+            (1..4).map { playerNumber ->
+                RosterPlayer(tournamentId, slotNumber, "$playerPrefix Player $slotNumber-$playerNumber")
+            }
+        },
+    )
+
+    private suspend fun seedRoster(
+        repository: RoomTournamentRepository,
+        tournamentId: String,
+        playerPrefix: String,
+    ) {
+        (1..18).forEach { slotNumber ->
+            repository.saveRoster(
+                tournamentId,
+                slotNumber,
+                (1..4).map { playerNumber ->
+                    RosterPlayer(tournamentId, slotNumber, "$playerPrefix Player $slotNumber-$playerNumber")
+                },
+            )
+        }
+    }
 
     private fun legacyPayload(
         id: String,

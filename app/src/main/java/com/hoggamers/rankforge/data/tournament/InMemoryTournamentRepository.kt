@@ -2,6 +2,7 @@ package com.hoggamers.rankforge.data.tournament
 
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.time.LocalDate
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +22,12 @@ import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.formatDerivedSlots
 import com.hoggamers.rankforge.domain.tournament.analyzeTeamSlotParticipation
 import com.hoggamers.rankforge.domain.tournament.MatchEligibleTeamSlotResolver
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextRepository
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsFailure
@@ -44,13 +50,16 @@ import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.LocalRevisionState
 
 @Singleton
-class InMemoryTournamentRepository @Inject constructor() : TournamentRepository {
+class InMemoryTournamentRepository @Inject constructor() :
+    TournamentRepository,
+    MatchTeamIdentityContextRepository {
     private val tournaments = MutableStateFlow<List<Tournament>>(emptyList())
     private val slotsByTournamentId = MutableStateFlow<Map<String, List<TeamSlot>>>(emptyMap())
     private val rostersByTournamentAndSlot = MutableStateFlow<Map<RosterKey, List<RosterPlayer>>>(emptyMap())
     private val matchesByTournamentId = MutableStateFlow<Map<String, List<Match>>>(emptyMap())
     private val draftValuesByMatch = MutableStateFlow<Map<DraftKey, Map<Int, MatchDraftFieldValues>>>(emptyMap())
     private val teamEntryDraftsByTournamentId = MutableStateFlow<Map<String, Map<Int, String>>>(emptyMap())
+    private val groupRotationMappings = MutableStateFlow<Map<MappingKey, List<GroupRotationPairingLobbySlot>>>(emptyMap())
     private val preservedOcrEvidenceByMatch = MutableStateFlow<Map<String, PreservedMatchOcrEvidence>>(emptyMap())
     private val cloudRevisions = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val baseCloudRevisions = MutableStateFlow<Map<String, Int?>>(emptyMap())
@@ -261,6 +270,57 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         }
     }
 
+    suspend fun replaceGroupRotationPairingLobbySlots(
+        assignments: List<GroupRotationPairingLobbySlot>,
+    ) {
+        require(assignments.isNotEmpty()) { "At least one Group Rotation mapping is required." }
+        val key = MappingKey(assignments.first().tournamentId, assignments.first().pairing)
+        require(assignments.all { assignment ->
+            assignment.tournamentId == key.tournamentId && assignment.pairing == key.pairing
+        }) {
+            "Group Rotation mappings must belong to one tournament and pairing."
+        }
+        groupRotationMappings.update { current -> current + (key to assignments.toList()) }
+    }
+
+    override suspend fun readForMatch(
+        matchId: String,
+        ownerUserId: String,
+    ): MatchTeamIdentityContextReadResult {
+        val match = matchesByTournamentId.value
+            .values
+            .asSequence()
+            .flatten()
+            .firstOrNull { it.id == matchId }
+            ?: return MatchTeamIdentityContextReadResult.MatchNotFound
+        val tournament = tournaments.value.firstOrNull { tournament ->
+            tournament.id == match.tournamentId && tournament.ownerUserId == ownerUserId
+        } ?: return MatchTeamIdentityContextReadResult.TournamentNotFound
+        return readIdentityContext(tournament, match)
+    }
+
+    override suspend fun readForPairing(
+        tournamentId: String,
+        pairing: GroupPairing,
+        ownerUserId: String,
+    ): MatchTeamIdentityContextReadResult {
+        val tournament = tournaments.value.firstOrNull { tournament ->
+            tournament.id == tournamentId && tournament.ownerUserId == ownerUserId
+        } ?: return MatchTeamIdentityContextReadResult.TournamentNotFound
+        return readIdentityContext(
+            tournament,
+            Match(
+                id = "pairing-context",
+                tournamentId = tournamentId,
+                matchNumber = 1,
+                date = LocalDate.of(1970, 1, 1),
+                mapName = "",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            ),
+        )
+    }
+
     override fun observeRosterByTournamentAndSlot(
         tournamentId: String,
         slotNumber: Int,
@@ -375,6 +435,7 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
                 tournament,
                 slotsByTournamentId.value[match.tournamentId].orEmpty(),
                 match,
+                groupRotationMappings.value[MappingKey(match.tournamentId, match.groupPairing)].orEmpty(),
             )
         }.getOrElse {
             return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.INVALID_GROUP_PAIRING)
@@ -719,9 +780,7 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
     ) {
         val match = matchesByTournamentId.value[tournamentId].orEmpty().firstOrNull { it.id == matchId }
             ?: return
-        require(eligibleSlotNumbersForMatch(match)?.contains(teamSlotNumber) == true) {
-            "Team slot number is not eligible for this match."
-        }
+        if (eligibleSlotNumbersForMatch(match)?.contains(teamSlotNumber) != true) return
         draftValuesByMatch.update { current ->
             val key = DraftKey(tournamentId, matchId)
             val existing = current[key]?.get(teamSlotNumber) ?: MatchDraftFieldValues()
@@ -745,6 +804,12 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         pointAdjustment: Int?,
     ): OwnerScopedMatchMutationResult = if (!isOwnedMatch(matchId, tournamentId, ownerUserId)) {
         OwnerScopedMatchMutationResult.MatchNotFound
+    } else if (matchesByTournamentId.value[tournamentId]
+            .orEmpty()
+            .firstOrNull { it.id == matchId }
+            ?.let { eligibleSlotNumbersForMatch(it)?.contains(teamSlotNumber) == true } != true
+    ) {
+        OwnerScopedMatchMutationResult.InvalidData
     } else {
         saveDraftMatchValue(
             tournamentId,
@@ -824,8 +889,43 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
                 tournament,
                 slotsByTournamentId.value[match.tournamentId].orEmpty(),
                 match,
+                groupRotationMappings.value[MappingKey(match.tournamentId, match.groupPairing)].orEmpty(),
             )
         }.getOrNull()
+    }
+
+    private fun readIdentityContext(
+        tournament: Tournament,
+        match: Match,
+    ): MatchTeamIdentityContextReadResult {
+        if (tournament.format != TournamentFormat.GROUP_ROTATION) {
+            return runCatching {
+                MatchTeamIdentityContextReadResult.Loaded(
+                    MatchEligibleTeamSlotResolver().resolveContext(
+                        tournament,
+                        slotsByTournamentId.value[tournament.id].orEmpty(),
+                        match,
+                    ),
+                )
+            }.getOrElse { MatchTeamIdentityContextReadResult.InvalidMapping }
+        }
+        val pairing = match.groupPairing
+            ?: return MatchTeamIdentityContextReadResult.PairingRequired
+        if (pairing !in tournament.selectedGroupPairings) {
+            return MatchTeamIdentityContextReadResult.PairingNotSelected
+        }
+        val mappings = groupRotationMappings.value[MappingKey(tournament.id, pairing)]
+            ?: return MatchTeamIdentityContextReadResult.SetupRequired
+        return runCatching {
+            MatchTeamIdentityContextReadResult.Loaded(
+                MatchEligibleTeamSlotResolver().resolveContext(
+                    tournament,
+                    slotsByTournamentId.value[tournament.id].orEmpty(),
+                    match,
+                    mappings,
+                ),
+            )
+        }.getOrElse { MatchTeamIdentityContextReadResult.InvalidMapping }
     }
 
     private fun invalidateConfirmation(tournamentId: String) {
@@ -848,6 +948,11 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
     private data class DraftKey(
         val tournamentId: String,
         val matchId: String,
+    )
+
+    private data class MappingKey(
+        val tournamentId: String,
+        val pairing: GroupPairing?,
     )
 
 }

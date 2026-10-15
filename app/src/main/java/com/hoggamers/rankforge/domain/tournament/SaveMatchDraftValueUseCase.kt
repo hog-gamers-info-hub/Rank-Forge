@@ -17,6 +17,7 @@ sealed interface SaveMatchDraftValueResult {
     data object Saved : SaveMatchDraftValueResult
     data object AuthenticationRequired : SaveMatchDraftValueResult
     data object MatchNotFound : SaveMatchDraftValueResult
+    data object InvalidData : SaveMatchDraftValueResult
 }
 
 class SaveMatchDraftValueUseCase(
@@ -40,6 +41,7 @@ class SaveMatchDraftValueUseCase(
         )) {
             OwnerScopedMatchMutationResult.Saved -> SaveMatchDraftValueResult.Saved
             OwnerScopedMatchMutationResult.MatchNotFound -> SaveMatchDraftValueResult.MatchNotFound
+            OwnerScopedMatchMutationResult.InvalidData -> SaveMatchDraftValueResult.InvalidData
         }
     }
 }

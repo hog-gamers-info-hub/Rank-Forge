@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareRemoteDataSour
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
@@ -125,11 +126,22 @@ class TournamentStandingsViewModelTest {
             "tournament-id",
             (1..18).associateWith { slotNumber -> "Team $slotNumber" },
         )
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        repository.replaceGroupRotationPairingLobbySlots(
+            (1..6).toList().plus((13..18).toList()).mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(
+                    tournamentId = "tournament-id",
+                    pairing = pairing,
+                    lobbySlotNumber = index + 1,
+                    teamSlotNumber = teamSlotNumber,
+                )
+            },
+        )
         repository.createDraftMatch(
             match(
                 id = "group-finalized",
                 matchNumber = 1,
-                groupPairing = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                groupPairing = pairing,
             ),
         )
         repository.finalizeDraftMatch(

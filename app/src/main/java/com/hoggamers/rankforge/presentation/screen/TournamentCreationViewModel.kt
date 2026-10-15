@@ -267,7 +267,10 @@ class TournamentCreationViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isSubmitting = false,
-                            navigation = TournamentCreationNavigation.Created(result.tournament.id),
+                            navigation = TournamentCreationNavigation.Created(
+                                tournamentId = result.tournament.id,
+                                format = result.tournament.format,
+                            ),
                         )
                     }
                 } else {

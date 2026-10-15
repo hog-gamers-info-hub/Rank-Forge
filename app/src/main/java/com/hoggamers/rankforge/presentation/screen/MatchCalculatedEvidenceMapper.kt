@@ -28,7 +28,7 @@ internal object MatchCalculatedEvidenceMapper {
         }
 
         val lobbyTeams = ocrState.phase1LobbySlotNumberOcr
-            ?.toLobbyCalculatedEvidence(reviewState)
+            ?.toLobbyCalculatedEvidence(reviewState, ocrState)
             .orEmpty()
         val resultPositions = ocrState.toResultCalculatedEvidence(reviewState)
 
@@ -94,11 +94,11 @@ internal object MatchCalculatedEvidenceMapper {
             val acceptedPlacement = rowDraft.placementDraftValue
                 .trim()
                 .toIntOrNull()
-                ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                ?.takeIf { it in LOGICAL_RESULT_POSITIONS }
             val acceptedSlot = rowDraft.assignedTeamSlotDraftValue
                 .trim()
                 .toIntOrNull()
-                ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                ?.takeIf { it in ocrState.eligibleTeamSlots }
             val acceptedSlotValue = if (rowDraft.assignedTeamSlotDraftValue.isBlank()) {
                 null
             } else {
@@ -173,6 +173,7 @@ internal object MatchCalculatedEvidenceMapper {
 
     private fun MatchLobbySlotNumberOcrResult.toLobbyCalculatedEvidence(
         reviewState: MatchReviewUiState,
+        ocrState: MatchOcrReviewUiState.Ready,
     ): List<LobbyTeamCalculatedEvidence> = screenshots.flatMap { screenshot ->
         val teamNamesBySlot = reviewState.rows.associate { row ->
             row.teamSlotNumber to row.teamName
@@ -187,9 +188,14 @@ internal object MatchCalculatedEvidenceMapper {
                     val slotNumber = preview.detectedSlotNumber
                         .takeIf { it in TeamSlot.SLOT_NUMBERS }
                         ?: return@mapNotNull null
+                    val canonicalTeamSlot = if (ocrState.usesPairRelativeIdentity) {
+                        canonicalTeamSlotForLobby(slotNumber, ocrState.lobbySlotByTeamSlot)
+                    } else {
+                        slotNumber
+                    } ?: return@mapNotNull null
                     LobbyTeamCalculatedEvidence(
                         slotNumber = slotNumber,
-                        teamName = teamNamesBySlot[slotNumber]
+                        teamName = ocrState.teamNamesBySlot[canonicalTeamSlot]
                             .cleanDisplayedText(),
                         sourceScreenshotIndex = screenshot.screenshotPosition.index,
                         cropLeft = bounds.left,
@@ -204,6 +210,7 @@ internal object MatchCalculatedEvidenceMapper {
                                         .cleanDisplayedText()
                                 }
                         },
+                        teamSlotNumber = canonicalTeamSlot,
                     )
                 }
             }
@@ -238,13 +245,13 @@ internal object MatchCalculatedEvidenceMapper {
                 row.rowIndex == position - 1
             }
             val assignedSlot = if (draft != null) {
-                draft.assignedTeamSlotDraftValue.parseTeamSlotOrNull()
+                draft.assignedTeamSlotDraftValue.parseCanonicalTeamSlotOrNull(eligibleTeamSlots)
             } else {
-                reviewRow?.suggestedTeamSlotDisplayValue.parseTeamSlotOrNull()
+                reviewRow?.suggestedTeamSlotDisplayValue.parseCanonicalTeamSlotOrNull(eligibleTeamSlots)
             }
             val placement = draft?.placementDraftValue
-                ?.parseTeamSlotOrNull()
-                ?: reviewRow?.detectedPlacementDisplayValue.parseTeamSlotOrNull()
+                ?.parsePlacementOrNull()
+                ?: reviewRow?.detectedPlacementDisplayValue.parsePlacementOrNull()
             val playerKills = (1..4).map { playerSlot ->
                 val draftPlayer = draft?.playerKillDrafts
                     ?.singleOrNull { player -> player.playerSlot == playerSlot }
@@ -293,10 +300,15 @@ internal object MatchCalculatedEvidenceMapper {
         ?.trim()
         ?.takeIf { it.isNotBlank() }
 
-    private fun String?.parseTeamSlotOrNull(): Int? = this
+    private fun String?.parseCanonicalTeamSlotOrNull(eligibleTeamSlots: Set<Int>): Int? = this
         ?.trim()
         ?.toIntOrNull()
-        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+        ?.takeIf { it in eligibleTeamSlots }
+
+    private fun String?.parsePlacementOrNull(): Int? = this
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it in LOGICAL_RESULT_POSITIONS }
 
     private fun String?.parseNonNegativeIntOrNull(): Int? = this
         ?.trim()

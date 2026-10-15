@@ -62,6 +62,8 @@ class SubmitMatchCorrectionUseCase(
     private val protectedCorrection: ProtectedMatchCorrectionAction = ProtectedMatchCorrectionAction {
         ProtectedMatchCorrectionResult.AuthenticationRequired
     },
+    private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
+        NoOpMatchTeamIdentityContextRepository,
 ) {
     constructor(
         repository: TournamentRepository,
@@ -136,6 +138,29 @@ class SubmitMatchCorrectionUseCase(
         }
         val tournament = repository.observeByIdAndOwner(match.tournamentId, ownerUserId).first()
             ?: return cloudFailure(MatchCorrectionGlobalError.MATCH_NOT_FOUND, match)
+        if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+            val pairing = match.groupPairing
+            val identityContext = when (
+                val contextResult = matchIdentityContextRepository.readForMatch(
+                    match.id,
+                    ownerUserId,
+                )
+            ) {
+                is MatchTeamIdentityContextReadResult.Loaded -> contextResult.context
+                else -> return cloudFailure(MatchCorrectionGlobalError.INVALID_DATA, match)
+            }
+            if (
+                pairing == null ||
+                identityContext.tournamentId != tournament.id ||
+                identityContext.pairing != pairing ||
+                identityContext.eligibleTeamSlotNumbers.size != TeamSlot.SLOT_NUMBERS.count() ||
+                participantSnapshot.size != TeamSlot.SLOT_NUMBERS.count() ||
+                participantSnapshot.map { it.teamSlotNumber }.toSet() !=
+                    identityContext.eligibleTeamSlotNumbers
+            ) {
+                return cloudFailure(MatchCorrectionGlobalError.INVALID_DATA, match)
+            }
+        }
         val expectedRevision = repository.readLocalRevisionState(match.tournamentId).expectedCloudRevision
             ?: return cloudFailure(MatchCorrectionGlobalError.MISSING_REVISION, match)
         val protectedResult = protectedCorrection(

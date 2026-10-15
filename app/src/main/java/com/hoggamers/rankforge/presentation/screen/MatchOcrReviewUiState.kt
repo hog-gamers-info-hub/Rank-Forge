@@ -92,6 +92,7 @@ sealed interface MatchOcrReviewUiState {
     data class Ready(
         val tournamentId: String,
         val matchId: String,
+        val isUuidBackedGroupRotation: Boolean = false,
         val matchDisplayLabel: String? = null,
         val rowCount: Int,
         val rows: List<MatchOcrReviewRowUiState>,
@@ -113,15 +114,21 @@ sealed interface MatchOcrReviewUiState {
             MatchCalculatedEvidenceOrigin.AUTOMATIC,
         val manuallyRevealedPositions: Set<Int> = emptySet(),
         val eligibleTeamSlots: Set<Int> = com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.toSet(),
+        /** Canonical team slot -> local lobby slot for the current match. */
+        val lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+        val usesPairRelativeIdentity: Boolean = false,
     ) : MatchOcrReviewUiState
 
     data class Empty(
         val tournamentId: String? = null,
         val matchId: String? = null,
+        val isUuidBackedGroupRotation: Boolean = false,
         val matchResultOcrPreview: MatchResultOcrPreviewUiState = MatchResultOcrPreviewUiState.NotRequested,
         val teamNamesBySlot: Map<Int, String> = emptyMap(),
         val lobbyPlayers: List<MatchOcrReviewLobbySlotUiState> = emptyList(),
         val eligibleTeamSlots: Set<Int> = com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.toSet(),
+        val lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+        val usesPairRelativeIdentity: Boolean = false,
     ) : MatchOcrReviewUiState
 
     data class Error(
@@ -432,6 +439,8 @@ data class MatchOcrReviewRowUiState(
     val originalSuggestedTeamSlot: Int? = null,
     val allPlayersSemanticallyNotDetected: Boolean = false,
     val playerKillEvidence: List<MatchOcrReviewPlayerKillEvidenceUiState> = emptyList(),
+    /** Display-only identity label; the draft and original value remain canonical slot numbers. */
+    val teamIdentityDisplayValue: String? = null,
 )
 
 data class MatchOcrReviewPlayerKillEvidenceUiState(

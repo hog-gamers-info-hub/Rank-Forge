@@ -865,6 +865,105 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
+    fun compactRowUsesCorrectedSlotTeamNameForPairRelativeIdentity() {
+        val row = defaultReadyRows().first()
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(row))
+        val correctedDraft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+            draft = initialDraft,
+            rowIndex = 0,
+            value = "2",
+        ).rows.single()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewRow(
+                    row = row,
+                    previewRow = compactPreview(1..1).rows.single(),
+                    teamNamesBySlot = mapOf(1 to "Alpha", 2 to "Beta"),
+                    eligibleTeamSlots = setOf(1, 2),
+                    lobbySlotByTeamSlot = mapOf(1 to 1, 2 to 2),
+                    usesPairRelativeIdentity = true,
+                    correctionDraft = correctedDraft,
+                    onPlacementChanged = { _, _ -> },
+                    onKillsChanged = { _, _ -> },
+                    onPlayerKillsChanged = { _, _, _ -> },
+                    onAssignedTeamSlotChanged = { _, _ -> },
+                    onResetRowCorrection = { _ -> },
+                    correctionEnabled = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - Lobby 02 · Beta | Team name - Lobby 02 · Beta")
+    }
+
+    @Test
+    fun compactRowShowsUnmatchedWhenCorrectedSlotIsCleared() {
+        val row = defaultReadyRows().first()
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(row))
+        val clearedDraft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+            draft = initialDraft,
+            rowIndex = 0,
+            value = "",
+        ).rows.single()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewRow(
+                    row = row,
+                    previewRow = compactPreview(1..1).rows.single(),
+                    teamNamesBySlot = mapOf(1 to "Alpha", 2 to "Beta"),
+                    correctionDraft = clearedDraft,
+                    onPlacementChanged = { _, _ -> },
+                    onKillsChanged = { _, _ -> },
+                    onPlayerKillsChanged = { _, _, _ -> },
+                    onAssignedTeamSlotChanged = { _, _ -> },
+                    onResetRowCorrection = { _ -> },
+                    correctionEnabled = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - Not matched | Team name - Not matched")
+    }
+
+    @Test
+    fun compactRowResetRestoresOriginalTeamName() {
+        val row = defaultReadyRows().first()
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(listOf(row))
+        val changedDraft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+            draft = initialDraft,
+            rowIndex = 0,
+            value = "2",
+        )
+        val resetDraft = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(changedDraft, 0)
+            .rows
+            .single()
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchOcrReviewRow(
+                    row = row,
+                    previewRow = compactPreview(1..1).rows.single(),
+                    teamNamesBySlot = mapOf(1 to "Alpha", 2 to "Beta"),
+                    correctionDraft = resetDraft,
+                    onPlacementChanged = { _, _ -> },
+                    onKillsChanged = { _, _ -> },
+                    onPlayerKillsChanged = { _, _, _ -> },
+                    onAssignedTeamSlotChanged = { _, _ -> },
+                    onResetRowCorrection = { _ -> },
+                    correctionEnabled = true,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
+            .assertTextEquals("Slot - 1 | Team name - Alpha")
+    }
+
+    @Test
     fun lobbyPlayersAppearBeforeResultRowsInDeterministicPlayerOrder() {
         composeTestRule.setContent {
             RankForgeTheme {

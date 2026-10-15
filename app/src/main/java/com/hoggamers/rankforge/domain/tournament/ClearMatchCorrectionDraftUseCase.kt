@@ -30,6 +30,7 @@ class ClearMatchCorrectionDraftUseCase(
         ) {
             OwnerScopedMatchMutationResult.Saved -> ClearMatchCorrectionDraftResult.Cleared
             OwnerScopedMatchMutationResult.MatchNotFound -> ClearMatchCorrectionDraftResult.MatchNotFound
+            OwnerScopedMatchMutationResult.InvalidData -> ClearMatchCorrectionDraftResult.MatchNotFound
         }
     }
 }

@@ -1,6 +1,13 @@
 package com.hoggamers.rankforge.domain.export
 
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingAssignment
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalSnapshot
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
@@ -12,6 +19,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import java.time.LocalDate
+import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -111,7 +119,7 @@ class TournamentResultImageModelBuilderTest {
     }
 
     @Test
-    fun selectedPairingRejectsOutOfGroupParticipantInsteadOfReplacingItsIdentity() {
+    fun selectedPairingAcceptsCanonicalParticipantWithoutGroupMembershipCheck() {
         val result = builder.build(
             input(
                 tournament = groupTournament(3),
@@ -127,11 +135,9 @@ class TournamentResultImageModelBuilderTest {
             ),
         )
 
-        assertTrue(
-            (result as TournamentResultImageModelBuildResult.Failure).failures.contains(
-                TournamentResultImageModelFailure.INVALID_FINALIZED_MATCH,
-            ),
-        )
+        val model = success(result)
+        assertEquals(18, model.rows.size)
+        assertEquals(1, model.rows.first { row -> row.teamName == "Team 7" }.matchesPlayed)
     }
 
     @Test
@@ -149,6 +155,143 @@ class TournamentResultImageModelBuilderTest {
         assertTrue(
             (result as TournamentResultImageModelBuildResult.Failure).failures.contains(
                 TournamentResultImageModelFailure.MISSING_TEAM_IDENTITY,
+            ),
+        )
+    }
+
+    @Test
+    fun uuidBackedThreeGroupOverallUsesAllIdentitiesAndAggregatesAcrossPairings() {
+        val tournament = groupTournament(3)
+        val identities = uuidIdentities(tournament, 18)
+        val matchOne = uuidMatch("uuid-match-1", 1, GroupPairing(TournamentGroup.A, TournamentGroup.B))
+        val matchTwo = uuidMatch("uuid-match-2", 2, GroupPairing(TournamentGroup.A, TournamentGroup.C))
+        val uuidOne = uuid(1)
+        val input = input(
+            tournament = tournament,
+            teamSlots = permanentSlots(18),
+            matches = listOf(matchOne, matchTwo),
+        ).copy(
+            groupRotationV4OverallImageInput = GroupRotationV4OverallImageInput.Valid(
+                teamIdentitySnapshot = GroupRotationTeamIdentityLocalSnapshot(
+                    teams = identities,
+                    assignments = listOf(
+                        GroupRotationPairingAssignment(
+                            tournamentId = tournament.id,
+                            pairingKey = GroupPairing(TournamentGroup.A, TournamentGroup.B),
+                            lobbySlotNumber = 1,
+                            teamUUID = uuidOne,
+                        ),
+                        GroupRotationPairingAssignment(
+                            tournamentId = tournament.id,
+                            pairingKey = GroupPairing(TournamentGroup.A, TournamentGroup.C),
+                            lobbySlotNumber = 7,
+                            teamUUID = uuidOne,
+                        ),
+                    ),
+                ),
+                finalizedMatchSnapshots = mapOf(
+                    matchOne.id to uuidSnapshot(
+                        tournament = tournament,
+                        pairing = matchOne.groupPairing!!,
+                        teams = listOf(1, 2),
+                        results = listOf(
+                            uuidResult(uuidOne, placement = 1, kills = 2),
+                            uuidResult(uuid(2), placement = 2, kills = 0),
+                        ),
+                    ),
+                    matchTwo.id to uuidSnapshot(
+                        tournament = tournament,
+                        pairing = matchTwo.groupPairing!!,
+                        teams = listOf(1, 13),
+                        results = listOf(
+                            uuidResult(uuidOne, placement = 2, kills = 1),
+                            uuidResult(uuid(13), placement = 1, kills = 0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val model = success(builder.build(input))
+        assertEquals(18, model.rows.size)
+        assertEquals(24, model.rows.first { it.teamName == "Team 1" }.totalPoints)
+        assertEquals(2, model.rows.first { it.teamName == "Team 1" }.matchesPlayed)
+        assertEquals(0, model.rows.first { it.teamName == "Team 18" }.totalPoints)
+        assertEquals(0, model.rows.first { it.teamName == "Team 18" }.matchesPlayed)
+    }
+
+    @Test
+    fun uuidBackedFourGroupOverallIncludesZeroPointIdentitiesAndUsesRegisteredName() {
+        val tournament = groupTournament(4)
+        val identities = uuidIdentities(tournament, 24).map { identity ->
+            if (identity.teamUUID == uuid(1)) {
+                identity.copy(
+                    displayName = "Renamed Team 1",
+                    normalizedName = "renamed team 1",
+                )
+            } else {
+                identity
+            }
+        }
+        val match = uuidMatch("uuid-four-group-match", 1, GroupPairing(TournamentGroup.A, TournamentGroup.D))
+        val input = input(
+            tournament = tournament,
+            teamSlots = permanentSlots(24),
+            matches = listOf(match),
+        ).copy(
+            groupRotationV4OverallImageInput = GroupRotationV4OverallImageInput.Valid(
+                teamIdentitySnapshot = GroupRotationTeamIdentityLocalSnapshot(
+                    teams = identities,
+                    assignments = listOf(
+                        GroupRotationPairingAssignment(
+                            tournamentId = tournament.id,
+                            pairingKey = GroupPairing(TournamentGroup.A, TournamentGroup.D),
+                            lobbySlotNumber = 1,
+                            teamUUID = uuid(1),
+                            nameCleared = true,
+                        ),
+                    ),
+                ),
+                finalizedMatchSnapshots = mapOf(
+                    match.id to uuidSnapshot(
+                        tournament = tournament,
+                        pairing = match.groupPairing!!,
+                        teams = listOf(1),
+                        results = listOf(uuidResult(uuid(1), placement = 1, kills = 3, pointAdjustment = 2)),
+                    ),
+                ),
+            ),
+        )
+
+        val model = success(builder.build(input))
+        assertEquals(24, model.rows.size)
+        assertEquals("Renamed Team 1", model.rows.first { it.teamName == "Renamed Team 1" }.teamName)
+        assertEquals(17, model.rows.first { it.teamName == "Renamed Team 1" }.totalPoints)
+        assertEquals(0, model.rows.first { it.teamName == "Team 24" }.totalPoints)
+    }
+
+    @Test
+    fun uuidBackedOverallRejectsMissingFinalizedSnapshotInsteadOfUsingNumericResults() {
+        val tournament = groupTournament(3)
+        val match = uuidMatch("missing-uuid-snapshot", 1, GroupPairing(TournamentGroup.A, TournamentGroup.B))
+        val input = input(
+            tournament = tournament,
+            teamSlots = permanentSlots(18),
+            matches = listOf(match),
+        ).copy(
+            groupRotationV4OverallImageInput = GroupRotationV4OverallImageInput.Valid(
+                teamIdentitySnapshot = GroupRotationTeamIdentityLocalSnapshot(
+                    teams = uuidIdentities(tournament, 18),
+                    assignments = emptyList(),
+                ),
+                finalizedMatchSnapshots = emptyMap(),
+            ),
+        )
+
+        val result = builder.build(input)
+        assertTrue(
+            (result as TournamentResultImageModelBuildResult.Failure).failures.contains(
+                TournamentResultImageModelFailure.INVALID_UUID_RESULT_DATA,
             ),
         )
     }
@@ -228,6 +371,65 @@ class TournamentResultImageModelBuilderTest {
         groupPairing = pairing,
     )
 
+    private fun uuidIdentities(
+        tournament: Tournament,
+        count: Int,
+    ): List<GroupRotationTeamIdentity> = (1..count).map { number ->
+        GroupRotationTeamIdentity(
+            tournamentId = tournament.id,
+            teamUUID = uuid(number),
+            displayName = "Team $number",
+            normalizedName = "team $number",
+        )
+    }
+
+    private fun uuidMatch(
+        id: String,
+        matchNumber: Int,
+        pairing: GroupPairing,
+    ) = Match(
+        id = id,
+        tournamentId = TOURNAMENT_ID,
+        matchNumber = matchNumber,
+        date = LocalDate.of(2026, 10, 3),
+        mapName = "Bermuda",
+        status = MatchStatus.FINALIZED,
+        groupPairing = pairing,
+    )
+
+    private fun uuidSnapshot(
+        tournament: Tournament,
+        pairing: GroupPairing,
+        teams: List<Int>,
+        results: List<GroupRotationMatchParticipantResult>,
+    ) = GroupRotationMatchPersistenceSnapshot(
+        identity = GroupRotationMatchIdentitySnapshot(
+            tournamentId = tournament.id,
+            pairing = pairing,
+            teams = teams.mapIndexed { index, number ->
+                GroupRotationMatchTeamIdentity(
+                    lobbySlotNumber = index + 1,
+                    teamUUID = uuid(number),
+                    displayName = "Team $number",
+                )
+            },
+        ),
+        participantResults = results,
+    )
+
+    private fun uuidResult(
+        teamUUID: String,
+        placement: Int,
+        kills: Int = 0,
+        pointAdjustment: Int = 0,
+    ) = GroupRotationMatchParticipantResult(
+        teamUUID = teamUUID,
+        participationStatus = MatchParticipationStatus.PARTICIPATED,
+        placement = placement,
+        kills = kills,
+        pointAdjustment = pointAdjustment,
+    )
+
     private fun participated(
         slotNumber: Int,
         placement: Int,
@@ -241,5 +443,7 @@ class TournamentResultImageModelBuilderTest {
 
     private companion object {
         const val TOURNAMENT_ID = "tournament-id"
+
+        fun uuid(number: Int): String = UUID(0L, number.toLong()).toString()
     }
 }

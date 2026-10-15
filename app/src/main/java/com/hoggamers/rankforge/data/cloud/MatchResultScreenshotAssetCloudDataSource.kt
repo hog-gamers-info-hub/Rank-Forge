@@ -96,11 +96,13 @@ class SupabaseMatchResultScreenshotAssetCloudDataSource internal constructor(
     private val deleteRole: suspend (String, String) -> Unit,
     private val readAssets: suspend (String, Set<String>) -> List<MatchResultScreenshotAssetCloudPayload> =
         { _, _ -> emptyList() },
+    private val matchProvisioner: GroupRotationCloudMatchProvisioner = NoOpGroupRotationCloudMatchProvisioner,
 ) : MatchResultScreenshotAssetCloudDataSource {
     @Inject
     constructor(
         config: SupabaseAuthConfig,
         clientProvider: SupabaseClientProvider,
+        matchProvisioner: GroupRotationCloudMatchProvisioner,
     ) : this(
         isConfigured = { config.isConfigured },
         currentUserId = {
@@ -123,6 +125,7 @@ class SupabaseMatchResultScreenshotAssetCloudDataSource internal constructor(
             }.decodeList<MatchResultScreenshotAssetCloudPayload>()
                 .filter { it.matchId in matchIds }
         },
+        matchProvisioner = matchProvisioner,
     )
 
     override suspend fun readByTournamentAndMatchIds(
@@ -169,8 +172,18 @@ class SupabaseMatchResultScreenshotAssetCloudDataSource internal constructor(
         if (expectedOwnerUserId != null && (expectedOwnerUserId.isBlank() || ownerId != expectedOwnerUserId)) {
             return MatchResultScreenshotAssetCloudResult.Failed(MatchResultScreenshotAssetCloudFailure.AUTHORIZATION)
         }
+        val cloudMatchId = matchProvisioner.resolveCloudMatchId(
+            tournamentId = asset.tournamentId,
+            matchId = asset.matchId,
+            expectedOwnerUserId = expectedOwnerUserId ?: ownerId,
+        ) ?: return MatchResultScreenshotAssetCloudResult.Failed(
+            MatchResultScreenshotAssetCloudFailure.CLOUD_MATCH_ID_UNAVAILABLE,
+        )
         val payload = when (val result = asset.copy(ownerUserId = expectedOwnerUserId ?: asset.ownerUserId)
-            .toMatchResultScreenshotAssetCloudPayload(expectedOwnerUserId ?: ownerId)) {
+            .toMatchResultScreenshotAssetCloudPayload(
+                ownerId = expectedOwnerUserId ?: ownerId,
+                cloudMatchId = cloudMatchId,
+            )) {
             is MatchResultScreenshotAssetCloudPayloadMappingResult.Success -> result.payload
             MatchResultScreenshotAssetCloudPayloadMappingResult.InvalidIdentity ->
                 return MatchResultScreenshotAssetCloudResult.Failed(
@@ -206,9 +219,10 @@ class SupabaseMatchResultScreenshotAssetCloudDataSource internal constructor(
                 MatchResultScreenshotAssetCloudFailure.MISSING_AUTH_SESSION,
             )
         }
-        val cloudMatchId = MatchCloudIdentity.matchId(
+        val cloudMatchId = matchProvisioner.resolveCloudMatchId(
             tournamentId = identity.tournamentId,
-            localMatchId = identity.matchId,
+            matchId = identity.matchId,
+            expectedOwnerUserId = currentUserId(),
         ) ?: return@withContext MatchResultScreenshotAssetCloudResult.Failed(
             MatchResultScreenshotAssetCloudFailure.CLOUD_MATCH_ID_UNAVAILABLE,
         )
@@ -248,16 +262,17 @@ sealed interface MatchResultScreenshotAssetCloudPayloadMappingResult {
 
 fun MatchResultScreenshotAssetEntity.toMatchResultScreenshotAssetCloudPayload(
     ownerId: String,
+    cloudMatchId: String? = null,
 ): MatchResultScreenshotAssetCloudPayloadMappingResult {
     val identity = identityOrNull()
         ?: return MatchResultScreenshotAssetCloudPayloadMappingResult.InvalidIdentity
-    val cloudMatchId = MatchCloudIdentity.matchId(
+    val resolvedCloudMatchId = cloudMatchId ?: MatchCloudIdentity.matchId(
         tournamentId = identity.tournamentId,
         localMatchId = identity.matchId,
     ) ?: return MatchResultScreenshotAssetCloudPayloadMappingResult.CloudMatchIdUnavailable
     return MatchResultScreenshotAssetCloudPayloadMappingResult.Success(
         MatchResultScreenshotAssetCloudPayload(
-            matchId = cloudMatchId,
+            matchId = resolvedCloudMatchId,
             ownerId = ownerId,
             tournamentId = identity.tournamentId,
             screenshotKind = screenshotKind,

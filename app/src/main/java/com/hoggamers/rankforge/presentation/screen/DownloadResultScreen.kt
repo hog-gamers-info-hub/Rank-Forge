@@ -124,6 +124,9 @@ import com.hoggamers.rankforge.data.local.PointTableLogoImageStore
 import com.hoggamers.rankforge.data.local.PointTableLogoImageStoreResult
 import com.hoggamers.rankforge.data.local.PointTableLogoPlacement
 import com.hoggamers.rankforge.domain.export.MatchCsvExportInput
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInput
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInputReader
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageReadResult
 import com.hoggamers.rankforge.domain.export.MatchResultExportModelBuildResult
 import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
 import com.hoggamers.rankforge.domain.export.TournamentCsvExportInput
@@ -301,6 +304,8 @@ class DownloadResultViewModel @Inject constructor(
     private val pointTableDetailsRepository: PointTableDetailsRepository,
     private val pointTableLogoImageStore: PointTableLogoImageStore,
     private val pointTableLogoRenderResolver: PointTableLogoRenderResolver,
+    private val groupRotationV4OverallImageInputReader: GroupRotationV4OverallImageInputReader =
+        GroupRotationV4OverallImageInputReader.LegacyOnly,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadResultUiState())
     val uiState: StateFlow<DownloadResultUiState> = _uiState.asStateFlow()
@@ -847,6 +852,22 @@ class DownloadResultViewModel @Inject constructor(
         val matches = observeMatches(tournamentId).first()
         val teamSlots = observeTournamentSlots(tournamentId).first()
         val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
+        val groupRotationV4OverallImageInput = if (result == DownloadResultSelection.Overall) {
+            when (
+                val readResult = groupRotationV4OverallImageInputReader.read(
+                    tournament = tournament,
+                    matches = matches,
+                    persistedTeamSlots = teamSlots,
+                )
+            ) {
+                is GroupRotationV4OverallImageReadResult.Available -> readResult.input
+                GroupRotationV4OverallImageReadResult.Legacy -> null
+                GroupRotationV4OverallImageReadResult.Invalid ->
+                    GroupRotationV4OverallImageInput.Invalid
+            }
+        } else {
+            null
+        }
         return when (result) {
             DownloadResultSelection.Overall -> ResultDownloadRequest.WholeTournament(
                 TournamentCsvExportInput(
@@ -854,6 +875,7 @@ class DownloadResultViewModel @Inject constructor(
                     matches = matches,
                     teamSlots = teamSlots,
                     rosterPlayers = rosterPlayers,
+                    groupRotationV4OverallImageInput = groupRotationV4OverallImageInput,
                 ),
             )
             is DownloadResultSelection.Match -> matches.firstOrNull { it.id == result.matchId }

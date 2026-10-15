@@ -212,11 +212,8 @@ private fun MatchPlacementRow(
             .testTag(MATCH_PLACEMENT_ROW_TEST_TAG_PREFIX + row.teamSlotNumber),
     ) {
         Text(
-            text = stringResource(
-                R.string.match_placement_team_label,
-                row.teamSlotNumber,
+            text = row.lobbySlotNumber?.let { "Lobby ${it.toString().padStart(2, '0')} · " }.orEmpty() +
                 row.teamName.ifBlank { stringResource(R.string.empty_team_slot_subtitle) },
-            ),
             style = MaterialTheme.typography.bodyLarge,
         )
         if (row.playerNames.isNotEmpty()) {

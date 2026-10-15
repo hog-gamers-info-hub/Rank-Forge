@@ -83,16 +83,11 @@ class GroupPairing private constructor(
 fun Tournament.formatDerivedSlots(): List<TeamSlot> = when (format) {
     TournamentFormat.STANDARD -> TeamSlot.fixedSlotsForTournament(id)
     TournamentFormat.GROUP_ROTATION -> {
-        val groups = TournamentGroup.entries.take(requireNotNull(groupCount))
-        groups.flatMapIndexed { groupIndex, group ->
-            val firstSlot = groupIndex * MAX_TEAMS_PER_GROUP + 1
-            (firstSlot until firstSlot + MAX_TEAMS_PER_GROUP).map { slotNumber ->
-                TeamSlot.create(
-                    tournamentId = id,
-                    slotNumber = slotNumber,
-                    group = group,
-                )
-            }
+        (1..(requireNotNull(groupCount) * MAX_TEAMS_PER_GROUP)).map { slotNumber ->
+            TeamSlot.create(
+                tournamentId = id,
+                slotNumber = slotNumber,
+            )
         }
     }
 }

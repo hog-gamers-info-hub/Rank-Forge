@@ -7,6 +7,7 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -26,6 +27,7 @@ class CreateNextMatchUseCaseTest {
                 LocalDate.of(2026, 7, 24).atStartOfDay(ZoneOffset.UTC).toInstant(),
                 ZoneOffset.UTC,
             ),
+            repository,
         )
     }
 
@@ -134,6 +136,7 @@ class CreateNextMatchUseCaseTest {
             (useCase(tournamentId) as CreateNextMatchResult.Rejected).failure,
         )
 
+        saveGroupRotationMapping(tournamentId, pairing)
         val created = useCase(tournamentId, pairing).createdMatch()
         assertEquals(1, created.matchNumber)
         assertEquals(pairing, created.groupPairing)
@@ -144,12 +147,76 @@ class CreateNextMatchUseCaseTest {
         val tournamentId = "rotation-resting"
         val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
         repository.create(groupTournament(tournamentId))
-        repository.saveTeamNames(tournamentId, mapOf(19 to "Resting Team"))
-
-        assertEquals(
-            CreateNextMatchFailure.NO_PARTICIPATING_TEAMS,
-            (useCase(tournamentId, pairing) as CreateNextMatchResult.Rejected).failure,
+        saveGroupRotationMapping(tournamentId, pairing)
+        repository.saveTeamNames(
+            tournamentId,
+            mapOf(19 to "Resting Team"),
         )
+
+        assertTrue(useCase(tournamentId, pairing) is CreateNextMatchResult.Created)
+    }
+
+    @Test
+    fun groupRotationRoutesThroughUuidNativeCreationBoundary() = runTest {
+        val tournamentId = "rotation-uuid-routing"
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        repository.create(groupTournament(tournamentId))
+        val identity = GroupRotationTeamIdentity(
+            tournamentId = tournamentId,
+            teamUUID = "00000000-0000-0000-0000-000000000001",
+            displayName = "Alpha",
+            normalizedName = "alpha",
+        )
+        val identityRepository = object : GroupRotationTeamIdentityLocalRepository {
+            override suspend fun read(tournament: Tournament) =
+                GroupRotationTeamIdentityReadResult.Loaded(
+                    GroupRotationTeamIdentityLocalSnapshot(
+                        teams = listOf(identity),
+                        assignments = listOf(
+                            GroupRotationPairingAssignment(
+                                tournamentId = tournamentId,
+                                pairingKey = pairing,
+                                lobbySlotNumber = 3,
+                                teamUUID = identity.teamUUID,
+                            ),
+                        ),
+                    ),
+                )
+
+            override suspend fun savePairing(
+                tournament: Tournament,
+                pairingKey: GroupPairing,
+                entries: List<GroupRotationPairingTeamIdentityEntry>,
+            ) = GroupRotationTeamIdentityWriteResult.Unsupported
+
+            override suspend fun renameTeam(
+                tournament: Tournament,
+                teamUUID: String,
+                displayName: String,
+            ) = GroupRotationTeamIdentityWriteResult.Unsupported
+        }
+        val routingRepository = RecordingGroupRotationCreationRepository(repository)
+        val routed = CreateNextMatchUseCase(
+            repository = routingRepository,
+            authRepository = SignedInTournamentTestAuthRepository(),
+            clock = Clock.fixed(
+                LocalDate.of(2026, 7, 24).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                ZoneOffset.UTC,
+            ),
+            matchIdentityContextRepository = repository,
+            groupRotationMatchCreation = CreateGroupRotationMatchUseCase(
+                repository = routingRepository,
+                identityRepository = identityRepository,
+                authRepository = SignedInTournamentTestAuthRepository(),
+                clock = Clock.systemUTC(),
+            ),
+        )
+
+        val result = routed(tournamentId, pairing)
+
+        assertTrue(result is CreateNextMatchResult.Created)
+        assertTrue(routingRepository.uuidCreationCalled)
+        assertFalse(routingRepository.legacyCreationCalled)
     }
 
     private suspend fun createReadyTournament(id: String) {
@@ -165,6 +232,27 @@ class CreateNextMatchUseCaseTest {
                 date = LocalDate.of(2026, 7, 24),
                 mapName = "Bermuda",
             ),
+        )
+    }
+
+    private suspend fun saveGroupRotationMapping(
+        tournamentId: String,
+        pairing: GroupPairing,
+    ) {
+        val canonicalSlots = listOf(14, 3, 18, 1, 16, 5, 6, 15, 2, 17, 4, 13)
+        repository.saveTeamNames(
+            tournamentId,
+            canonicalSlots.associateWith { slot -> "Team $slot" },
+        )
+        repository.replaceGroupRotationPairingLobbySlots(
+            canonicalSlots.mapIndexed { index, teamSlotNumber ->
+                GroupRotationPairingLobbySlot(
+                    tournamentId = tournamentId,
+                    pairing = pairing,
+                    lobbySlotNumber = index + 1,
+                    teamSlotNumber = teamSlotNumber,
+                )
+            },
         )
     }
 
@@ -193,4 +281,28 @@ class CreateNextMatchUseCaseTest {
             GroupPairing(TournamentGroup.A, TournamentGroup.C),
         ),
     )
+
+    private class RecordingGroupRotationCreationRepository(
+        private val delegate: InMemoryTournamentRepository,
+    ) : TournamentRepository by delegate {
+        var uuidCreationCalled = false
+        var legacyCreationCalled = false
+
+        override suspend fun createDraftMatchByOwner(
+            match: Match,
+            ownerUserId: String,
+        ): CreateMatchRepositoryResult {
+            legacyCreationCalled = true
+            return CreateMatchRepositoryResult.Rejected(MatchCreationFailure.INVALID_GROUP_PAIRING)
+        }
+
+        override suspend fun createGroupRotationMatchByOwner(
+            match: Match,
+            snapshot: GroupRotationMatchIdentitySnapshot,
+            ownerUserId: String,
+        ): GroupRotationMatchCreationRepositoryResult {
+            uuidCreationCalled = true
+            return GroupRotationMatchCreationRepositoryResult.Created(snapshot)
+        }
+    }
 }

@@ -9,6 +9,9 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRowSource
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionReason
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionStatus
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.MatchLobbyTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -146,11 +149,12 @@ class MatchResultLobbyOcrSlotRankerTest {
         val result = MatchResultLobbyOcrSlotRanker.rank(
             resultRow = resultRow(position = 4, playerNames = rosterPlayers(13)),
             lobbyOcrResult = lobbyResult(
-                overrides = localLobbyToPermanentSlots(eligibleSlots),
+                overrides = groupRotationLobbyOverrides(),
             ),
             eligibleTeamSlots = eligibleSlots,
             permanentTeamCandidates = rosterCandidates(eligibleSlots),
             allRosterTeamCandidates = rosterCandidates(1..24),
+            matchIdentityContext = acGroupRotationContext(),
         )
 
         assertEquals(eligibleSlots, result.slotVoteScores.map { it.teamSlot })
@@ -158,33 +162,51 @@ class MatchResultLobbyOcrSlotRankerTest {
     }
 
     @Test
+    fun rankUsesPersistedArbitraryLobbyOrderForCanonicalTeam18() {
+        val context = exactScenarioIdentityContext()
+        val result = MatchResultLobbyOcrSlotRanker.rank(
+            resultRow = resultRow(position = 1, playerNames = rosterPlayers(18)),
+            lobbyOcrResult = lobbyResult(overrides = mapOf(3 to rosterPlayers(18))),
+            eligibleTeamSlots = context.eligibleTeamSlotNumbers,
+            allRosterTeamCandidates = rosterCandidates(1..24),
+            matchIdentityContext = context,
+        )
+
+        assertEquals(18, result.automaticAssignedTeamSlot)
+        assertEquals(18, result.rankedCandidates.suggestions.first().teamCandidateScore.candidateTeamSlot)
+        assertTrue(result.slotVoteScores.none { it.teamSlot == 3 && it.voteCount > 0 })
+    }
+
+    @Test
     fun rankGroupRotationLocalLobbySlotOneDoesNotMeanPermanentSlotOne() {
         val result = MatchResultLobbyOcrSlotRanker.rank(
-            resultRow = resultRow(position = 4, playerNames = rosterPlayers(13)),
-            lobbyOcrResult = lobbyResult(overrides = mapOf(1 to rosterPlayers(13))),
+            resultRow = resultRow(position = 4, playerNames = rosterPlayers(14)),
+            lobbyOcrResult = lobbyResult(overrides = mapOf(1 to rosterPlayers(14))),
             eligibleTeamSlots = (1..6).toList() + (13..18).toList(),
             permanentTeamCandidates = rosterCandidates((1..6).toList() + (13..18).toList()),
             allRosterTeamCandidates = rosterCandidates(1..24),
+            matchIdentityContext = acGroupRotationContext(),
         )
 
-        assertEquals(13, result.rankedCandidates.suggestions.first().teamCandidateScore.candidateTeamSlot)
-        assertEquals(13, result.automaticAssignedTeamSlot)
-        assertTrue(result.slotVoteScores.any { it.teamSlot == 13 })
+        assertEquals(14, result.rankedCandidates.suggestions.first().teamCandidateScore.candidateTeamSlot)
+        assertEquals(14, result.automaticAssignedTeamSlot)
+        assertTrue(result.slotVoteScores.any { it.teamSlot == 14 })
         assertTrue(result.slotVoteScores.none { it.teamSlot == 1 && it.voteCount > 0 })
     }
 
     @Test
     fun rankGroupRotationLocalLobbySlotSevenDoesNotMeanPermanentSlotThirteen() {
         val result = MatchResultLobbyOcrSlotRanker.rank(
-            resultRow = resultRow(position = 4, playerNames = rosterPlayers(18)),
-            lobbyOcrResult = lobbyResult(overrides = mapOf(7 to rosterPlayers(18))),
+            resultRow = resultRow(position = 4, playerNames = rosterPlayers(6)),
+            lobbyOcrResult = lobbyResult(overrides = mapOf(7 to rosterPlayers(6))),
             eligibleTeamSlots = (1..6).toList() + (13..18).toList(),
             permanentTeamCandidates = rosterCandidates((1..6).toList() + (13..18).toList()),
             allRosterTeamCandidates = rosterCandidates(1..24),
+            matchIdentityContext = acGroupRotationContext(),
         )
 
-        assertEquals(18, result.rankedCandidates.suggestions.first().teamCandidateScore.candidateTeamSlot)
-        assertEquals(18, result.automaticAssignedTeamSlot)
+        assertEquals(6, result.rankedCandidates.suggestions.first().teamCandidateScore.candidateTeamSlot)
+        assertEquals(6, result.automaticAssignedTeamSlot)
         assertTrue(result.slotVoteScores.none { it.teamSlot == 13 && it.voteCount > 0 })
     }
 
@@ -192,10 +214,11 @@ class MatchResultLobbyOcrSlotRankerTest {
     fun rankGroupRotationUsesRosterEvidenceForCGroupAtArbitraryLobbyPosition() {
         val result = MatchResultLobbyOcrSlotRanker.rank(
             resultRow = resultRow(position = 4, playerNames = rosterPlayers(16)),
-            lobbyOcrResult = lobbyResult(overrides = mapOf(11 to rosterPlayers(16))),
+            lobbyOcrResult = lobbyResult(overrides = mapOf(5 to rosterPlayers(16))),
             eligibleTeamSlots = (1..6).toList() + (13..18).toList(),
             permanentTeamCandidates = rosterCandidates((1..6).toList() + (13..18).toList()),
             allRosterTeamCandidates = rosterCandidates(1..24),
+            matchIdentityContext = acGroupRotationContext(),
         )
 
         assertEquals(16, result.automaticAssignedTeamSlot)
@@ -210,11 +233,14 @@ class MatchResultLobbyOcrSlotRankerTest {
             eligibleTeamSlots = (1..6).toList() + (13..18).toList(),
             permanentTeamCandidates = rosterCandidates((1..6).toList() + (13..18).toList()),
             allRosterTeamCandidates = rosterCandidates(1..24),
+            matchIdentityContext = acGroupRotationContext(),
         )
 
         assertNull(result.automaticAssignedTeamSlot)
         assertNull(result.proposedTeamSlot)
-        assertTrue(result.rankedCandidates.suggestions.isEmpty())
+        assertTrue(result.rankedCandidates.suggestions.none {
+            it.teamCandidateScore.contributingMatchCount > 0
+        })
         assertEquals(ResultLobbySlotDecisionStatus.MANUAL, result.decisionStatus)
     }
 
@@ -235,6 +261,7 @@ class MatchResultLobbyOcrSlotRankerTest {
             eligibleTeamSlots = (1..6).toList() + (13..18).toList(),
             permanentTeamCandidates = rosterCandidates((1..6).toList() + (13..18).toList()),
             allRosterTeamCandidates = rosterCandidates(1..24),
+            matchIdentityContext = acGroupRotationContext(),
         )
 
         assertNull(result.automaticAssignedTeamSlot)
@@ -348,10 +375,28 @@ class MatchResultLobbyOcrSlotRankerTest {
     private fun slotToken(slot: Int): String =
         ('A'.code + slot - 1).toChar().toString().repeat(8)
 
-    private fun localLobbyToPermanentSlots(eligibleSlots: List<Int>): Map<Int, List<String?>> =
-        eligibleSlots.mapIndexed { index, permanentSlot ->
-            (index + 1) to rosterPlayers(permanentSlot)
-        }.toMap()
+    private fun acGroupRotationContext(): MatchTeamIdentityContext = MatchTeamIdentityContext(
+        tournamentId = "tournament",
+        pairing = GroupPairing.fromCanonicalKey("A:C"),
+        teams = listOf(14, 3, 18, 13, 16, 5, 6, 15, 2, 17, 4, 1)
+            .mapIndexed { index, teamSlot ->
+                MatchLobbyTeamIdentity(index + 1, teamSlot)
+            },
+    )
+
+    private fun exactScenarioIdentityContext(): MatchTeamIdentityContext = MatchTeamIdentityContext(
+        tournamentId = "tournament",
+        pairing = GroupPairing.fromCanonicalKey("A:C"),
+        teams = listOf(14, 3, 18, 7, 16, 5, 6, 15, 2, 17, 4, 13)
+            .mapIndexed { index, teamSlot ->
+                MatchLobbyTeamIdentity(index + 1, teamSlot)
+            },
+    )
+
+    private fun groupRotationLobbyOverrides(): Map<Int, List<String?>> =
+        acGroupRotationContext().orderedTeams.associate { identity ->
+            identity.lobbySlotNumber to rosterPlayers(identity.teamSlotNumber)
+        }
 
     private companion object {
         val exactPlayers = listOf<String?>(

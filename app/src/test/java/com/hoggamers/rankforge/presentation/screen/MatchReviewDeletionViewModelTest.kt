@@ -41,8 +41,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -111,6 +113,7 @@ class MatchReviewDeletionViewModelTest {
         assertNull(viewModel.uiState.value.navigation)
         assertEquals(MatchDeletionUiError.STORAGE_FAILURE, viewModel.uiState.value.deletionError)
         assertFalse(viewModel.uiState.value.isDeleting)
+        assertTrue(viewModel.uiState.value.isAvailable)
     }
 
     @Test
@@ -194,6 +197,41 @@ class MatchReviewDeletionViewModelTest {
         )
     }
 
+    @Test
+    fun missingMatchEmissionDuringDeletionKeepsReviewStateUntilDetailsNavigation() = runTest {
+        val cloud = RecordingCloud()
+        val local = RecordingLocal(onDeleted = { repository.removeMatch("match-1") })
+        val viewModel = viewModel(cloud = cloud, local = local)
+        viewModel.load("tournament-1", "match-1")
+        advanceUntilIdle()
+
+        viewModel.deleteMatch()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isAvailable)
+        assertFalse(viewModel.uiState.value.isNotFound)
+        assertEquals(MatchReviewNavigation.DETAILS, viewModel.uiState.value.navigation)
+
+        viewModel.onNavigationHandled()
+        repository.removeMatch("match-3")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isAvailable)
+        assertFalse(viewModel.uiState.value.isNotFound)
+    }
+
+    @Test
+    fun normalMissingMatchStillShowsNotFound() = runTest {
+        repository.removeMatch("match-1")
+        val viewModel = viewModel()
+
+        viewModel.load("tournament-1", "match-1")
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isAvailable)
+        assertTrue(viewModel.uiState.value.isNotFound)
+        assertNull(viewModel.uiState.value.navigation)
+    }
+
     private fun viewModel(
         cloud: RecordingCloud = RecordingCloud(),
         local: RecordingLocal = RecordingLocal(),
@@ -247,6 +285,11 @@ private class TestTournamentRepository : TournamentRepository {
         status = MatchStatus.DRAFT,
     )
     private val survivingMatch = match.copy(id = "match-3", matchNumber = 3)
+    private val matches = MutableStateFlow(listOf(match, survivingMatch))
+
+    fun removeMatch(matchId: String) {
+        matches.value = matches.value.filterNot { it.id == matchId }
+    }
 
     override suspend fun create(tournament: Tournament) = Unit
     override fun observeAll(): Flow<List<Tournament>> = flowOf(listOf(tournament))
@@ -258,7 +301,7 @@ private class TestTournamentRepository : TournamentRepository {
     override suspend fun saveRoster(tournamentId: String, slotNumber: Int, players: List<RosterPlayer>) = Unit
     override suspend fun confirmTournament(tournamentId: String): Boolean = false
     override fun observeMatchesByTournamentId(tournamentId: String): Flow<List<Match>> =
-        flowOf(listOf(match, survivingMatch).filter { it.tournamentId == tournamentId })
+        matches.map { values -> values.filter { it.tournamentId == tournamentId } }
     override fun observeMatchById(matchId: String): Flow<Match?> = flowOf(match.takeIf { it.id == matchId })
 }
 
@@ -300,19 +343,25 @@ private class RecordingCloud : CloudDeletionRepository {
     override suspend fun deleteTournamentRemote(tournamentId: String): CloudDeletionStageResult = CloudDeletionStageResult.Success
 }
 
-private class RecordingLocal : LocalDeletionRepository {
+private class RecordingLocal(
+    private val onDeleted: () -> Unit = {},
+) : LocalDeletionRepository {
     val results = mutableListOf<LocalDeletionResult>()
     var calls = 0
     override suspend fun deleteMatchLocally(matchId: String): LocalDeletionResult {
         calls++
-        return results.removeFirstOrNull() ?: LocalDeletionResult.Deleted
+        val result = results.removeFirstOrNull() ?: LocalDeletionResult.Deleted
+        if (result == LocalDeletionResult.Deleted) onDeleted()
+        return result
     }
     override suspend fun deleteMatchLocallyByOwner(
         matchId: String,
         ownerUserId: String,
     ): LocalDeletionResult {
         calls++
-        return results.removeFirstOrNull() ?: LocalDeletionResult.Deleted
+        val result = results.removeFirstOrNull() ?: LocalDeletionResult.Deleted
+        if (result == LocalDeletionResult.Deleted) onDeleted()
+        return result
     }
 
     override suspend fun deleteTournamentLocally(tournamentId: String): LocalDeletionResult = LocalDeletionResult.Deleted

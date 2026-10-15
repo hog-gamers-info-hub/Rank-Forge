@@ -161,6 +161,22 @@ class OwnerScopedMatchDraftMutationUseCasesTest {
     }
 
     @Test
+    fun invalidDraftValueIsReturnedAsTypedRejection() = runTest {
+        val repository = RecordingRepository(
+            ownerUserId = OWNER_A,
+            draftValueResult = OwnerScopedMatchMutationResult.InvalidData,
+        )
+
+        assertEquals(
+            SaveMatchDraftValueResult.InvalidData,
+            SaveMatchDraftValueUseCase(repository, auth(OWNER_A))(
+                SaveMatchDraftValueInput(TOURNAMENT_A, MATCH_A, 14, placementInput = "1"),
+            ),
+        )
+        assertNull(repository.draftValueOwnerUserId)
+    }
+
+    @Test
     fun dualIdDraftMutationsRejectUnauthenticatedForeignNullAndMismatchedTargets() = runTest {
         val commands: suspend (RecordingRepository, AuthRepository, String, String) -> Any = { repository, auth, tournamentId, matchId ->
             SaveMatchDraftValueUseCase(repository, auth)(
@@ -234,6 +250,7 @@ class OwnerScopedMatchDraftMutationUseCasesTest {
     private class RecordingRepository(
         private val ownerUserId: String?,
         private val matches: List<Match> = listOf(match()),
+        private val draftValueResult: OwnerScopedMatchMutationResult? = null,
     ) : TournamentRepository {
         var createOwnerUserId: String? = null
         var placementsOwnerUserId: String? = null
@@ -281,7 +298,7 @@ class OwnerScopedMatchDraftMutationUseCasesTest {
                 killsOwnerUserId = ownerUserId; SaveMatchKillsRepositoryResult.Saved
             }
         override suspend fun saveDraftMatchValueByOwner(tournamentId: String, matchId: String, ownerUserId: String, teamSlotNumber: Int, placementInput: String?, killsInput: String?, pointAdjustment: Int?): OwnerScopedMatchMutationResult =
-            dualResult(tournamentId, matchId, ownerUserId) { draftValueOwnerUserId = it }
+            draftValueResult ?: dualResult(tournamentId, matchId, ownerUserId) { draftValueOwnerUserId = it }
         override suspend fun clearDraftMatchByOwner(tournamentId: String, matchId: String, ownerUserId: String): OwnerScopedMatchMutationResult =
             dualResult(tournamentId, matchId, ownerUserId) { clearDraftOwnerUserId = it }
         override suspend fun clearMatchCorrectionDraftByOwner(tournamentId: String, matchId: String, ownerUserId: String): OwnerScopedMatchMutationResult =

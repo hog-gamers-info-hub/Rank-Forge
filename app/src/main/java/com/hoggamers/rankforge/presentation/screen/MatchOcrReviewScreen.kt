@@ -356,6 +356,8 @@ private fun MatchOcrReviewEmptyState(
                 MatchOcrReviewLobbyPlayersSection(
                     lobbyPlayers = uiState.lobbyPlayers,
                     teamNamesBySlot = uiState.teamNamesBySlot,
+                    lobbySlotByTeamSlot = uiState.lobbySlotByTeamSlot,
+                    usesPairRelativeIdentity = uiState.usesPairRelativeIdentity,
                 )
             }
             if (hasUsefulPreview) {
@@ -364,6 +366,8 @@ private fun MatchOcrReviewEmptyState(
                     reviewRowsByPosition = emptyMap(),
                     teamNamesBySlot = emptyMap(),
                     eligibleTeamSlots = uiState.eligibleTeamSlots,
+                    lobbySlotByTeamSlot = uiState.lobbySlotByTeamSlot,
+                    usesPairRelativeIdentity = uiState.usesPairRelativeIdentity,
                 )
             } else {
                 MatchResultOcrPreviewSection(preview)
@@ -432,6 +436,8 @@ private fun MatchOcrReviewReadyState(
                 MatchOcrReviewLobbyPlayersSection(
                     lobbyPlayers = uiState.lobbyPlayers,
                     teamNamesBySlot = uiState.teamNamesBySlot,
+                    lobbySlotByTeamSlot = uiState.lobbySlotByTeamSlot,
+                    usesPairRelativeIdentity = uiState.usesPairRelativeIdentity,
                 )
             }
             MatchOcrReviewResultContent(
@@ -458,6 +464,8 @@ private fun MatchOcrReviewReadyState(
 internal fun MatchOcrReviewLobbyPlayersSection(
     lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
     teamNamesBySlot: Map<Int, String>,
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -473,6 +481,8 @@ internal fun MatchOcrReviewLobbyPlayersSection(
             MatchOcrReviewLobbySlotContent(
                 slot = slot,
                 teamNamesBySlot = teamNamesBySlot,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
             )
         }
     }
@@ -482,10 +492,20 @@ internal fun MatchOcrReviewLobbyPlayersSection(
 internal fun MatchOcrReviewLobbySlotContent(
     slot: MatchOcrReviewLobbySlotUiState,
     teamNamesBySlot: Map<Int, String>,
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
 ) {
-    val teamName = teamNamesBySlot[slot.slotNumber]
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
+    val canonicalTeamSlot = if (usesPairRelativeIdentity) {
+        canonicalTeamSlotForLobby(slot.slotNumber, lobbySlotByTeamSlot)
+    } else {
+        slot.slotNumber
+    }
+    val teamName = displayTeamIdentityLabel(
+        teamSlot = canonicalTeamSlot,
+        teamNamesBySlot = teamNamesBySlot,
+        lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+        usesPairRelativeIdentity = usesPairRelativeIdentity,
+    ).takeIf { it.isNotBlank() }
         ?: stringResource(R.string.match_ocr_review_compact_not_named)
     LobbyPlayerNamePresentation(
         slotNumber = slot.slotNumber,
@@ -644,6 +664,8 @@ internal fun MatchOcrReviewResultContent(
                     previewRow = previewRowsByPosition[row.rowIndex + 1],
                     teamNamesBySlot = uiState.teamNamesBySlot,
                     eligibleTeamSlots = uiState.eligibleTeamSlots,
+                    lobbySlotByTeamSlot = uiState.lobbySlotByTeamSlot,
+                    usesPairRelativeIdentity = uiState.usesPairRelativeIdentity,
                     correctionDraft = correctionRowsByIndex[row.rowIndex],
                     onPlacementChanged = onPlacementChanged,
                     onKillsChanged = onKillsChanged,
@@ -679,6 +701,8 @@ internal fun MatchOcrReviewCompactPreviewList(
     reviewRowsByPosition: Map<Int, MatchOcrReviewRowUiState>,
     teamNamesBySlot: Map<Int, String>,
     eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -692,6 +716,8 @@ internal fun MatchOcrReviewCompactPreviewList(
                 reviewRow = reviewRowsByPosition[previewRow.position],
                 teamNamesBySlot = teamNamesBySlot,
                 eligibleTeamSlots = eligibleTeamSlots,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
             )
             if (index < preview.rows.lastIndex) HorizontalDivider()
         }
@@ -704,6 +730,8 @@ internal fun MatchOcrReviewCompactRow(
     reviewRow: MatchOcrReviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
     eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
     onCompactDelete: (() -> Unit)? = null,
     compactDeleteEnabled: Boolean = true,
     compactDeleteTestTag: String? = null,
@@ -725,12 +753,39 @@ internal fun MatchOcrReviewCompactRow(
     val suggestedSlot = reviewRow?.suggestedTeamSlotDisplayValue
         ?.toIntOrNull()
         ?.takeIf { it in eligibleTeamSlots }
-    val slotLabel = suggestedSlot?.toString()
-        ?: stringResource(R.string.match_ocr_review_compact_not_matched)
-    val teamNameLabel = if (suggestedSlot == null) {
-        stringResource(R.string.match_ocr_review_compact_not_matched)
+    val correctedSlot = correctionDraft
+        ?.assignedTeamSlotDraftValue
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it in eligibleTeamSlots }
+    val displayedSlot = if (correctionDraft == null) suggestedSlot else correctedSlot
+    val identityLabel = if (correctionDraft == null) {
+        reviewRow?.teamIdentityDisplayValue
+            ?: displayTeamIdentityLabel(
+                teamSlot = displayedSlot,
+                teamNamesBySlot = teamNamesBySlot,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
+            )
     } else {
-        teamNamesBySlot[suggestedSlot]
+        displayTeamIdentityLabel(
+            teamSlot = displayedSlot,
+            teamNamesBySlot = teamNamesBySlot,
+            lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+            usesPairRelativeIdentity = usesPairRelativeIdentity,
+        )
+    }
+    val slotLabel = if (usesPairRelativeIdentity) {
+        identityLabel
+    } else {
+        displayedSlot?.toString() ?: stringResource(R.string.match_ocr_review_compact_not_matched)
+    }
+    val teamNameLabel = if (displayedSlot == null) {
+        stringResource(R.string.match_ocr_review_compact_not_matched)
+    } else if (usesPairRelativeIdentity) {
+        identityLabel
+    } else {
+        teamNamesBySlot[displayedSlot]
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?: stringResource(R.string.match_ocr_review_compact_not_named)
@@ -1174,6 +1229,8 @@ internal fun MatchOcrReviewRow(
     previewRow: MatchResultOcrPreviewRowUiState?,
     teamNamesBySlot: Map<Int, String>,
     eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
     correctionDraft: MatchOcrReviewRowCorrectionDraft?,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
@@ -1224,6 +1281,8 @@ internal fun MatchOcrReviewRow(
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
                 eligibleTeamSlots = eligibleTeamSlots,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = effectiveCorrectionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
@@ -1245,6 +1304,8 @@ internal fun MatchOcrReviewRow(
                 row = row,
                 teamNamesBySlot = teamNamesBySlot,
                 eligibleTeamSlots = eligibleTeamSlots,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
                 correctionDraft = correctionDraft,
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = effectiveCorrectionEnabled,
@@ -1263,6 +1324,8 @@ internal fun MatchOcrReviewRow(
                 reviewRow = row,
                 teamNamesBySlot = teamNamesBySlot,
                 eligibleTeamSlots = eligibleTeamSlots,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
                 onCompactDelete = compactDeleteCallback,
                 compactDeleteEnabled = effectiveCorrectionEnabled,
                 compactDeleteTestTag = compactDeleteTestTag,
@@ -1300,6 +1363,9 @@ internal fun MatchOcrReviewRow(
                 compactFieldRow = compactFieldRow,
                 showBlockerDetails = showBlockerDetails,
                 showResetRowCorrectionAction = !compactResetAction,
+                teamNamesBySlot = teamNamesBySlot,
+                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                usesPairRelativeIdentity = usesPairRelativeIdentity,
             )
         }
     }
@@ -1355,6 +1421,8 @@ private fun MatchOcrReviewMissingPreviewRow(
     row: MatchOcrReviewRowUiState,
     teamNamesBySlot: Map<Int, String>,
     eligibleTeamSlots: Set<Int> = TeamSlot.SLOT_NUMBERS.toSet(),
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
     correctionDraft: MatchOcrReviewRowCorrectionDraft?,
     onCompactDelete: (() -> Unit)? = null,
     compactDeleteEnabled: Boolean = true,
@@ -1377,10 +1445,12 @@ private fun MatchOcrReviewMissingPreviewRow(
     val teamName = if (assignedSlot == null) {
         stringResource(R.string.match_ocr_review_compact_not_matched)
     } else {
-        teamNamesBySlot[assignedSlot]
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.match_ocr_review_compact_not_named)
+        displayTeamIdentityLabel(
+            teamSlot = assignedSlot,
+            teamNamesBySlot = teamNamesBySlot,
+            lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+            usesPairRelativeIdentity = usesPairRelativeIdentity,
+        )
     }
 
     Column(
@@ -1629,6 +1699,9 @@ private fun MatchOcrReviewCorrectionFields(
     showBlockerDetails: Boolean = true,
     showResetRowCorrectionAction: Boolean = true,
     availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
+    teamNamesBySlot: Map<Int, String> = emptyMap(),
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
 ) {
     val placementField: @Composable (Modifier) -> Unit = { modifier ->
         CompactOcrNumberField(
@@ -1684,9 +1757,28 @@ private fun MatchOcrReviewCorrectionFields(
     }
     val teamSlotField: @Composable (Modifier) -> Unit = { modifier ->
         CompactOcrNumberField(
-            value = correctionDraft.assignedTeamSlotDraftValue,
-            onValueChange = { onAssignedTeamSlotChanged(correctionDraft.rowIndex, it) },
-            enabled = correctionEnabled,
+            value = if (usesPairRelativeIdentity) {
+                correctionDraft.assignedTeamSlotDraftValue
+                    .trim()
+                    .toIntOrNull()
+                    ?.let { slot ->
+                        displayTeamIdentityLabel(
+                            teamSlot = slot,
+                            teamNamesBySlot = teamNamesBySlot,
+                            lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                            usesPairRelativeIdentity = true,
+                        )
+                    }
+                    ?: "Unassigned"
+            } else {
+                correctionDraft.assignedTeamSlotDraftValue
+            },
+            onValueChange = {
+                if (!usesPairRelativeIdentity) {
+                    onAssignedTeamSlotChanged(correctionDraft.rowIndex, it)
+                }
+            },
+            enabled = correctionEnabled && !usesPairRelativeIdentity,
             label = {
                 Text(
                     text = stringResource(
@@ -1745,10 +1837,19 @@ private fun MatchOcrReviewCorrectionFields(
             ) {
                 availableTeamSlotOptions.forEach { option ->
                     Text(
-                        text = stringResource(
-                            R.string.match_ocr_review_remaining_team_slot,
-                            option.teamSlot,
-                        ),
+                        text = if (usesPairRelativeIdentity) {
+                            displayTeamIdentityLabel(
+                                teamSlot = option.teamSlot,
+                                teamNamesBySlot = teamNamesBySlot,
+                                lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                                usesPairRelativeIdentity = true,
+                            )
+                        } else {
+                            stringResource(
+                                R.string.match_ocr_review_remaining_team_slot,
+                                option.teamSlot,
+                            )
+                        },
                         color = if (compactFieldRow) PointIqOcrReviewHeader else Color.Unspecified,
                         modifier = Modifier
                             .testTag(

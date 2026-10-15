@@ -27,6 +27,10 @@ class CreateNextMatchUseCase(
     private val repository: TournamentRepository,
     private val authRepository: AuthRepository,
     private val clock: Clock,
+    private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
+        NoOpMatchTeamIdentityContextRepositoryForCreate,
+    /** Production DI supplies the UUID-native Group Rotation creation boundary. */
+    private val groupRotationMatchCreation: CreateGroupRotationMatchUseCase? = null,
 ) {
     constructor(repository: TournamentRepository) : this(
         repository,
@@ -49,6 +53,26 @@ class CreateNextMatchUseCase(
         val tournament = repository.observeByIdAndOwner(tournamentId, ownerUserId).first()
             ?: return CreateNextMatchResult.Rejected(CreateNextMatchFailure.TOURNAMENT_NOT_FOUND)
 
+        if (tournament.format == TournamentFormat.GROUP_ROTATION && groupRotationMatchCreation != null) {
+            val pairing = groupPairing
+                ?: return CreateNextMatchResult.Rejected(CreateNextMatchFailure.INVALID_GROUP_PAIRING)
+            return when (
+                val result = groupRotationMatchCreation(
+                    GroupRotationMatchCreationInput(
+                        tournamentId = tournamentId,
+                        pairing = pairing,
+                        date = LocalDate.now(clock),
+                        mapName = "",
+                    ),
+                )
+            ) {
+                is GroupRotationMatchCreationResult.Created ->
+                    CreateNextMatchResult.Created(result.match)
+                is GroupRotationMatchCreationResult.Rejected ->
+                    CreateNextMatchResult.Rejected(result.failure.toNextMatchFailure())
+            }
+        }
+
         val persistedSlots = repository
             .observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId)
             .first()
@@ -61,10 +85,19 @@ class CreateNextMatchUseCase(
             status = MatchStatus.DRAFT,
             groupPairing = groupPairing,
         )
-        val eligibleSlotNumbers = runCatching {
-            MatchEligibleTeamSlotResolver().resolve(tournament, persistedSlots, provisionalMatch)
-        }.getOrElse {
-            return CreateNextMatchResult.Rejected(CreateNextMatchFailure.INVALID_GROUP_PAIRING)
+        val eligibleSlotNumbers = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+            val pairing = groupPairing
+                ?: return CreateNextMatchResult.Rejected(CreateNextMatchFailure.INVALID_GROUP_PAIRING)
+            when (val context = matchIdentityContextRepository.readForPairing(tournamentId, pairing, ownerUserId)) {
+                is MatchTeamIdentityContextReadResult.Loaded -> context.context.eligibleTeamSlotNumbers
+                else -> return CreateNextMatchResult.Rejected(CreateNextMatchFailure.INVALID_GROUP_PAIRING)
+            }
+        } else {
+            runCatching {
+                MatchEligibleTeamSlotResolver().resolve(tournament, persistedSlots, provisionalMatch)
+            }.getOrElse {
+                return CreateNextMatchResult.Rejected(CreateNextMatchFailure.INVALID_GROUP_PAIRING)
+            }
         }
         val participation = persistedSlots.analyzeTeamSlotParticipation(eligibleSlotNumbers)
         if (participation.activeCount == 0) {
@@ -88,6 +121,31 @@ class CreateNextMatchUseCase(
             is CreateMatchRepositoryResult.Rejected -> CreateNextMatchResult.Rejected(result.toNextMatchFailure())
         }
     }
+}
+
+private fun GroupRotationMatchCreationFailure.toNextMatchFailure(): CreateNextMatchFailure = when (this) {
+    GroupRotationMatchCreationFailure.AUTHENTICATION_REQUIRED -> CreateNextMatchFailure.AUTHENTICATION_REQUIRED
+    GroupRotationMatchCreationFailure.TOURNAMENT_NOT_FOUND -> CreateNextMatchFailure.TOURNAMENT_NOT_FOUND
+    GroupRotationMatchCreationFailure.INVALID_PAIRING,
+    GroupRotationMatchCreationFailure.IDENTITY_NOT_READY,
+    GroupRotationMatchCreationFailure.INVALID_IDENTITY,
+    GroupRotationMatchCreationFailure.REPOSITORY_REJECTED,
+    -> CreateNextMatchFailure.INVALID_GROUP_PAIRING
+    GroupRotationMatchCreationFailure.EMPTY_PAIRING -> CreateNextMatchFailure.NO_PARTICIPATING_TEAMS
+    GroupRotationMatchCreationFailure.LIMIT_REACHED -> CreateNextMatchFailure.LIMIT_REACHED
+}
+
+private object NoOpMatchTeamIdentityContextRepositoryForCreate : MatchTeamIdentityContextRepository {
+    override suspend fun readForMatch(
+        matchId: String,
+        ownerUserId: String,
+    ): MatchTeamIdentityContextReadResult = MatchTeamIdentityContextReadResult.InvalidMapping
+
+    override suspend fun readForPairing(
+        tournamentId: String,
+        pairing: GroupPairing,
+        ownerUserId: String,
+    ): MatchTeamIdentityContextReadResult = MatchTeamIdentityContextReadResult.InvalidMapping
 }
 
 private fun CreateMatchRepositoryResult.Rejected.toNextMatchFailure(): CreateNextMatchFailure = when (reason) {

@@ -10,6 +10,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
@@ -177,9 +178,12 @@ data class MatchReviewUiState(
     val tournamentId: String? = null,
     val tournamentFormat: TournamentFormat? = null,
     val matchId: String? = null,
+    val groupPairing: GroupPairing? = null,
     val activeTeamCount: Int? = null,
     val finalizedParticipantSlotNumbers: Set<Int> = emptySet(),
     val matchNumber: Int? = null,
+    val isUuidBackedGroupRotation: Boolean = false,
+    val uuidFinalizationReady: Boolean = false,
     val nextMatchNumber: Int? = null,
     val existingMatchCount: Int? = null,
     val status: MatchStatus = MatchStatus.DRAFT,
@@ -196,6 +200,7 @@ data class MatchReviewUiState(
     val pendingNextMatchTeamCountConfirmation: TeamCountConfirmationUiState? = null,
     val isCreatingNextMatch: Boolean = false,
     val nextMatchCreationMessage: CalculatePointsMessage? = null,
+    val isLegacyFinalizedGroupRotation: Boolean = false,
     val nextMatchReviewRequest: MatchReviewRequest? = null,
     val selectedScreenshotUri: String? = null,
     val isPhotoPickerLaunchPending: Boolean = false,
@@ -241,6 +246,9 @@ data class MatchReviewUiState(
     val isValid: Boolean
         get() = isAvailable && validationErrors.isEmpty()
 
+    val canFinalize: Boolean
+        get() = isValid && (!isUuidBackedGroupRotation || uuidFinalizationReady)
+
     val canPrepareMatchCsvExport: Boolean
         get() = status == MatchStatus.FINALIZED && isValid
 
@@ -271,6 +279,9 @@ data class MatchReviewUiState(
 
     val isEditable: Boolean
         get() = isAvailable && status == MatchStatus.DRAFT
+
+    val isCorrectionAvailable: Boolean
+        get() = isAvailable && status == MatchStatus.FINALIZED && !isLegacyFinalizedGroupRotation
 
     val hasLinkedScreenshot: Boolean
         get() = isScreenshotLinked || linkedScreenshotUri != null
@@ -373,4 +384,5 @@ data class MatchReviewRowUiState(
     val killsInput: String = "",
     val pointAdjustment: Int = 0,
     val validationErrors: Set<MatchResultValidationError> = emptySet(),
+    val lobbySlotNumber: Int? = teamSlotNumber,
 )

@@ -19,6 +19,7 @@ import com.hoggamers.rankforge.domain.matching.TeamAssignmentSafetyStatus
 import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
 import com.hoggamers.rankforge.domain.matching.TeamMatchConfidenceTier
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrRow
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -71,6 +72,7 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
         permanentTeamCandidates: Collection<TeamCandidateRosterInput>? = null,
         allRosterTeamCandidates: Collection<TeamCandidateRosterInput> =
             permanentTeamCandidates.orEmpty(),
+        matchIdentityContext: MatchTeamIdentityContext? = null,
     ): List<MatchOcrReviewRowUiState>? {
         val rows = MatchResultOcrPreviewUiStateMapper.toReviewRows(preview) ?: return null
         val matchResults = resultRows.mapNotNull { resultRow ->
@@ -81,6 +83,7 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
                     eligibleTeamSlots = eligibleTeamSlots,
                     permanentTeamCandidates = permanentTeamCandidates,
                     allRosterTeamCandidates = allRosterTeamCandidates,
+                    matchIdentityContext = matchIdentityContext,
                 )
             }.getOrNull()
         }
@@ -105,19 +108,22 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
             val selected = result.confidenceAssessment.selectedSuggestion
             row.copy(
                 suggestedTeamSlotDisplayValue = safety.proposedTeamSlot?.toString() ?: "Unavailable",
+                teamIdentityDisplayValue = safety.proposedTeamSlot?.let { slot ->
+                    slotDisplayLabel(slot, matchIdentityContext)
+                },
                 originalSuggestedTeamSlot = automaticAssignedTeamSlot,
                 confidenceScoreDisplayValue = selected?.teamCandidateScore?.confidenceScore?.toString()
                     ?: "Unavailable",
                 confidenceTierLabel = result.confidenceAssessment.tier.toLabel(),
                 assignmentSafetyStatusLabel = safety.safetyStatus.toLabel(),
-                topThreeSuggestionsSummary = result.matchResult.rankedCandidates.toSummary(),
+                topThreeSuggestionsSummary = result.matchResult.rankedCandidates.toSummary(matchIdentityContext),
                 resultLobbyVoteEvidencePresent = true,
                 resultLobbyWinningVotePercentDisplayValue = result.winningVotePercent
                     ?.let { "$it%" }
                     ?: "Unavailable",
                 resultLobbyDecisionLabel = result.decisionStatus.toVoteLabel(),
                 resultLobbyDecisionReasonLabel = result.decisionReason.toVoteReasonLabel(),
-                resultLobbyVoteSummary = result.matchResult.slotVoteScores.toVoteSummary(),
+                resultLobbyVoteSummary = result.matchResult.slotVoteScores.toVoteSummary(matchIdentityContext),
                 resultLobbyTeamSlotCandidates = result.matchResult.slotVoteScores.map { score ->
                     MatchOcrReviewTeamSlotCandidateUiState(
                         teamSlot = score.teamSlot,
@@ -150,11 +156,14 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
         TeamMatchConfidenceTier.MANUAL_REQUIRED -> "Manual required"
     }
 
-    private fun com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestions.toSummary(): List<String> {
+    private fun com.hoggamers.rankforge.domain.matching.TopTeamCandidateSuggestions.toSummary(
+        identityContext: MatchTeamIdentityContext?,
+    ): List<String> {
         if (suggestions.isEmpty()) return listOf("No suggestions")
         return suggestions.take(3).map { suggestion ->
             val score = suggestion.teamCandidateScore
-            "Rank ${suggestion.rank}: Slot ${score.candidateTeamSlot}, confidence ${score.confidenceScore}, " +
+            "Rank ${suggestion.rank}: ${slotDisplayLabel(score.candidateTeamSlot, identityContext)}, " +
+                "confidence ${score.confidenceScore}, " +
                 "matches ${score.contributingMatchCount}, coverage ${score.coverageScore}"
         }
     }
@@ -175,13 +184,22 @@ object MatchResultOcrPreviewTeamSuggestionMapper {
             "Duplicate slot across Result rows"
     }
 
-    private fun List<ResultLobbySlotVoteScore>.toVoteSummary(): List<String> =
+    private fun List<ResultLobbySlotVoteScore>.toVoteSummary(
+        identityContext: MatchTeamIdentityContext?,
+    ): List<String> =
         filter { it.voteCount > 0 }
             .sortedWith(compareByDescending<ResultLobbySlotVoteScore> { it.voteCount }.thenBy { it.teamSlot })
             .map { score ->
-                "Slot ${score.teamSlot}: ${score.votePercent}% (" +
+                "${slotDisplayLabel(score.teamSlot, identityContext)}: ${score.votePercent}% (" +
                     score.supportingResultPlayerSlots.joinToString(", ") { "P$it" } + ")"
             }
+
+    private fun slotDisplayLabel(
+        teamSlot: Int,
+        identityContext: MatchTeamIdentityContext?,
+    ): String = identityContext?.lobbySlotForCanonicalTeamSlot(teamSlot)
+        ?.let { lobbySlot -> "Lobby ${lobbySlot.toString().padStart(2, '0')}" }
+        ?: "Slot $teamSlot"
 
     private const val TEAM_ASSIGNMENT_PREFIX = "Team assignment:"
 }

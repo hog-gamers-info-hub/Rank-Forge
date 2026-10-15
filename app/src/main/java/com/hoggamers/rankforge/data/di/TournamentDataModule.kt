@@ -40,12 +40,19 @@ import com.hoggamers.rankforge.data.local.RoomMatchLobbyScreenshotAssetRepositor
 import com.hoggamers.rankforge.data.local.RosterScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.SyncQueueDao
 import com.hoggamers.rankforge.data.local.DeletionIntentDao
+import com.hoggamers.rankforge.data.local.GroupRotationV4SyncJournalDao
 import com.hoggamers.rankforge.data.local.RoomScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.ScreenshotMetadataRepository
 import com.hoggamers.rankforge.data.local.RoomMatchResultOcrCacheRepository
 import com.hoggamers.rankforge.data.local.RoomMatchLobbyOcrCacheRepository
+import com.hoggamers.rankforge.data.local.RoomGroupRotationTeamSetupDraftRepository
+import com.hoggamers.rankforge.data.local.GroupRotationTeamSetupReadDao
 import com.hoggamers.rankforge.data.tournament.RoomTournamentRepository
+import com.hoggamers.rankforge.data.tournament.RoomGroupRotationTeamSetupReadRepository
+import com.hoggamers.rankforge.data.tournament.RoomGroupRotationTeamIdentityRepository
+import com.hoggamers.rankforge.data.tournament.RoomGroupRotationMatchIdentityRepository
 import com.hoggamers.rankforge.data.tournament.RoomDeletionIntentRepository
+import com.hoggamers.rankforge.data.sync.RoomGroupRotationV4SyncJournalRepository
 import com.hoggamers.rankforge.data.ocr.matchresult.MatchResultOcrCacheCodec
 import com.hoggamers.rankforge.data.ocr.matchlobby.MatchLobbyOcrCacheCodec
 import com.hoggamers.rankforge.data.ocr.MatchOcrCacheReader
@@ -60,6 +67,7 @@ import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCas
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.CreateGroupRotationMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchPlacementsUseCase
 import com.hoggamers.rankforge.domain.tournament.SaveMatchKillsUseCase
 import com.hoggamers.rankforge.domain.tournament.ConfirmTournamentRosterUseCase
@@ -69,6 +77,7 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ReplaceConfirmedTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadLocalSnapshotRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionLocalCleanupRepository
 import com.hoggamers.rankforge.domain.tournament.LocalDeletionRepository
 import com.hoggamers.rankforge.domain.tournament.DeletionIntentRepository
@@ -83,7 +92,22 @@ import com.hoggamers.rankforge.domain.tournament.ClearMatchCorrectionDraftUseCas
 import com.hoggamers.rankforge.domain.tournament.ProtectedMatchCorrectionAction
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupDraftRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupReadRepository
+import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentityPersistenceRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationRepository
+import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidCloudRestorationLocalRepository
+import com.hoggamers.rankforge.domain.sync.GroupRotationV4SyncJournalRepository
+import com.hoggamers.rankforge.domain.tournament.ReadMatchTeamIdentityContextUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationTeamSetupUseCase
 import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.export.DefaultGroupRotationV4OverallImageInputReader
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInputReader
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -114,6 +138,66 @@ abstract class TournamentDataBindingsModule {
 
     @Binds
     @Singleton
+    abstract fun bindTournamentCloudUploadLocalSnapshotRepository(
+        repository: RoomTournamentRepository,
+    ): TournamentCloudUploadLocalSnapshotRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamSetupLocalRepository(
+        repository: RoomTournamentRepository,
+    ): GroupRotationTeamSetupLocalRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamSetupDraftRepository(
+        repository: RoomGroupRotationTeamSetupDraftRepository,
+    ): GroupRotationTeamSetupDraftRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamSetupReadRepository(
+        repository: RoomGroupRotationTeamSetupReadRepository,
+    ): GroupRotationTeamSetupReadRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationTeamIdentityLocalRepository(
+        repository: RoomGroupRotationTeamIdentityRepository,
+    ): GroupRotationTeamIdentityLocalRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationMatchIdentityPersistenceRepository(
+        repository: RoomGroupRotationMatchIdentityRepository,
+    ): GroupRotationMatchIdentityPersistenceRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationV4OverallImageInputReader(
+        reader: DefaultGroupRotationV4OverallImageInputReader,
+    ): GroupRotationV4OverallImageInputReader
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationMatchDraftRepository(
+        repository: RoomTournamentRepository,
+    ): GroupRotationMatchDraftRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationMatchFinalizationRepository(
+        repository: RoomTournamentRepository,
+    ): GroupRotationMatchFinalizationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindMatchTeamIdentityContextRepository(
+        repository: RoomTournamentRepository,
+    ): MatchTeamIdentityContextRepository
+
+    @Binds
+    @Singleton
     abstract fun bindLocalDeletionRepository(
         repository: RoomTournamentRepository,
     ): LocalDeletionRepository
@@ -132,6 +216,12 @@ abstract class TournamentDataBindingsModule {
 
     @Binds
     @Singleton
+    abstract fun bindGroupRotationV4SyncJournalRepository(
+        repository: RoomGroupRotationV4SyncJournalRepository,
+    ): GroupRotationV4SyncJournalRepository
+
+    @Binds
+    @Singleton
     abstract fun bindTournamentRestorationLocalRepository(
         repository: RoomTournamentRepository,
     ): TournamentRestorationLocalRepository
@@ -141,6 +231,12 @@ abstract class TournamentDataBindingsModule {
     abstract fun bindMatchRestorationLocalRepository(
         repository: RoomTournamentRepository,
     ): MatchRestorationLocalRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindGroupRotationUuidCloudRestorationLocalRepository(
+        repository: RoomTournamentRepository,
+    ): GroupRotationUuidCloudRestorationLocalRepository
 
     @Binds
     @Singleton
@@ -219,6 +315,12 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_26_27,
         RankForgeDatabase.MIGRATION_27_28,
         RankForgeDatabase.MIGRATION_28_29,
+        RankForgeDatabase.MIGRATION_29_30,
+        RankForgeDatabase.MIGRATION_30_31,
+        RankForgeDatabase.MIGRATION_31_32,
+        RankForgeDatabase.MIGRATION_32_33,
+        RankForgeDatabase.MIGRATION_33_34,
+        RankForgeDatabase.MIGRATION_34_35,
     ).build()
 
     @Provides
@@ -227,7 +329,17 @@ object TournamentDataProvidersModule {
 
     @Provides
     @Singleton
+    fun provideGroupRotationV4SyncJournalDao(database: RankForgeDatabase): GroupRotationV4SyncJournalDao =
+        database.groupRotationV4SyncJournalDao()
+
+    @Provides
+    @Singleton
     fun provideDeletionIntentDao(database: RankForgeDatabase): DeletionIntentDao = database.deletionIntentDao()
+
+    @Provides
+    @Singleton
+    fun provideGroupRotationTeamSetupReadDao(database: RankForgeDatabase): GroupRotationTeamSetupReadDao =
+        database.groupRotationTeamSetupReadDao()
 
     @Provides
     @Singleton
@@ -354,6 +466,13 @@ object TournamentDataProvidersModule {
 
     @Provides
     @Singleton
+    fun provideSaveGroupRotationTeamSetupUseCase(
+        repository: GroupRotationTeamSetupLocalRepository,
+        authRepository: AuthRepository,
+    ): SaveGroupRotationTeamSetupUseCase = SaveGroupRotationTeamSetupUseCase(repository, authRepository)
+
+    @Provides
+    @Singleton
     fun provideObserveRosterPlayersUseCase(
         repository: TournamentRepository,
         authRepository: AuthRepository,
@@ -423,7 +542,27 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         authRepository: AuthRepository,
         clock: Clock,
-    ): CreateNextMatchUseCase = CreateNextMatchUseCase(repository, authRepository, clock)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+        groupRotationTeamIdentityRepository: GroupRotationTeamIdentityLocalRepository,
+    ): CreateNextMatchUseCase = CreateNextMatchUseCase(
+        repository,
+        authRepository,
+        clock,
+        matchIdentityContextRepository,
+        CreateGroupRotationMatchUseCase(
+            repository = repository,
+            identityRepository = groupRotationTeamIdentityRepository,
+            authRepository = authRepository,
+            clock = clock,
+        ),
+    )
+
+    @Provides
+    @Singleton
+    fun provideReadMatchTeamIdentityContextUseCase(
+        repository: MatchTeamIdentityContextRepository,
+        authRepository: AuthRepository,
+    ): ReadMatchTeamIdentityContextUseCase = ReadMatchTeamIdentityContextUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -446,14 +585,24 @@ object TournamentDataProvidersModule {
     fun provideSaveMatchPlacementsUseCase(
         repository: TournamentRepository,
         authRepository: AuthRepository,
-    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(repository, authRepository)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+    ): SaveMatchPlacementsUseCase = SaveMatchPlacementsUseCase(
+        repository,
+        authRepository,
+        matchIdentityContextRepository,
+    )
 
     @Provides
     @Singleton
     fun provideSaveMatchKillsUseCase(
         repository: TournamentRepository,
         authRepository: AuthRepository,
-    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(repository, authRepository)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+    ): SaveMatchKillsUseCase = SaveMatchKillsUseCase(
+        repository,
+        authRepository,
+        matchIdentityContextRepository,
+    )
 
     @Provides
     @Singleton
@@ -489,7 +638,20 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         validateMatchResult: ValidateMatchResultUseCase,
         authRepository: AuthRepository,
-    ): FinalizeMatchUseCase = FinalizeMatchUseCase(repository, validateMatchResult, authRepository)
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
+    ): FinalizeMatchUseCase = FinalizeMatchUseCase(
+        repository,
+        validateMatchResult,
+        authRepository,
+        matchIdentityContextRepository,
+    )
+
+    @Provides
+    @Singleton
+    fun provideFinalizeGroupRotationMatchUseCase(
+        repository: GroupRotationMatchFinalizationRepository,
+        authRepository: AuthRepository,
+    ): FinalizeGroupRotationMatchUseCase = FinalizeGroupRotationMatchUseCase(repository, authRepository)
 
     @Provides
     @Singleton
@@ -497,8 +659,14 @@ object TournamentDataProvidersModule {
         repository: TournamentRepository,
         finalizeMatch: FinalizeMatchUseCase,
         authRepository: AuthRepository,
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
     ): FinalizeOcrCorrectionMatchUseCase =
-        FinalizeOcrCorrectionMatchUseCase(repository, finalizeMatch, authRepository)
+        FinalizeOcrCorrectionMatchUseCase(
+            repository,
+            finalizeMatch,
+            authRepository,
+            matchIdentityContextRepository = matchIdentityContextRepository,
+        )
 
     @Provides
     @Singleton
@@ -514,11 +682,13 @@ object TournamentDataProvidersModule {
         validateMatchResult: ValidateMatchResultUseCase,
         authRepository: AuthRepository,
         protectedCorrection: ProtectedMatchCorrectionAction,
+        matchIdentityContextRepository: MatchTeamIdentityContextRepository,
     ): SubmitMatchCorrectionUseCase = SubmitMatchCorrectionUseCase(
         repository,
         validateMatchResult,
         authRepository,
         protectedCorrection,
+        matchIdentityContextRepository,
     )
 
     @Provides

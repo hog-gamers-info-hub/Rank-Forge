@@ -2216,6 +2216,7 @@ private fun MatchReviewContent(
                     teamNamesBySlot = readyOcrUiState.teamNamesBySlot,
                     calculationOrigin = readyOcrUiState.calculatedEvidenceOrigin,
                     finalization = readyOcrUiState.finalization,
+                    isUuidBackedGroupRotation = readyOcrUiState.isUuidBackedGroupRotation,
                     onFinalizeOcrCorrection = onOcrFinalize,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2347,7 +2348,7 @@ private fun MatchReviewContent(
             }
             Button(
                 onClick = { showFinalizeConfirmation = true },
-                enabled = reviewInteractionsEnabled && uiState.isValid && !uiState.isFinalizing &&
+                enabled = reviewInteractionsEnabled && uiState.canFinalize && !uiState.isFinalizing &&
                     !uiState.isScreenshotPreservationInProgress &&
                     !uiState.isScreenshotUploadInProgress,
                 modifier = Modifier
@@ -2466,7 +2467,7 @@ private fun MatchReviewContent(
                 )
             }
         }
-        if (showLegacyManualReviewContent && uiState.status == MatchStatus.FINALIZED) {
+        if (showLegacyManualReviewContent && uiState.isCorrectionAvailable) {
             Button(
                 onClick = { showCorrectionConfirmation = true },
                 enabled = reviewInteractionsEnabled,
@@ -2727,6 +2728,7 @@ private fun MatchReviewFinalizeAction(
     teamNamesBySlot: Map<Int, String>,
     calculationOrigin: MatchCalculatedEvidenceOrigin,
     finalization: MatchOcrReviewFinalizationUiState,
+    isUuidBackedGroupRotation: Boolean,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
     val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current
@@ -5428,7 +5430,10 @@ private fun MatchCorrectionHistory(history: List<MatchCorrectionRecord>) {
             val previousKills = correction.previousKills.associateBy { it.teamSlotNumber }
             val correctedPlacements = correction.correctedPlacements.associateBy { it.teamSlotNumber }
             val correctedKills = correction.correctedKills.associateBy { it.teamSlotNumber }
-            com.hoggamers.rankforge.domain.tournament.TeamSlot.SLOT_NUMBERS.forEach { slotNumber ->
+            (previousPlacements.keys + previousKills.keys + correctedPlacements.keys + correctedKills.keys)
+                .toSet()
+                .sorted()
+                .forEach { slotNumber ->
                 Text(
                     stringResource(
                         R.string.match_correction_previous_value,
@@ -5461,11 +5466,8 @@ private fun MatchReviewRow(
             .testTag(MATCH_REVIEW_ROW_TEST_TAG_PREFIX + row.teamSlotNumber),
     ) {
         Text(
-            text = stringResource(
-                R.string.match_review_team_label,
-                row.teamSlotNumber,
+            text = row.lobbySlotNumber?.let { "Lobby ${it.toString().padStart(2, '0')} · " }.orEmpty() +
                 row.teamName.ifBlank { stringResource(R.string.empty_team_slot_subtitle) },
-            ),
             style = MaterialTheme.typography.bodyLarge,
         )
         if (row.playerNames.isNotEmpty()) {

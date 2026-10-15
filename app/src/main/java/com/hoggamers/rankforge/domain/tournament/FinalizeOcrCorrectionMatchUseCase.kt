@@ -84,6 +84,8 @@ class FinalizeOcrCorrectionMatchUseCase(
     private val authRepository: AuthRepository,
     private val clock: Clock = Clock.systemUTC(),
     private val validateMatchResult: ValidateMatchResultUseCase = ValidateMatchResultUseCase(),
+    private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
+        NoOpMatchTeamIdentityContextRepository,
 ) {
     constructor(
         repository: TournamentRepository,
@@ -141,9 +143,12 @@ class FinalizeOcrCorrectionMatchUseCase(
         }
 
         val slots = repository.observeSlotsByTournamentIdAndOwner(input.tournamentId, ownerUserId).first()
-        val eligibleTeamSlots = runCatching {
-            MatchEligibleTeamSlotResolver().resolve(tournament, slots, match)
-        }.getOrElse {
+        val eligibleTeamSlots = matchIdentityContextRepository.resolveEligibleTeamSlotNumbers(
+            tournament = tournament,
+            persistedTeamSlots = slots,
+            match = match,
+            ownerUserId = ownerUserId,
+        ) ?: run {
             return FinalizeOcrCorrectionMatchResult.Blocked(
                 failures = setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT),
             )

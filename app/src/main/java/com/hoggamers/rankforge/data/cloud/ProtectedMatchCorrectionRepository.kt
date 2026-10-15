@@ -30,22 +30,8 @@ class SupabaseProtectedMatchCorrectionAction @Inject constructor(
     override suspend fun invoke(request: ProtectedMatchCorrectionRequest): ProtectedMatchCorrectionResult {
         val payload = request.toParameters() ?: return ProtectedMatchCorrectionResult.ValidationFailure
         return try {
-            when (val response = remoteDataSource.correct(payload)) {
-                else -> when (response.outcome) {
-                    "success" -> response.revision?.let(ProtectedMatchCorrectionResult::Success)
-                        ?: ProtectedMatchCorrectionResult.ValidationFailure
-                    "already_corrected" -> response.revision?.let(ProtectedMatchCorrectionResult::AlreadyCorrected)
-                        ?: ProtectedMatchCorrectionResult.ValidationFailure
-                    "stale_write" -> ProtectedMatchCorrectionResult.Conflict(
-                        response.toRevisionConflict(request.expectedRevision),
-                    )
-                    "missing_revision" -> ProtectedMatchCorrectionResult.Conflict(RevisionConflict.MissingRevision)
-                    "authentication_required" -> ProtectedMatchCorrectionResult.AuthenticationRequired
-                    "unauthorized" -> ProtectedMatchCorrectionResult.AuthorizationFailure
-                    "match_not_finalized" -> ProtectedMatchCorrectionResult.MatchNotFinalized
-                    else -> ProtectedMatchCorrectionResult.ValidationFailure
-                }
-            }
+            remoteDataSource.correct(request, payload)
+                .toProtectedMatchCorrectionResult(request.expectedRevision)
         } catch (cancellation: kotlinx.coroutines.CancellationException) {
             throw cancellation
         } catch (error: IllegalStateException) {

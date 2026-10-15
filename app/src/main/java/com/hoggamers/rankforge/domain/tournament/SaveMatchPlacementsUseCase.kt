@@ -33,8 +33,13 @@ sealed interface SaveMatchPlacementsResult {
 class SaveMatchPlacementsUseCase(
     private val repository: TournamentRepository,
     private val authRepository: AuthRepository,
+    private val matchIdentityContextRepository: MatchTeamIdentityContextRepository =
+        NoOpMatchTeamIdentityContextRepository,
 ) {
-    constructor(repository: TournamentRepository) : this(repository, SetupMutationUnauthenticatedAuthRepository)
+    constructor(repository: TournamentRepository) : this(
+        repository,
+        SetupMutationUnauthenticatedAuthRepository,
+    )
 
     suspend operator fun invoke(input: SaveMatchPlacementsInput): SaveMatchPlacementsResult {
         val ownerUserId = (authRepository.observeAuthState().first() as? AuthState.SignedIn)
@@ -49,13 +54,13 @@ class SaveMatchPlacementsUseCase(
         }
         val tournament = repository.observeByIdAndOwner(match.tournamentId, ownerUserId).first()
             ?: return SaveMatchPlacementsResult.Invalid(globalError = PlacementGlobalError.MATCH_NOT_FOUND)
-        val eligibleTeamSlots = runCatching {
-            MatchEligibleTeamSlotResolver().resolve(
-                tournament,
-                repository.observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId).first(),
-                match,
-            )
-        }.getOrElse {
+        val persistedSlots = repository.observeSlotsByTournamentIdAndOwner(match.tournamentId, ownerUserId).first()
+        val eligibleTeamSlots = matchIdentityContextRepository.resolveEligibleTeamSlotNumbers(
+            tournament = tournament,
+            persistedTeamSlots = persistedSlots,
+            match = match,
+            ownerUserId = ownerUserId,
+        ) ?: run {
             return SaveMatchPlacementsResult.Invalid(globalError = PlacementGlobalError.INVALID_DATA)
         }
 
