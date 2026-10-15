@@ -136,6 +136,126 @@ class GroupRotationTeamEntryViewModelTest {
     }
 
     @Test
+    fun groupRotationUuidSaveIncludesEditedPairingsAfterSwitchingTabsAndUploadsOnce() = runTest {
+        val pairingAb = GroupPairing.fromCanonicalKey("A:B")
+        val pairingAc = GroupPairing.fromCanonicalKey("A:C")
+        val alphaUuid = "00000000-0000-0000-0000-000000000011"
+        val betaUuid = "00000000-0000-0000-0000-000000000012"
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Saved(
+            GroupRotationTeamIdentityLocalSnapshot(
+                teams = listOf(
+                    GroupRotationTeamIdentity(TOURNAMENT_ID, alphaUuid, "Alpha", "alpha"),
+                    GroupRotationTeamIdentity(TOURNAMENT_ID, betaUuid, "Beta", "beta"),
+                ),
+                assignments = listOf(
+                    GroupRotationPairingAssignment(TOURNAMENT_ID, pairingAb, 1, alphaUuid),
+                    GroupRotationPairingAssignment(TOURNAMENT_ID, pairingAc, 1, betaUuid),
+                ),
+            ),
+        )
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        val viewModel = viewModel()
+
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(pairingAb, 1, "Alpha")
+        viewModel.onPairingSelected(pairingAc)
+        viewModel.onTeamNameChanged(pairingAc, 1, "Beta")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(2, identityRepository.saveCalls)
+        assertEquals(listOf("Alpha"), identityRepository.savedEntriesByPairing["A:B"]?.map { it.displayName })
+        assertEquals(listOf("Beta"), identityRepository.savedEntriesByPairing["A:C"]?.map { it.displayName })
+        assertEquals(1, uploadAction.calls)
+        assertEquals(
+            "Alpha",
+            viewModel.uiState.value.pairingSections.first { it.pairing == pairingAb }.rows.first().teamName,
+        )
+        assertEquals(
+            "Beta",
+            viewModel.uiState.value.pairingSections.first { it.pairing == pairingAc }.rows.first().teamName,
+        )
+    }
+
+    @Test
+    fun groupRotationUuidSaveIncludesEditedPairingsForFourGroups() = runTest {
+        val pairingAb = GroupPairing.fromCanonicalKey("A:B")
+        val pairingAc = GroupPairing.fromCanonicalKey("A:C")
+        val pairingAd = GroupPairing.fromCanonicalKey("A:D")
+        val identities = (1..3).map { number ->
+            GroupRotationTeamIdentity(
+                tournamentId = TOURNAMENT_ID,
+                teamUUID = "00000000-0000-0000-0000-${number.toString().padStart(12, '0')}",
+                displayName = "Team $number",
+                normalizedName = "team $number",
+            )
+        }
+        identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Saved(
+            GroupRotationTeamIdentityLocalSnapshot(
+                teams = identities,
+                assignments = listOf(pairingAb, pairingAc, pairingAd).mapIndexed { index, pairing ->
+                    GroupRotationPairingAssignment(
+                        tournamentId = TOURNAMENT_ID,
+                        pairingKey = pairing,
+                        lobbySlotNumber = 1,
+                        teamUUID = identities[index].teamUUID,
+                    )
+                },
+            ),
+        )
+        val fourGroupTournament = tournament(
+            groupCount = 4,
+            pairings = listOf("A:B", "A:C", "A:D"),
+        )
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(fourGroupTournament)
+        val viewModel = viewModel()
+
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(pairingAb, 1, "Team 1")
+        viewModel.onTeamNameChanged(pairingAc, 1, "Team 2")
+        viewModel.onTeamNameChanged(pairingAd, 1, "Team 3")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(3, identityRepository.saveCalls)
+        assertEquals(1, uploadAction.calls)
+        assertEquals(3, viewModel.uiState.value.pairingSections.size)
+    }
+
+    @Test
+    fun groupRotationUuidSaveFailureLeavesAllPairingDraftsAndSkipsUpload() = runTest {
+        val pairingAb = GroupPairing.fromCanonicalKey("A:B")
+        val pairingAc = GroupPairing.fromCanonicalKey("A:C")
+        identityRepository.saveResultsByPairing[pairingAc.canonicalKey] = GroupRotationTeamIdentityWriteResult.Invalid(
+            listOf(
+                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssue(
+                    code = com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityIssueCode.DUPLICATE_NORMALIZED_NAME,
+                    pairingKey = pairingAc.canonicalKey,
+                ),
+            ),
+        )
+        readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
+        val viewModel = viewModel()
+
+        viewModel.load(TOURNAMENT_ID)
+        advanceUntilIdle()
+        viewModel.onTeamNameChanged(pairingAb, 1, "Alpha")
+        viewModel.onPairingSelected(pairingAc)
+        viewModel.onTeamNameChanged(pairingAc, 1, "Alpha")
+        viewModel.saveTeamNames()
+        advanceUntilIdle()
+
+        assertEquals(2, identityRepository.saveCalls)
+        assertEquals(0, uploadAction.calls)
+        assertTrue(viewModel.uiState.value.validationIssues.isNotEmpty())
+        assertTrue(draftRepository.raw.any { it.pairing == pairingAb && it.teamName == "Alpha" })
+        assertTrue(draftRepository.raw.any { it.pairing == pairingAc && it.teamName == "Alpha" })
+        assertTrue(draftRepository.clearedPairings.isEmpty())
+    }
+
+    @Test
     fun groupRotationUuidSaveRemainsLocalWhenCloudSyncIsQueuedForRetry() = runTest {
         readRepository.result = GroupRotationTeamSetupReadResult.NoSavedSetup(tournament())
         identityRepository.saveResult = GroupRotationTeamIdentityWriteResult.Saved(
@@ -541,16 +661,19 @@ class GroupRotationTeamEntryViewModelTest {
         viewModel.saveTeamNames()
         advanceUntilIdle()
 
-        assertEquals(1, identityRepository.saveCalls)
+        assertEquals(2, identityRepository.saveCalls)
         assertEquals(null, saveRepository.savedCandidate)
-        assertEquals(listOf("A:B"), draftRepository.clearedPairings)
-        assertTrue(draftRepository.raw.any { it.pairing.canonicalKey == "A:C" })
+        assertEquals(listOf("A:B", "A:C"), draftRepository.clearedPairings)
+        assertTrue(draftRepository.raw.isEmpty())
         assertEquals(
             GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails,
             navigation.await(),
         )
         assertEquals(1, uploadAction.calls)
-        assertEquals(listOf("draft-cleared:A:B", "cloud-upload"), draftRepository.events)
+        assertEquals(
+            listOf("draft-cleared:A:B", "draft-cleared:A:C", "cloud-upload"),
+            draftRepository.events,
+        )
     }
 
     @Test
@@ -573,8 +696,11 @@ class GroupRotationTeamEntryViewModelTest {
         assertEquals(GroupRotationTeamEntryNavigationEvent.BackToTournamentDetails, navigation.await())
         assertEquals(null, viewModel.uiState.value.saveError)
         assertEquals(null, viewModel.uiState.value.cloudSyncError)
-        assertEquals(listOf("A:B"), draftRepository.clearedPairings)
-        assertEquals(listOf("draft-cleared:A:B", "cloud-upload"), draftRepository.events)
+        assertEquals(listOf("A:B", "A:C"), draftRepository.clearedPairings)
+        assertEquals(
+            listOf("draft-cleared:A:B", "draft-cleared:A:C", "cloud-upload"),
+            draftRepository.events,
+        )
     }
 
     @Test
@@ -799,14 +925,14 @@ class GroupRotationTeamEntryViewModelTest {
         advanceUntilIdle()
 
         assertEquals(
-            "Alpha Team",
+            "alpha team",
             viewModel.uiState.value.pairingSections.first().rows.first().teamName,
         )
         assertEquals(
-            " alpha team ",
+            "alpha team",
             viewModel.uiState.value.pairingSections[1].rows.first().teamName,
         )
-        assertEquals(listOf("A:B"), draftRepository.clearedPairings)
+        assertEquals(listOf("A:B", "A:C"), draftRepository.clearedPairings)
     }
 
     @Test
@@ -1119,8 +1245,11 @@ class GroupRotationTeamEntryViewModelTest {
     private class FakeIdentityRepository : GroupRotationTeamIdentityLocalRepository {
         var saveCalls = 0
         var lastEntries: List<com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamIdentityEntry> = emptyList()
+        val savedEntriesByPairing = mutableMapOf<String, List<com.hoggamers.rankforge.domain.tournament.GroupRotationPairingTeamIdentityEntry>>()
         var readResult: GroupRotationTeamIdentityReadResult = GroupRotationTeamIdentityReadResult.Unsupported
         var saveResult: GroupRotationTeamIdentityWriteResult? = null
+        val saveResultsByPairing = mutableMapOf<String, GroupRotationTeamIdentityWriteResult>()
+        private var defaultSnapshot: GroupRotationTeamIdentityLocalSnapshot? = null
         var blocked = false
         val saveStarted = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -1136,11 +1265,14 @@ class GroupRotationTeamEntryViewModelTest {
         ): GroupRotationTeamIdentityWriteResult {
             saveCalls += 1
             lastEntries = entries
+            savedEntriesByPairing[pairingKey.canonicalKey] = entries
             if (blocked) {
                 saveStarted.complete(Unit)
                 release.await()
             }
-            return saveResult ?: defaultSavedResult(tournament, pairingKey, entries)
+            return saveResultsByPairing[pairingKey.canonicalKey]
+                ?: saveResult
+                ?: defaultSavedResult(tournament, pairingKey, entries)
         }
 
         private fun defaultSavedResult(
@@ -1168,33 +1300,42 @@ class GroupRotationTeamEntryViewModelTest {
                     ),
                 )
             }
-            val teamsByName = linkedMapOf<String, GroupRotationTeamIdentity>()
+            val current = defaultSnapshot
+                ?: (readResult as? GroupRotationTeamIdentityReadResult.Loaded)?.snapshot
+                ?: GroupRotationTeamIdentityLocalSnapshot(emptyList(), emptyList())
+            val teams = current.teams.toMutableList()
+            val assignments = current.assignments.filterNot { it.pairingKey == pairingKey }.toMutableList()
             entries.filter { normalizer.normalize(it.displayName).isNotBlank() }.forEach { entry ->
-                val normalized = normalizer.normalize(entry.displayName)
-                teamsByName.getOrPut(normalized) {
-                    val number = teamsByName.size + 1
-                    GroupRotationTeamIdentity(
-                        tournamentId = tournament.id,
-                        teamUUID = UUID(0, number.toLong()).toString(),
-                        displayName = normalizer.cleanDisplayName(entry.displayName),
-                        normalizedName = normalized,
-                    )
+                val cleanedName = normalizer.cleanDisplayName(entry.displayName)
+                val normalized = normalizer.normalize(cleanedName)
+                val savedAssignment = current.assignments.firstOrNull {
+                    it.pairingKey == pairingKey && it.lobbySlotNumber == entry.lobbySlotNumber
                 }
+                val existing = savedAssignment?.let { assignment ->
+                    teams.firstOrNull { it.teamUUID == assignment.teamUUID }
+                } ?: teams.firstOrNull { it.normalizedName == normalized }
+                val identity = existing?.copy(
+                    displayName = cleanedName,
+                    normalizedName = normalized,
+                ) ?: GroupRotationTeamIdentity(
+                    tournamentId = tournament.id,
+                    teamUUID = UUID(0, (teams.size + 1).toLong()).toString(),
+                    displayName = cleanedName,
+                    normalizedName = normalized,
+                )
+                if (existing == null) teams += identity else teams.replaceAll {
+                    if (it.teamUUID == identity.teamUUID) identity else it
+                }
+                assignments += GroupRotationPairingAssignment(
+                    tournamentId = tournament.id,
+                    pairingKey = pairingKey,
+                    lobbySlotNumber = entry.lobbySlotNumber,
+                    teamUUID = identity.teamUUID,
+                )
             }
-            return GroupRotationTeamIdentityWriteResult.Saved(
-                GroupRotationTeamIdentityLocalSnapshot(
-                    teams = teamsByName.values.toList(),
-                    assignments = entries.filter { normalizer.normalize(it.displayName).isNotBlank() }
-                        .map { entry ->
-                            GroupRotationPairingAssignment(
-                                tournamentId = tournament.id,
-                                pairingKey = pairingKey,
-                                lobbySlotNumber = entry.lobbySlotNumber,
-                                teamUUID = teamsByName.getValue(normalizer.normalize(entry.displayName)).teamUUID,
-                            )
-                        },
-                ),
-            )
+            val snapshot = GroupRotationTeamIdentityLocalSnapshot(teams, assignments)
+            defaultSnapshot = snapshot
+            return GroupRotationTeamIdentityWriteResult.Saved(snapshot)
         }
 
         override suspend fun renameTeam(

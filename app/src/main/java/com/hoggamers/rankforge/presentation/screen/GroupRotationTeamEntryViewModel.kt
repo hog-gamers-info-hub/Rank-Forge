@@ -212,20 +212,8 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
         if (_uiState.value.isSaving) return
         val tournament = loadedTournament ?: return
         val selectedPairing = _uiState.value.selectedPairing ?: return
-        val savePairing = selectedPairing.pairing
-        val stateCandidate = candidateFromState(tournament, savePairing)
-        val candidate = if (
-            tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION
-        ) {
-            stateCandidate.copy(
-                entries = stateCandidate.entries.filter { entry ->
-                    entry.teamName.isNotBlank() ||
-                        (entry.pairing.canonicalKey to entry.lobbySlotNumber) in locallyEditedKeys
-                },
-            )
-        } else {
-            stateCandidate
-        }
+        val pairingsToSave = pairingsToSave(tournament, selectedPairing.pairing)
+        if (pairingsToSave.isEmpty()) return
         val saveTournamentId = tournament.id
         val saveLoadGeneration = loadGeneration
         val saveEditGeneration = editGeneration
@@ -244,50 +232,64 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                     return@launch
                 }
                 if (tournament.format == com.hoggamers.rankforge.domain.tournament.TournamentFormat.GROUP_ROTATION) {
-                    when (val result = saveGroupRotationTeamIdentitySetup(tournament, candidate, savePairing)) {
-                        is GroupRotationTeamIdentitySetupSaveResult.Saved -> {
-                            finishIdentitySave(
-                                tournament = tournament,
-                                pairing = savePairing,
-                                snapshot = result.snapshot,
-                                tournamentId = saveTournamentId,
-                                expectedLoadGeneration = saveLoadGeneration,
-                                expectedEditGeneration = saveEditGeneration,
+                    var savedSnapshot: GroupRotationTeamIdentityLocalSnapshot? = null
+                    for (pairing in pairingsToSave) {
+                        if (finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                            return@launch
+                        }
+                        when (
+                            val result = saveGroupRotationTeamIdentitySetup(
+                                tournament,
+                                candidateForSave(tournament, pairing),
+                                pairing,
                             )
-                            return@launch
-                        }
-                        GroupRotationTeamIdentitySetupSaveResult.AuthenticationRequired -> {
-                            if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
-                                showSaveError(GroupRotationTeamEntrySaveError.AuthenticationRequired)
+                        ) {
+                            is GroupRotationTeamIdentitySetupSaveResult.Saved -> {
+                                savedSnapshot = result.snapshot
                             }
-                            return@launch
-                        }
-                        GroupRotationTeamIdentitySetupSaveResult.ProtectedHistory -> {
-                            if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
-                                showSaveError(GroupRotationTeamEntrySaveError.ProtectedHistory)
+                            GroupRotationTeamIdentitySetupSaveResult.AuthenticationRequired -> {
+                                if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                                    showSaveError(GroupRotationTeamEntrySaveError.AuthenticationRequired)
+                                }
+                                return@launch
                             }
-                            return@launch
-                        }
-                        GroupRotationTeamIdentitySetupSaveResult.OwnershipMismatch -> {
-                            if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
-                                showSaveError(GroupRotationTeamEntrySaveError.Unexpected)
+                            GroupRotationTeamIdentitySetupSaveResult.ProtectedHistory -> {
+                                if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                                    showSaveError(GroupRotationTeamEntrySaveError.ProtectedHistory)
+                                }
+                                return@launch
                             }
-                            return@launch
-                        }
-                        is GroupRotationTeamIdentitySetupSaveResult.InvalidSetup -> {
-                            if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
-                                showValidationIssues(result.issues)
+                            GroupRotationTeamIdentitySetupSaveResult.OwnershipMismatch -> {
+                                if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                                    showSaveError(GroupRotationTeamEntrySaveError.Unexpected)
+                                }
+                                return@launch
                             }
-                            return@launch
-                        }
-                        GroupRotationTeamIdentitySetupSaveResult.Unsupported -> {
-                            if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
-                                showSaveError(GroupRotationTeamEntrySaveError.Unexpected)
+                            is GroupRotationTeamIdentitySetupSaveResult.InvalidSetup -> {
+                                if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                                    showValidationIssues(result.issues)
+                                }
+                                return@launch
                             }
-                            return@launch
+                            GroupRotationTeamIdentitySetupSaveResult.Unsupported -> {
+                                if (!finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
+                                    showSaveError(GroupRotationTeamEntrySaveError.Unexpected)
+                                }
+                                return@launch
+                            }
                         }
                     }
+                    finishIdentitySave(
+                        tournament = tournament,
+                        savedPairings = pairingsToSave,
+                        snapshot = checkNotNull(savedSnapshot),
+                        tournamentId = saveTournamentId,
+                        expectedLoadGeneration = saveLoadGeneration,
+                        expectedEditGeneration = saveEditGeneration,
+                    )
+                    return@launch
                 }
+                val candidate = candidateFromState(tournament, selectedPairing.pairing)
                 val validated = when (val validation = validator.validate(tournament, candidate)) {
                     is com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupValidationResult.Invalid -> {
                         if (finishStaleSaveIfNeeded(saveTournamentId, saveLoadGeneration, saveEditGeneration)) {
@@ -320,7 +322,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                         if (cloudResult.shouldNavigateAfterLocalSave()) {
                             clearDraftIfUnchanged(
                                 tournamentId = saveTournamentId,
-                                pairing = savePairing,
+                                pairing = selectedPairing.pairing,
                                 expectedLoadGeneration = saveLoadGeneration,
                                 expectedEditGeneration = saveEditGeneration,
                             )
@@ -328,7 +330,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                                 return@launch
                             }
                             val cleanedSections = _uiState.value.pairingSections.map { section ->
-                                if (section.pairing != savePairing) section else section.copy(
+                                if (section.pairing != selectedPairing.pairing) section else section.copy(
                                     rows = section.rows.map { row ->
                                         row.copy(
                                             teamName = cleanedNames.getValue(
@@ -354,7 +356,7 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                             )
                         } else {
                             val cleanedSections = _uiState.value.pairingSections.map { section ->
-                                if (section.pairing != savePairing) section else section.copy(
+                                if (section.pairing != selectedPairing.pairing) section else section.copy(
                                     rows = section.rows.map { row ->
                                         row.copy(
                                             teamName = cleanedNames.getValue(
@@ -451,6 +453,11 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                     locallyEditedKeys += entry.pairing.canonicalKey to entry.lobbySlotNumber
                 }
         }
+        effectiveDraftEntries
+            .filter { it.teamName.isNotBlank() }
+            .forEach { entry ->
+                locallyEditedKeys += entry.pairing.canonicalKey to entry.lobbySlotNumber
+            }
         val hydratedCandidate = if (effectiveDraftEntries.isEmpty()) {
             authoritative
         } else {
@@ -469,41 +476,25 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
 
     private suspend fun finishIdentitySave(
         tournament: Tournament,
-        pairing: GroupPairing,
+        savedPairings: List<GroupPairing>,
         snapshot: GroupRotationTeamIdentityLocalSnapshot,
         tournamentId: String,
         expectedLoadGeneration: Long,
         expectedEditGeneration: Long,
     ) {
         if (finishStaleSaveIfNeeded(tournamentId, expectedLoadGeneration, expectedEditGeneration)) return
-        val pairingKey = pairing.canonicalKey
-        val current = _uiState.value
-        val dirtyOtherNames = current.pairingSections
-            .flatMap { section ->
-                section.rows.map { row ->
-                    (section.pairing.canonicalKey to row.lobbySlotNumber) to row.teamName
-                }
-            }
-            .filter { (key, _) -> key.first != pairingKey }
-            .toMap()
-        locallyEditedKeys.removeAll { it.first == pairingKey }
-        clearDraftIfUnchanged(
-            tournamentId = tournamentId,
-            pairing = pairing,
-            expectedLoadGeneration = expectedLoadGeneration,
-            expectedEditGeneration = expectedEditGeneration,
-        )
-        if (finishStaleSaveIfNeeded(tournamentId, expectedLoadGeneration, expectedEditGeneration)) return
-        val persistedSections = sectionsFor(tournament, snapshot.toSetupCandidate(tournament))
-        val sections = persistedSections.map { section ->
-            section.copy(
-                rows = section.rows.map { row ->
-                    dirtyOtherNames[section.pairing.canonicalKey to row.lobbySlotNumber]
-                        ?.let { teamName -> row.copy(teamName = teamName) }
-                        ?: row
-                },
+        val savedPairingKeys = savedPairings.map { it.canonicalKey }.toSet()
+        locallyEditedKeys.removeAll { it.first in savedPairingKeys }
+        savedPairings.forEach { pairing ->
+            clearDraftIfUnchanged(
+                tournamentId = tournamentId,
+                pairing = pairing,
+                expectedLoadGeneration = expectedLoadGeneration,
+                expectedEditGeneration = expectedEditGeneration,
             )
         }
+        if (finishStaleSaveIfNeeded(tournamentId, expectedLoadGeneration, expectedEditGeneration)) return
+        val persistedSections = sectionsFor(tournament, snapshot.toSetupCandidate(tournament))
         val cloudResult: QueueAwareActionResult<TournamentCloudUploadResult> = try {
             uploadTournament(tournamentId)
         } catch (throwable: Throwable) {
@@ -519,8 +510,8 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
         val navigateAfterLocalSave = cloudResult.shouldNavigateAfterLocalSave()
         _uiState.update { state ->
             state.copy(
-                pairingSections = sections,
-                uniqueTeamCount = state.copy(pairingSections = sections).uniqueNormalizedTeamCount(),
+                pairingSections = persistedSections,
+                uniqueTeamCount = state.copy(pairingSections = persistedSections).uniqueNormalizedTeamCount(),
                 isSaving = false,
                 validationIssues = emptyList(),
                 saveError = null,
@@ -610,6 +601,29 @@ class GroupRotationTeamEntryViewModel @Inject constructor(
                     GroupRotationPairingTeamEntry(pairing, row.lobbySlotNumber, row.teamName)
                 },
         )
+
+    private fun pairingsToSave(
+        tournament: Tournament,
+        selectedPairing: GroupPairing,
+    ): List<GroupPairing> {
+        val editedPairingKeys = locallyEditedKeys.map { it.first }.toSet()
+        return orderedGroupRotationPairings(tournament).filter { pairing ->
+            pairing == selectedPairing || pairing.canonicalKey in editedPairingKeys
+        }
+    }
+
+    private fun candidateForSave(
+        tournament: Tournament,
+        pairing: GroupPairing,
+    ): GroupRotationTeamSetupCandidate {
+        val stateCandidate = candidateFromState(tournament, pairing)
+        return stateCandidate.copy(
+            entries = stateCandidate.entries.filter { entry ->
+                entry.teamName.isNotBlank() ||
+                    (entry.pairing.canonicalKey to entry.lobbySlotNumber) in locallyEditedKeys
+            },
+        )
+    }
 
     private fun enqueueDraftSave(pairing: GroupPairing) {
         val tournament = loadedTournament ?: return
