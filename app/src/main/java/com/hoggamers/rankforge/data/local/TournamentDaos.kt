@@ -140,11 +140,28 @@ interface TournamentDao {
             tournaments.organizer_name,
             tournaments.organizer_contact_number,
             tournaments.status,
-            (
-                SELECT COUNT(*) FROM team_slots
-                WHERE team_slots.tournament_id = tournaments.id
-                    AND TRIM(team_slots.team_name) <> ''
-            ) AS total_teams,
+            CASE
+                WHEN tournaments.format = 'GROUP_ROTATION'
+                    AND EXISTS (
+                        SELECT 1 FROM group_rotation_team_identities
+                        WHERE group_rotation_team_identities.tournament_id = tournaments.id
+                    )
+                THEN (
+                    SELECT COUNT(DISTINCT assignments.team_uuid)
+                    FROM group_rotation_pairing_team_identity_assignments AS assignments
+                    INNER JOIN group_rotation_team_identities AS identities
+                        ON identities.tournament_id = assignments.tournament_id
+                        AND identities.team_uuid = assignments.team_uuid
+                    WHERE assignments.tournament_id = tournaments.id
+                        AND assignments.name_cleared = 0
+                        AND TRIM(identities.display_name) <> ''
+                )
+                ELSE (
+                    SELECT COUNT(*) FROM team_slots
+                    WHERE team_slots.tournament_id = tournaments.id
+                        AND TRIM(team_slots.team_name) <> ''
+                )
+            END AS total_teams,
             (
                 SELECT COUNT(*) FROM matches
                 WHERE matches.tournament_id = tournaments.id
@@ -167,11 +184,28 @@ interface TournamentDao {
             tournaments.organizer_name,
             tournaments.organizer_contact_number,
             tournaments.status,
-            (
-                SELECT COUNT(*) FROM team_slots
-                WHERE team_slots.tournament_id = tournaments.id
-                    AND TRIM(team_slots.team_name) <> ''
-            ) AS total_teams,
+            CASE
+                WHEN tournaments.format = 'GROUP_ROTATION'
+                    AND EXISTS (
+                        SELECT 1 FROM group_rotation_team_identities
+                        WHERE group_rotation_team_identities.tournament_id = tournaments.id
+                    )
+                THEN (
+                    SELECT COUNT(DISTINCT assignments.team_uuid)
+                    FROM group_rotation_pairing_team_identity_assignments AS assignments
+                    INNER JOIN group_rotation_team_identities AS identities
+                        ON identities.tournament_id = assignments.tournament_id
+                        AND identities.team_uuid = assignments.team_uuid
+                    WHERE assignments.tournament_id = tournaments.id
+                        AND assignments.name_cleared = 0
+                        AND TRIM(identities.display_name) <> ''
+                )
+                ELSE (
+                    SELECT COUNT(*) FROM team_slots
+                    WHERE team_slots.tournament_id = tournaments.id
+                        AND TRIM(team_slots.team_name) <> ''
+                )
+            END AS total_teams,
             (
                 SELECT COUNT(*) FROM matches
                 WHERE matches.tournament_id = tournaments.id

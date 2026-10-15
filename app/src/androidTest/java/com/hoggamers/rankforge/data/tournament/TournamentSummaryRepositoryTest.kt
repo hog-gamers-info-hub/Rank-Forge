@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.data.tournament
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
+import com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.domain.tournament.ConfirmedRosterReplacementCandidate
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
@@ -16,6 +18,7 @@ import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -102,6 +105,147 @@ class TournamentSummaryRepositoryTest {
                 .first { it.size == 1 }
             assertEquals(listOf("group-four"), ownerBSummaries.map { it.tournament.id })
             assertEquals(groupFourPairings, ownerBSummaries.single().tournament.selectedGroupPairings)
+        }
+    }
+
+    @Test
+    fun groupRotationV4SummaryCountsDistinctIdentitiesIncludingClearedNames() = runBlocking {
+        val groupThreePairings = listOf(
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+            GroupPairing.of(TournamentGroup.B, TournamentGroup.C),
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.C),
+        )
+        val groupFourPairings = listOf(
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.C),
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.D),
+        )
+        withRepository(
+            initialTournament = groupRotationTournament(
+                id = TOURNAMENT_ID,
+                groupCount = 3,
+                pairings = groupThreePairings,
+            ),
+        ) { repository, database, _ ->
+            repository.create(
+                groupRotationTournament(
+                    id = "group-four-v4",
+                    groupCount = 4,
+                    pairings = groupFourPairings,
+                ),
+            )
+
+            val emissions = Channel<List<TournamentSummary>>(Channel.UNLIMITED)
+            val observation = launch {
+                repository.observeSummaries().collect { summaries -> emissions.send(summaries) }
+            }
+
+            try {
+                val initial = withTimeout(5_000L) { emissions.receive() }
+                assertEquals(
+                    listOf(0, 0),
+                    listOf(
+                        initial.single { it.tournament.id == TOURNAMENT_ID }.totalTeams,
+                        initial.single { it.tournament.id == "group-four-v4" }.totalTeams,
+                    ),
+                )
+
+                val groupThreeIdentities = (1..18).map { index ->
+                    identity(TOURNAMENT_ID, "group-three-$index", "G3-$index")
+                }
+                val groupFourIdentities = (1..24).map { index ->
+                    identity("group-four-v4", "group-four-$index", "G4-$index")
+                }
+                database.groupRotationTeamIdentityDao().upsertAll(groupThreeIdentities + groupFourIdentities)
+                database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
+                    (1..18).map { index ->
+                        assignment(
+                            tournamentId = TOURNAMENT_ID,
+                            pairingKey = if (index <= 12) "A:B" else "B:C",
+                            lobbySlotNumber = if (index <= 12) index else index - 12,
+                            teamUUID = "group-three-$index",
+                        )
+                    } + assignment(TOURNAMENT_ID, "A:C", 7, "group-three-1") +
+                        (1..24).map { index ->
+                            assignment(
+                                tournamentId = "group-four-v4",
+                                pairingKey = if (index <= 12) "A:B" else "A:C",
+                                lobbySlotNumber = if (index <= 12) index else index - 12,
+                                teamUUID = "group-four-$index",
+                            )
+                        } + assignment("group-four-v4", "A:D", 9, "group-four-1"),
+                )
+
+                val summaries = receiveSummaries(emissions) { rows ->
+                    rows.single { it.tournament.id == TOURNAMENT_ID }.totalTeams == 18 &&
+                        rows.single { it.tournament.id == "group-four-v4" }.totalTeams == 24
+                }
+
+                assertEquals(18, summaries.single { it.tournament.id == TOURNAMENT_ID }.totalTeams)
+                assertEquals(24, summaries.single { it.tournament.id == "group-four-v4" }.totalTeams)
+            } finally {
+                observation.cancel()
+                emissions.close()
+            }
+        }
+    }
+
+    @Test
+    fun groupRotationV4SummaryTracksPartialCompleteAndRestoredClearing() = runBlocking {
+        val pairings = listOf(
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.B),
+            GroupPairing.of(TournamentGroup.A, TournamentGroup.C),
+        )
+        withRepository(
+            initialTournament = groupRotationTournament(
+                id = TOURNAMENT_ID,
+                groupCount = 3,
+                pairings = pairings,
+            ),
+        ) { repository, database, _ ->
+            val emissions = Channel<List<TournamentSummary>>(Channel.UNLIMITED)
+            val observation = launch {
+                repository.observeSummaries().collect { summaries -> emissions.send(summaries) }
+            }
+
+            try {
+                assertEquals(0, withTimeout(5_000L) { emissions.receive() }.single().totalTeams)
+
+                database.groupRotationTeamIdentityDao().upsertAll(
+                    listOf(identity(TOURNAMENT_ID, "shared-uuid", "SHARED")),
+                )
+                database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
+                    listOf(
+                        assignment(TOURNAMENT_ID, "A:B", 1, "shared-uuid"),
+                        assignment(TOURNAMENT_ID, "A:C", 1, "shared-uuid", nameCleared = true),
+                    ),
+                )
+                var summary = receiveSummaries(emissions) { it.single().totalTeams == 1 }
+                assertEquals(1, summary.single().totalTeams)
+
+                database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
+                    listOf(assignment(TOURNAMENT_ID, "A:B", 1, "shared-uuid", nameCleared = true)),
+                )
+                summary = receiveSummaries(emissions) { it.single().totalTeams == 0 }
+                assertEquals(0, summary.single().totalTeams)
+                assertEquals(
+                    listOf("shared-uuid"),
+                    database.groupRotationTeamIdentityDao().readByTournamentId(TOURNAMENT_ID)
+                        .map { it.teamUUID },
+                )
+
+                database.groupRotationTeamIdentityDao().upsertAll(
+                    listOf(identity(TOURNAMENT_ID, "shared-uuid", "SHARED")),
+                )
+                database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
+                    listOf(assignment(TOURNAMENT_ID, "A:C", 1, "shared-uuid")),
+                )
+                summary = receiveSummaries(emissions) { it.single().totalTeams == 1 }
+                assertEquals(1, summary.single().totalTeams)
+            } finally {
+                observation.cancel()
+                emissions.close()
+            }
         }
     }
 
@@ -435,6 +579,28 @@ class TournamentSummaryRepositoryTest {
         selectedGroupPairings = pairings,
     )
 
+    private fun identity(tournamentId: String, uuid: String, displayName: String) =
+        GroupRotationTeamIdentityEntity(
+            tournamentId = tournamentId,
+            teamUUID = uuid,
+            displayName = displayName,
+            normalizedName = displayName.trim().lowercase(),
+        )
+
+    private fun assignment(
+        tournamentId: String,
+        pairingKey: String,
+        lobbySlotNumber: Int,
+        teamUUID: String,
+        nameCleared: Boolean = false,
+    ) = GroupRotationPairingTeamIdentityAssignmentEntity(
+        tournamentId = tournamentId,
+        pairingKey = pairingKey,
+        lobbySlotNumber = lobbySlotNumber,
+        teamUUID = teamUUID,
+        nameCleared = nameCleared,
+    )
+
     private fun replacementCandidate(
         prefix: String,
         names: Map<Int, String> = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber -> "$prefix Team $slotNumber" },
@@ -459,6 +625,16 @@ class TournamentSummaryRepositoryTest {
         while (true) {
             val summary = withTimeout(5_000L) { emissions.receive() }
             if (predicate(summary)) return summary
+        }
+    }
+
+    private suspend fun receiveSummaries(
+        emissions: Channel<List<TournamentSummary>>,
+        predicate: (List<TournamentSummary>) -> Boolean,
+    ): List<TournamentSummary> {
+        while (true) {
+            val summaries = withTimeout(5_000L) { emissions.receive() }
+            if (predicate(summaries)) return summaries
         }
     }
 
