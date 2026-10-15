@@ -119,7 +119,7 @@ class TournamentResultImageModelBuilderTest {
     }
 
     @Test
-    fun selectedPairingRejectsOutOfGroupParticipantInsteadOfReplacingItsIdentity() {
+    fun selectedPairingAcceptsCanonicalParticipantWithoutGroupMembershipCheck() {
         val result = builder.build(
             input(
                 tournament = groupTournament(3),
@@ -135,11 +135,9 @@ class TournamentResultImageModelBuilderTest {
             ),
         )
 
-        assertTrue(
-            (result as TournamentResultImageModelBuildResult.Failure).failures.contains(
-                TournamentResultImageModelFailure.INVALID_FINALIZED_MATCH,
-            ),
-        )
+        val model = success(result)
+        assertEquals(18, model.rows.size)
+        assertEquals(1, model.rows.first { row -> row.teamName == "Team 7" }.matchesPlayed)
     }
 
     @Test

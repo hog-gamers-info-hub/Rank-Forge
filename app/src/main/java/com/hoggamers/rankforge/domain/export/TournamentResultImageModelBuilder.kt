@@ -14,7 +14,6 @@ import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.PositionPointsEngine
-import com.hoggamers.rankforge.domain.tournament.MAX_TEAMS_PER_GROUP
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TieBreakRules
@@ -371,7 +370,10 @@ class TournamentResultImageModelBuilder(
             if (slot.teamName.trim().isBlank()) {
                 failures += TournamentResultImageModelFailure.MISSING_TEAM_IDENTITY
             }
-            if (slot.group != expectedByNumber[slot.slotNumber]?.group) {
+            if (
+                input.tournament.format == TournamentFormat.STANDARD &&
+                    slot.group != expectedByNumber[slot.slotNumber]?.group
+            ) {
                 failures += TournamentResultImageModelFailure.INVALID_TOURNAMENT_CONFIGURATION
             }
         }
@@ -408,16 +410,6 @@ class TournamentResultImageModelBuilder(
                 if (!validPairing) {
                     failures += TournamentResultImageModelFailure.INVALID_FINALIZED_MATCH
                     return
-                }
-                val selectedPairing = requireNotNull(pairing)
-                val eligibleSlots = expectedSlots.filter { slot ->
-                    slot.group == selectedPairing.firstGroup || slot.group == selectedPairing.secondGroup
-                }.map { slot -> slot.slotNumber }.toSet()
-                if (
-                    eligibleSlots.size != MAX_TEAMS_PER_GROUP * 2 ||
-                    participantResults.any { result -> result.teamSlotNumber !in eligibleSlots }
-                ) {
-                    failures += TournamentResultImageModelFailure.INVALID_FINALIZED_MATCH
                 }
             }
         }
