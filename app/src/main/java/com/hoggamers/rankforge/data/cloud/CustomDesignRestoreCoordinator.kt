@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextCol
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
 import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreservationResult
 import com.hoggamers.rankforge.presentation.screen.LocalImagePreserver
 import io.github.jan.supabase.auth.auth
@@ -180,7 +181,6 @@ class CustomDesignRestoreCoordinator internal constructor(
 
 internal object CustomDesignTemplateValidator {
     private val labelKeys = setOf("teamName", "win", "totalKills", "positionPoints", "totalPoints")
-    private val rowKeys = (1..12).mapTo(linkedSetOf(), Int::toString)
 
     fun validate(
         payload: CustomDesignTemplateCloudPayload,
@@ -247,15 +247,26 @@ internal object CustomDesignTemplateValidator {
             if (x !in 0.0..payload.sourceWidth.toDouble()) return null
             columns[field] = x.toFloat()
         }
+        val rowCapacity = payload.rowsJson.keys
+            .mapNotNull { it.toIntOrNull() }
+            .toSet()
+            .let(CustomDesignRowCapacity::capacityForExactRankKeys)
+            ?: return null
         val rows = linkedMapOf<Int, Float>()
-        for (rank in 1..12) {
+        for (rank in CustomDesignRowCapacity.rankRange(rowCapacity)) {
             val y = payload.rowsJson[rank.toString()]?.finiteNumber() ?: return null
             if (y !in 0.0..payload.sourceHeight.toDouble()) return null
             rows[rank] = y.toFloat()
         }
-        if ((1..11).any { rows.getValue(it) >= rows.getValue(it + 1) }) return null
+        if ((CustomDesignRowCapacity.rankRange(rowCapacity).first until
+                CustomDesignRowCapacity.rankRange(rowCapacity).last
+            ).any { rank ->
+                rows.getValue(rank) >= rows.getValue(rank + 1)
+            }
+        ) return null
         if (payload.columnsJson.keys != activeFields.mapTo(linkedSetOf()) { it.name } ||
-            payload.rowsJson.keys != rowKeys
+            payload.rowsJson.keys != CustomDesignRowCapacity.rankRange(rowCapacity)
+                .mapTo(linkedSetOf(), Int::toString)
         ) return null
         return VerifiedCustomDesignTemplate(
             customDesignId = payload.id,

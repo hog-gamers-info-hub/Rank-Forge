@@ -218,6 +218,20 @@ class CustomDesignResultDownloadCoordinatorTest {
         var savingCalls = 0
         val bitmap = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
         val coordinator = coordinator(
+            resolveRows = {
+                CustomDesignResultRowsResult.Success(
+                    listOf(
+                        ResultExportRow(
+                            rank = 1,
+                            teamName = "Team A",
+                            win = 1,
+                            totalKills = 4,
+                            positionPoints = 12,
+                            totalPoints = 16,
+                        ),
+                    ),
+                )
+            },
             composeBitmap = { _, _, _, _, _ -> CustomDesignBitmapComposeResult.Success(bitmap) },
             saveFile = { saved, _, format ->
                 assertEquals(ResultExportFileFormat.PNG, format)

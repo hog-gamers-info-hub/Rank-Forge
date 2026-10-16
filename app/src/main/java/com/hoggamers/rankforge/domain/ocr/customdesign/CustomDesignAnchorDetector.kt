@@ -16,14 +16,23 @@ class CustomDesignAnchorDetector @Inject constructor() {
         sourceHeight: Int,
         labels: CustomDesignOcrLabels,
         blocks: List<RawOcrBlock>,
-    ): CustomDesignOcrAnchors = detectDetailed(sourceWidth, sourceHeight, labels, blocks).anchors
+        expectedRowCapacity: Int = CustomDesignRowCapacity.DEFAULT_ROW_COUNT,
+    ): CustomDesignOcrAnchors = detectDetailed(
+        sourceWidth = sourceWidth,
+        sourceHeight = sourceHeight,
+        labels = labels,
+        blocks = blocks,
+        expectedRowCapacity = expectedRowCapacity,
+    ).anchors
 
     fun detectDetailed(
         sourceWidth: Int,
         sourceHeight: Int,
         labels: CustomDesignOcrLabels,
         blocks: List<RawOcrBlock>,
+        expectedRowCapacity: Int = CustomDesignRowCapacity.DEFAULT_ROW_COUNT,
     ): CustomDesignAnchorDetectionResult {
+        val expectedRanks = CustomDesignRowCapacity.rankRange(expectedRowCapacity)
         val width = sourceWidth.coerceAtLeast(0)
         val height = sourceHeight.coerceAtLeast(0)
         val observations = blocks.flatMap { block ->
@@ -70,6 +79,7 @@ class CustomDesignAnchorDetector @Inject constructor() {
             blocks = blocks,
             headerX = columnX,
             headerY = headerY,
+            expectedRanks = expectedRanks,
         )
         return CustomDesignAnchorDetectionResult(
             anchors = CustomDesignOcrAnchors(
@@ -92,13 +102,14 @@ class CustomDesignAnchorDetector @Inject constructor() {
         blocks: List<RawOcrBlock>,
         headerX: Map<CustomDesignAnchorField, Float>,
         headerY: Map<CustomDesignAnchorField, Float>,
+        expectedRanks: IntRange,
     ): RankDetectionResult {
         if (headerX.isEmpty() || headerY.isEmpty()) return RankDetectionResult.EMPTY
         val headerRow = headerY.values.sorted().median()
         val leftOfHeader = headerX.values.minOrNull() ?: return RankDetectionResult.EMPTY
         val candidates = blocks
             .flatMap { block -> block.lines.flatMap { it.elements } }
-            .mapNotNull { it.rankObservation(sourceWidth, sourceHeight) }
+            .mapNotNull { it.rankObservation(sourceWidth, sourceHeight, expectedRanks) }
             .filter { it.centerY > headerRow && it.centerX < leftOfHeader }
         if (candidates.isEmpty()) return RankDetectionResult.EMPTY
 
@@ -250,8 +261,16 @@ private fun List<CandidateGeometry>.coveringGeometry(): CandidateGeometry {
     return CandidateGeometry(box, corners)
 }
 
-private fun RawOcrElement.rankObservation(sourceWidth: Int, sourceHeight: Int): RankObservation? {
-    val rank = text.trim().takeIf { it.matches(Regex("0?([1-9]|1[0-2])")) }?.toIntOrNull() ?: return null
+private fun RawOcrElement.rankObservation(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    expectedRanks: IntRange,
+): RankObservation? {
+    val rank = text.trim()
+        .takeIf { it.matches(Regex("0?[0-9]+")) }
+        ?.toIntOrNull()
+        ?.takeIf { it in expectedRanks }
+        ?: return null
     val candidate = geometry?.toCandidateGeometry() ?: return null
     val center = candidate.center(sourceWidth, sourceHeight)
     return RankObservation(

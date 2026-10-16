@@ -10,6 +10,16 @@ class CustomDesignGridBuilderTest {
     private val builder = CustomDesignGridBuilder()
 
     @Test
+    fun buildsTheRequestedEighteenRowGeometry() {
+        val geometry = builder.build(
+            detection(rows = (1..18).associateWith { it * 50f }),
+            rowCapacity = 18,
+        )
+
+        assertEquals((1..18).toSet(), geometry.rowY.keys)
+    }
+
+    @Test
     fun preservesDetectedOcrRowsExactlyWithoutSnappingThemToFit() {
         val geometry = builder.build(detection(rows = mapOf(2 to 399f, 3 to 453f, 4 to 506f, 5 to 560f)))
 

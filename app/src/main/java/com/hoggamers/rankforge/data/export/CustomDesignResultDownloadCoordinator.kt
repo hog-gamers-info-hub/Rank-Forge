@@ -5,6 +5,7 @@ import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreAction
 import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreResult
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
@@ -106,12 +107,20 @@ class DefaultCustomDesignResultDownloadCoordinator internal constructor(
             is CustomDesignRestoreResult.Success -> result.design
             is CustomDesignRestoreResult.Failed -> return null
         }
+        val savedRowCapacity = CustomDesignRowCapacity.capacityForExactRankKeys(
+            design.geometry.rowY.keys,
+        ) ?: return null
+        val requiredRowCapacity = request.requiredCustomDesignRowCapacityOrNull()
+            ?: return null
+        if (savedRowCapacity != requiredRowCapacity) return null
         val rows = when (val result = resolveRows(request)) {
             is CustomDesignResultRowsResult.Success -> result.rows
             is CustomDesignResultRowsResult.MatchFailure,
             is CustomDesignResultRowsResult.TournamentFailure,
+            is CustomDesignResultRowsResult.ImageFailure,
             -> return null
         }
+        if (rows.isEmpty() || rows.size > requiredRowCapacity) return null
         val bitmap = when (
             val result = composeBitmap(
                 design.localImageReference,

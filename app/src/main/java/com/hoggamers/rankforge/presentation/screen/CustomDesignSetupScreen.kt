@@ -155,6 +155,7 @@ private val CustomDesignSelectableTextColors = listOf(
 @Composable
 fun CustomDesignSetupRoute(
     candidateUri: String,
+    requiredRowCount: Int = 12,
     onBack: () -> Unit,
     onSaveSuccessConfirmed: () -> Unit = {},
     viewModel: CustomDesignSetupViewModel = hiltViewModel(),
@@ -164,7 +165,8 @@ fun CustomDesignSetupRoute(
     var submittedCandidateUri by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<String?>(null)
     }
-    LaunchedEffect(candidateUri) {
+    LaunchedEffect(candidateUri, requiredRowCount) {
+        viewModel.setRequiredRowCapacity(requiredRowCount)
         if (submittedCandidateUri != candidateUri) {
             submittedCandidateUri = candidateUri
             viewModel.onPhotoPickerResult(candidateUri)

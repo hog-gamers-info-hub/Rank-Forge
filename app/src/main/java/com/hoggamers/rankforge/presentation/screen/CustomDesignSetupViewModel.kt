@@ -28,6 +28,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrRunner
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrSource
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrStatus
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRawOcrDocument
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
 import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
 import com.hoggamers.rankforge.domain.ocr.customdesign.averageRankingBoundingBoxHeightPx
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
@@ -69,9 +70,18 @@ class CustomDesignSetupViewModel @Inject constructor(
     private var deleteJob: Job? = null
     private var deleteGeneration = 0L
     private var discoveryJob: Job? = null
+    private var requiredRowCapacity = CustomDesignRowCapacity.DEFAULT_ROW_COUNT
 
     init {
         discoverAndRestoreSavedCustomDesign()
+    }
+
+    fun setRequiredRowCapacity(rowCapacity: Int) {
+        CustomDesignRowCapacity.requireSupported(rowCapacity)
+        requiredRowCapacity = rowCapacity
+        if (_uiState.value.savedCustomDesignId == null) {
+            _uiState.update { it.copy(activeRowCapacity = rowCapacity) }
+        }
     }
 
     private fun discoverAndRestoreSavedCustomDesign() {
@@ -211,15 +221,20 @@ class CustomDesignSetupViewModel @Inject constructor(
             when (result) {
                 is CustomDesignRestoreResult.Success -> {
                     val design = result.design
+                    val restoredCapacity = CustomDesignRowCapacity.capacityForExactRankKeys(
+                        design.geometry.rowY.keys,
+                    ) ?: return@launch
                     val editable = CustomDesignEditableGridInitializer.initialize(
                         sourceWidth = design.sourceWidth,
                         sourceHeight = design.sourceHeight,
                         automatic = null,
                         activeFields = activeCustomDesignFields(design.labels.matchesPlayed),
+                        rowCapacity = restoredCapacity,
                     ) ?: return@launch
                     rawOcrDocument = null
                     _uiState.update {
                         it.copy(
+                            activeRowCapacity = restoredCapacity,
                             teamNameLabel = design.labels.teamName,
                             winLabel = design.labels.win,
                             matchesPlayedLabel = design.labels.matchesPlayed.orEmpty(),
@@ -323,6 +338,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                         manualGridOverrides = CustomDesignGridOverrides(),
                         saveStatus = CustomDesignSaveStatus.IDLE,
                         savedCustomDesignId = null,
+                        activeRowCapacity = requiredRowCapacity,
                         restoreStatus = CustomDesignRestoreStatus.IDLE,
                         deleteStatus = CustomDesignDeleteStatus.DELETED,
                     )
@@ -401,7 +417,7 @@ class CustomDesignSetupViewModel @Inject constructor(
     ) {
         if (isRestoreLocked()) return
         val sourceHeight = _uiState.value.sourceImageHeight ?: return
-        if (rank !in CUSTOM_DESIGN_RANK_RANGE ||
+        if (rank !in CustomDesignRowCapacity.rankRange(_uiState.value.activeRowCapacity) ||
             !sourceY.isFinite() ||
             sourceY !in 0f..sourceHeight.toFloat()
         ) {
@@ -565,6 +581,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                     sourceHeight = transformed.sourceImageHeight ?: 0,
                     automatic = transformed.gridGeometry,
                     activeFields = transformed.activeFields,
+                    rowCapacity = transformed.activeRowCapacity,
                 )
             } else {
                 transformed.editableGridGeometry
@@ -642,6 +659,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                                 sourceHeight = source.sourceHeight,
                                 automatic = null,
                                 activeFields = _uiState.value.activeFields,
+                                rowCapacity = _uiState.value.activeRowCapacity,
                             ),
                         )
                     }
@@ -661,9 +679,10 @@ class CustomDesignSetupViewModel @Inject constructor(
             sourceHeight = source.sourceHeight,
             labels = state.ocrLabels(),
             blocks = document.blocks,
+            expectedRowCapacity = state.activeRowCapacity,
         )
         val gridGeometry = if (state.allRequiredLabelsFilled) {
-            customDesignGridBuilder.build(detection)
+            customDesignGridBuilder.build(detection, state.activeRowCapacity)
         } else {
             null
         }
@@ -683,6 +702,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                         sourceHeight = source.sourceHeight,
                         automatic = gridGeometry,
                         activeFields = state.activeFields,
+                        rowCapacity = state.activeRowCapacity,
                     )
                 } else {
                     it.editableGridGeometry
@@ -709,6 +729,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                 sourceHeight = sourceImageHeight ?: 0,
                 automatic = null,
                 activeFields = activeFields,
+                rowCapacity = activeRowCapacity,
             ),
             manualGridOverrides = if (clearManualGridOverrides) {
                 CustomDesignGridOverrides()
@@ -764,7 +785,7 @@ class CustomDesignSetupViewModel @Inject constructor(
                 else -> debugLog("HEADER $field NOT_FOUND")
             }
         }
-        (1..12).forEach { rank ->
+        CustomDesignRowCapacity.rankRange(_uiState.value.activeRowCapacity).forEach { rank ->
             when {
                 rank in detection.ambiguousRanks -> debugLog("RANK $rank AMBIGUOUS")
                 anchors.rowY[rank] != null -> debugLog("RANK $rank centerY=${anchors.rowY[rank]}")
@@ -778,7 +799,7 @@ class CustomDesignSetupViewModel @Inject constructor(
     private fun logGridGeometry(geometry: CustomDesignGridGeometry) {
         if (!BuildConfig.DEBUG) return
         debugLog("GRID rowStep=${geometry.estimatedRowStep}")
-        (1..12).forEach { rank ->
+        CustomDesignRowCapacity.rankRange(_uiState.value.activeRowCapacity).forEach { rank ->
             val row = geometry.rowY[rank]
             if (row == null) {
                 debugLog("GRID ROW $rank UNRESOLVED")

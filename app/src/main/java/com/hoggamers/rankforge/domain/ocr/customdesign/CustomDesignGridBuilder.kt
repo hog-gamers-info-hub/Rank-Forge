@@ -6,12 +6,14 @@ import kotlin.math.abs
 class CustomDesignGridBuilder @Inject constructor() {
     fun build(
         detection: CustomDesignAnchorDetectionResult,
+        rowCapacity: Int = CustomDesignRowCapacity.DEFAULT_ROW_COUNT,
     ): CustomDesignGridGeometry {
+        val rankRange = CustomDesignRowCapacity.rankRange(rowCapacity)
         val anchors = detection.anchors
         val detectedRows = anchors.rowY.entries
             .asSequence()
             .filter { (rank, y) ->
-                rank in RANK_RANGE &&
+                rank in rankRange &&
                     rank !in detection.ambiguousRanks &&
                     y.isFinite() &&
                     y >= 0f &&
@@ -43,6 +45,7 @@ class CustomDesignGridBuilder @Inject constructor() {
                 ambiguousRanks = detection.ambiguousRanks,
                 lattice = lattice,
                 sourceHeight = anchors.sourceHeight,
+                lastRank = rankRange.last,
             )
         }
 
@@ -127,6 +130,7 @@ class CustomDesignGridBuilder @Inject constructor() {
         ambiguousRanks: Set<Int>,
         lattice: RowLattice,
         sourceHeight: Int,
+        lastRank: Int,
     ) {
         val firstRank = detectedRows.firstOrNull()?.key
         if (firstRank == FIRST_RANK + 1 && FIRST_RANK !in ambiguousRanks) {
@@ -139,11 +143,11 @@ class CustomDesignGridBuilder @Inject constructor() {
             )
         }
 
-        val lastRank = detectedRows.lastOrNull()?.key
-        if (lastRank == LAST_RANK - 1 && LAST_RANK !in ambiguousRanks) {
+        val detectedLastRank = detectedRows.lastOrNull()?.key
+        if (detectedLastRank == lastRank - 1 && lastRank !in ambiguousRanks) {
             addPredictedRow(
                 rowY = rowY,
-                rank = LAST_RANK,
+                rank = lastRank,
                 source = CustomDesignRowCoordinateSource.EXTRAPOLATED,
                 lattice = lattice,
                 sourceHeight = sourceHeight,
@@ -176,12 +180,10 @@ class CustomDesignGridBuilder @Inject constructor() {
 
     private companion object {
         const val FIRST_RANK = 1
-        const val LAST_RANK = 12
         const val MIN_DETECTED_ROWS = 3
         const val MAX_INTERNAL_MISSING_RANKS = 2
         const val MIN_FIT_RESIDUAL_PX = 3f
         const val MAX_FIT_RESIDUAL_RATIO = 0.20f
-        val RANK_RANGE = FIRST_RANK..LAST_RANK
     }
 }
 

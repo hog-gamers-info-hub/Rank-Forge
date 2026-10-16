@@ -8,6 +8,7 @@ import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignGridOverrides
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEditableGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
 import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
 import com.hoggamers.rankforge.domain.ocr.customdesign.resolveCustomDesignEffectiveGridGeometry
 
@@ -53,6 +54,7 @@ data class CustomDesignDraft(
 )
 
 data class CustomDesignSetupUiState(
+    val activeRowCapacity: Int = CustomDesignRowCapacity.DEFAULT_ROW_COUNT,
     val teamNameLabel: String = "",
     val winLabel: String = "",
     val matchesPlayedLabel: String = "",
@@ -102,7 +104,9 @@ data class CustomDesignSetupUiState(
             ocrStatus in setOf(CustomDesignOcrStatus.COMPLETED, CustomDesignOcrStatus.FAILED) &&
             editableGridGeometry?.let { geometry ->
                 geometry.columnX.keys == activeFields.toSet() &&
-                    geometry.rowY.keys.containsAll((1..12).toSet())
+                geometry.rowY.keys == CustomDesignRowCapacity
+                    .rankRange(activeRowCapacity)
+                    .toSet()
             } == true
 }
 

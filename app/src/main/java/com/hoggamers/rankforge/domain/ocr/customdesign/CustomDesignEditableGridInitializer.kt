@@ -6,8 +6,10 @@ object CustomDesignEditableGridInitializer {
         sourceHeight: Int,
         automatic: CustomDesignGridGeometry?,
         activeFields: List<CustomDesignAnchorField> = CustomDesignAnchorField.REQUIRED_FIELDS,
+        rowCapacity: Int = CustomDesignRowCapacity.DEFAULT_ROW_COUNT,
     ): CustomDesignEditableGridGeometry? {
         if (sourceWidth <= 0 || sourceHeight <= 0) return null
+        CustomDesignRowCapacity.requireSupported(rowCapacity)
 
         val usableAutomatic = automatic?.takeIf {
             it.sourceWidth == sourceWidth &&
@@ -17,7 +19,7 @@ object CustomDesignEditableGridInitializer {
             sourceWidth = sourceWidth,
             sourceHeight = sourceHeight,
             columnX = initializeColumns(sourceWidth, usableAutomatic, activeFields),
-            rowY = initializeRows(sourceHeight, usableAutomatic),
+            rowY = initializeRows(sourceHeight, usableAutomatic, rowCapacity),
         )
     }
 
@@ -113,10 +115,12 @@ object CustomDesignEditableGridInitializer {
     private fun initializeRows(
         sourceHeight: Int,
         automatic: CustomDesignGridGeometry?,
+        rowCapacity: Int,
     ): Map<Int, CustomDesignEditableRowCoordinate> {
+        val rankRange = CustomDesignRowCapacity.rankRange(rowCapacity)
         val automaticRows = automatic?.rowY
             ?.filter { (rank, row) ->
-                rank in RANK_RANGE &&
+                rank in rankRange &&
                     row.y.isFinite() &&
                     row.y in 0f..sourceHeight.toFloat()
             }
@@ -127,7 +131,7 @@ object CustomDesignEditableGridInitializer {
             right.value.y > left.value.y
         }
         if (!structurallyValid || orderedAutomaticRows.isEmpty()) {
-            return fallbackRows(sourceHeight)
+            return fallbackRows(sourceHeight, rowCapacity)
         }
 
         val result = linkedMapOf<Int, CustomDesignEditableRowCoordinate>()
@@ -178,7 +182,7 @@ object CustomDesignEditableGridInitializer {
         }
 
         val lastAutomatic = orderedAutomaticRows.last()
-        val trailingRanks = (lastAutomatic.key + 1..LAST_RANK).toList()
+        val trailingRanks = (lastAutomatic.key + 1..rankRange.last).toList()
         val trailingEstimates = step?.let { spacing ->
             trailingRanks.map { rank ->
                 rank to lastAutomatic.value.y + spacing * (rank - lastAutomatic.key).toFloat()
@@ -202,10 +206,10 @@ object CustomDesignEditableGridInitializer {
             }
         }
 
-        return if (isStrictlyOrderedAndBounded(result, sourceHeight)) {
+        return if (isStrictlyOrderedAndBounded(result, sourceHeight, rowCapacity)) {
             result.toSortedMap()
         } else {
-            fallbackRows(sourceHeight)
+            fallbackRows(sourceHeight, rowCapacity)
         }
     }
 
@@ -253,10 +257,13 @@ object CustomDesignEditableGridInitializer {
         }
     }
 
-    private fun fallbackRows(sourceHeight: Int): Map<Int, CustomDesignEditableRowCoordinate> =
-        (1..LAST_RANK).associateWith { rank ->
+    private fun fallbackRows(
+        sourceHeight: Int,
+        rowCapacity: Int,
+    ): Map<Int, CustomDesignEditableRowCoordinate> =
+        CustomDesignRowCapacity.rankRange(rowCapacity).associateWith { rank ->
             CustomDesignEditableRowCoordinate(
-                y = sourceHeight * rank.toFloat() / (LAST_RANK + 1).toFloat(),
+                y = sourceHeight * rank.toFloat() / (rowCapacity + 1).toFloat(),
                 source = CustomDesignEditableCoordinateSource.FALLBACK,
             )
         }
@@ -264,15 +271,15 @@ object CustomDesignEditableGridInitializer {
     private fun isStrictlyOrderedAndBounded(
         rows: Map<Int, CustomDesignEditableRowCoordinate>,
         sourceHeight: Int,
+        rowCapacity: Int,
     ): Boolean {
-        val ordered = RANK_RANGE.mapNotNull { rank -> rows[rank]?.y }
-        return ordered.size == RANK_RANGE.count() &&
+        val rankRange = CustomDesignRowCapacity.rankRange(rowCapacity)
+        val ordered = rankRange.mapNotNull { rank -> rows[rank]?.y }
+        return ordered.size == rankRange.count() &&
             ordered.all { it.isFinite() && it in 0f..sourceHeight.toFloat() } &&
             ordered.zipWithNext().all { (left, right) -> right > left }
     }
 
-    private const val LAST_RANK = 12
-    private val RANK_RANGE = 1..LAST_RANK
 }
 
 private fun List<Float>.medianOrNull(): Float? {

@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignOcrLabels
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
 import com.hoggamers.rankforge.domain.ocr.customdesign.activeCustomDesignFields
 import io.github.jan.supabase.auth.auth
 import java.util.UUID
@@ -154,10 +155,11 @@ class CustomDesignSaveCoordinator internal constructor(
         ) return CustomDesignSaveFailure.VALIDATION
         val geometry = request.effectiveGridGeometry ?: return CustomDesignSaveFailure.VALIDATION
         val activeFields = activeCustomDesignFields(request.labels.matchesPlayed)
+        val rowCapacity = CustomDesignRowCapacity.capacityForExactRankKeys(geometry.rowY.keys)
         if (geometry.sourceWidth != request.currentSourceWidth ||
             geometry.sourceHeight != request.currentSourceHeight ||
             geometry.columnX.keys != activeFields.toSet() ||
-            geometry.rowY.keys != (1..12).toSet()
+            rowCapacity == null
         ) return CustomDesignSaveFailure.VALIDATION
         if (geometry.columnX.values.any { !it.isFinite() || it !in 0f..request.currentSourceWidth.toFloat() }) {
             return CustomDesignSaveFailure.VALIDATION
@@ -169,7 +171,12 @@ class CustomDesignSaveCoordinator internal constructor(
                 !it.isFinite() || it <= 0f || it > request.currentSourceHeight.toFloat()
             } == true
         ) return CustomDesignSaveFailure.VALIDATION
-        if ((1..11).any { geometry.rowY.getValue(it) >= geometry.rowY.getValue(it + 1) }) {
+        if ((CustomDesignRowCapacity.rankRange(rowCapacity).first until
+                CustomDesignRowCapacity.rankRange(rowCapacity).last
+            ).any { rank ->
+                geometry.rowY.getValue(rank) >= geometry.rowY.getValue(rank + 1)
+            }
+        ) {
             return CustomDesignSaveFailure.VALIDATION
         }
         return null
@@ -208,7 +215,12 @@ class CustomDesignSaveCoordinator internal constructor(
                 }
             },
             rowsJson = buildJsonObject {
-                (1..12).forEach { rank -> put(rank.toString(), geometry.rowY.getValue(rank).toDouble()) }
+                CustomDesignRowCapacity.capacityForExactRankKeys(geometry.rowY.keys)
+                    ?.let { rowCapacity ->
+                        CustomDesignRowCapacity.rankRange(rowCapacity).forEach { rank ->
+                            put(rank.toString(), geometry.rowY.getValue(rank).toDouble())
+                        }
+                    }
             },
             textColorsJson = buildJsonObject {
                 activeCustomDesignFields(labels.matchesPlayed).forEach { field ->

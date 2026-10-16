@@ -9,6 +9,7 @@ import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignColumnTextColors
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
 
 enum class CustomDesignCanvasRenderFailure {
     INVALID_SOURCE_DIMENSIONS,
@@ -115,18 +116,20 @@ class CustomDesignCanvasRenderer {
         if (geometry.sourceWidth <= 0 || geometry.sourceHeight <= 0) {
             return CustomDesignCanvasRenderFailure.INVALID_SOURCE_DIMENSIONS
         }
-        if (rows.isEmpty() || rows.size > CUSTOM_DESIGN_ROW_COUNT) {
+        val rowCapacity = CustomDesignRowCapacity.capacityForExactRankKeys(geometry.rowY.keys)
+            ?: return CustomDesignCanvasRenderFailure.MISSING_ROW
+        if (rows.isEmpty() || rows.size > rowCapacity) {
             return CustomDesignCanvasRenderFailure.INVALID_ROW_COUNT
         }
         if (CustomDesignAnchorField.REQUIRED_FIELDS.any { it !in geometry.columnX }) {
             return CustomDesignCanvasRenderFailure.MISSING_COLUMN
         }
-        if ((1..CUSTOM_DESIGN_ROW_COUNT).any { it !in geometry.rowY }) {
+        if (CustomDesignRowCapacity.rankRange(rowCapacity).any { it !in geometry.rowY }) {
             return CustomDesignCanvasRenderFailure.MISSING_ROW
         }
         if (geometry.columnX.any { (_, x) ->
                 !x.isFinite() || x !in 0f..geometry.sourceWidth.toFloat()
-            } || (1..CUSTOM_DESIGN_ROW_COUNT).any { rank ->
+            } || CustomDesignRowCapacity.rankRange(rowCapacity).any { rank ->
                 val y = geometry.rowY.getValue(rank)
                 !y.isFinite() || y !in 0f..geometry.sourceHeight.toFloat()
             }
@@ -164,7 +167,6 @@ class CustomDesignCanvasRenderer {
     }
 
     private companion object {
-        const val CUSTOM_DESIGN_ROW_COUNT = 12
         const val LEGACY_RESULT_TEXT_SIZE_PX = 24f
         const val RESULT_TEXT_SIZE_MULTIPLIER = 1.3f
         const val RESULT_TEXT_WEIGHT = 500

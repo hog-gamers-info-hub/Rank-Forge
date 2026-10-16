@@ -117,6 +117,7 @@ import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.data.export.ResultPngRenderResult
 import com.hoggamers.rankforge.data.export.ResultPngRenderer
 import com.hoggamers.rankforge.data.export.ResultDownloadRequest
+import com.hoggamers.rankforge.data.export.requiredCustomDesignRowCapacityOrNull
 import com.hoggamers.rankforge.data.local.PointTableDetails
 import com.hoggamers.rankforge.data.local.PointTableDetailsRepository
 import com.hoggamers.rankforge.data.local.PointTableLogoCandidate
@@ -272,6 +273,10 @@ sealed interface DownloadResultPreviewState {
     data object Idle : DownloadResultPreviewState
     data object Loading : DownloadResultPreviewState
     data class ResultImage(val pngBytes: ByteArray) : DownloadResultPreviewState
+    data class IncompatibleCustomDesign(
+        val savedRowCount: Int,
+        val requiredRowCount: Int,
+    ) : DownloadResultPreviewState
     data object ImportYourDesign : DownloadResultPreviewState
     data object Unavailable : DownloadResultPreviewState
 }
@@ -392,7 +397,7 @@ class DownloadResultViewModel @Inject constructor(
                 val shouldNormalizeOverallDesign =
                     tournamentFormat == TournamentFormat.GROUP_ROTATION &&
                         selectedResult == DownloadResultSelection.Overall &&
-                        selectedDesign != DownloadResultDesignType.IMAGE
+                        selectedDesign == DownloadResultDesignType.FREE_DESIGN
                 _uiState.update {
                     it.copy(
                         tournamentFormat = tournamentFormat,
@@ -645,6 +650,7 @@ class DownloadResultViewModel @Inject constructor(
         val effectiveDesign = if (
             result == DownloadResultSelection.Overall &&
             _uiState.value.tournamentFormat == TournamentFormat.GROUP_ROTATION
+                && design == DownloadResultDesignType.FREE_DESIGN
         ) {
             DownloadResultDesignType.IMAGE
         } else {
@@ -667,21 +673,17 @@ class DownloadResultViewModel @Inject constructor(
                     _previewState.value = DownloadResultPreviewState.Unavailable
                     return@launch
                 }
-                val bytes = when (effectiveDesign) {
+                val preview = when (effectiveDesign) {
                     DownloadResultDesignType.IMAGE -> renderImagePreview(tournamentId, request)
+                        ?.let(DownloadResultPreviewState::ResultImage)
+                        ?: DownloadResultPreviewState.Unavailable
                     DownloadResultDesignType.FREE_DESIGN ->
                         renderFreeDesignPreview(tournamentId, request)
+                            ?.let(DownloadResultPreviewState::ResultImage)
+                            ?: DownloadResultPreviewState.Unavailable
                     DownloadResultDesignType.MY_DESIGN -> renderCustomDesignPreview(request)
                 }
-                if (bytes == null) {
-                    if (effectiveDesign == DownloadResultDesignType.MY_DESIGN && customDesignId == null) {
-                        _previewState.value = DownloadResultPreviewState.ImportYourDesign
-                    } else {
-                        _previewState.value = DownloadResultPreviewState.Unavailable
-                    }
-                } else {
-                    _previewState.value = DownloadResultPreviewState.ResultImage(bytes)
-                }
+                _previewState.value = preview
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Exception) {
@@ -782,7 +784,7 @@ class DownloadResultViewModel @Inject constructor(
                     if (
                         tournament?.format == TournamentFormat.GROUP_ROTATION &&
                         result == DownloadResultSelection.Overall &&
-                        design != DownloadResultDesignType.IMAGE
+                        design == DownloadResultDesignType.FREE_DESIGN
                     ) {
                         ResultDownloadExecutionResult.Failure(
                             com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
@@ -1120,7 +1122,9 @@ class DownloadResultViewModel @Inject constructor(
         }
     }
 
-    private suspend fun renderCustomDesignPreview(request: ResultDownloadRequest): ByteArray? {
+    private suspend fun renderCustomDesignPreview(
+        request: ResultDownloadRequest,
+    ): DownloadResultPreviewState {
         val savedId = when (val result = customDesignSavedIdDiscovery.find()) {
             is CustomDesignSavedIdDiscoveryResult.Found -> result.customDesignId.also {
                 _hasSavedCustomDesign.value = true
@@ -1130,20 +1134,35 @@ class DownloadResultViewModel @Inject constructor(
             is CustomDesignSavedIdDiscoveryResult.Failed,
             -> {
                 _hasSavedCustomDesign.value = false
-                return null
+                return DownloadResultPreviewState.ImportYourDesign
             }
         }
         val design = when (val result = customDesignRestore.restore(savedId)) {
             is CustomDesignRestoreResult.Success -> result.design
-            is CustomDesignRestoreResult.Failed -> return null
+            is CustomDesignRestoreResult.Failed -> return DownloadResultPreviewState.Unavailable
         }
         customDesignId = savedId
+        val savedRowCount = com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
+            .capacityForExactRankKeys(design.geometry.rowY.keys)
+            ?: return DownloadResultPreviewState.Unavailable
+        val requiredRowCount = request.requiredCustomDesignRowCapacityOrNull()
+            ?: return DownloadResultPreviewState.Unavailable
+        if (savedRowCount != requiredRowCount) {
+            return DownloadResultPreviewState.IncompatibleCustomDesign(
+                savedRowCount = savedRowCount,
+                requiredRowCount = requiredRowCount,
+            )
+        }
         return withContext(Dispatchers.Default) {
             val rows = when (val result = customDesignRowsResolver.resolve(request)) {
                 is CustomDesignResultRowsResult.Success -> result.rows
                 is CustomDesignResultRowsResult.MatchFailure,
                 is CustomDesignResultRowsResult.TournamentFailure,
-                -> return@withContext null
+                is CustomDesignResultRowsResult.ImageFailure,
+                -> return@withContext DownloadResultPreviewState.Unavailable
+            }
+            if (rows.isEmpty() || rows.size > requiredRowCount) {
+                return@withContext DownloadResultPreviewState.Unavailable
             }
             val bitmap = when (
                 val result = customDesignBitmapComposer.compose(
@@ -1155,9 +1174,10 @@ class DownloadResultViewModel @Inject constructor(
                 )
             ) {
                 is CustomDesignBitmapComposeResult.Success -> result.bitmap
-                is CustomDesignBitmapComposeResult.Failure -> return@withContext null
+                is CustomDesignBitmapComposeResult.Failure ->
+                    return@withContext DownloadResultPreviewState.Unavailable
             }
-            try {
+            val bytes = try {
                 val output = ByteArrayOutputStream()
                 if (bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
                     output.toByteArray().takeIf { it.isNotEmpty() }
@@ -1167,6 +1187,8 @@ class DownloadResultViewModel @Inject constructor(
             } finally {
                 bitmap.recycle()
             }
+            bytes?.let(DownloadResultPreviewState::ResultImage)
+                ?: DownloadResultPreviewState.Unavailable
         }
     }
 
@@ -1184,7 +1206,7 @@ fun DownloadResultRoute(
     initialDesign: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
     initialResult: DownloadResultSelection = DownloadResultSelection.Overall,
     onBack: () -> Unit,
-    onOpenCustomDesignSetup: (String, ResultDownloadScope, String) -> Unit = { _, _, _ -> },
+    onOpenCustomDesignSetup: (String, ResultDownloadScope, Int, String) -> Unit = { _, _, _, _ -> },
     onFreeDesignSettingsClick: () -> Unit = {},
     viewModel: DownloadResultViewModel = hiltViewModel(),
 ) {
@@ -1220,11 +1242,21 @@ fun DownloadResultRoute(
             pendingCustomDesignSelection = null
             val matchId = (selection as? DownloadResultSelection.Match)?.matchId ?: sourceMatchId
             if (selectedUri != null && selection != null && matchId != null) {
-                onOpenCustomDesignSetup(
-                    matchId,
-                    selection.exportScope,
-                    selectedUri.toString(),
-                )
+                val requiredRowCount = requiredCustomDesignRowCapacityOrNull(
+                        tournamentFormat = uiState.tournamentFormat,
+                        groupCount = uiState.groupCount,
+                        isCurrentMatch = selection is DownloadResultSelection.Match,
+                        pairingSelected = selection == DownloadResultSelection.Overall &&
+                            selectionContext.selectedPairing != null,
+                    )
+                if (requiredRowCount != null) {
+                    onOpenCustomDesignSetup(
+                        matchId,
+                        selection.exportScope,
+                        requiredRowCount,
+                        selectedUri.toString(),
+                    )
+                }
             }
         },
     )
@@ -1376,7 +1408,11 @@ fun DownloadResultScreen(
             if (tournamentFormat == TournamentFormat.GROUP_ROTATION &&
                 initialResult == DownloadResultSelection.Overall
             ) {
-                DownloadResultDesignType.IMAGE
+                if (initialDesign == DownloadResultDesignType.FREE_DESIGN) {
+                    DownloadResultDesignType.IMAGE
+                } else {
+                    initialDesign
+                }
             } else {
                 initialDesign
             },
@@ -1391,13 +1427,14 @@ fun DownloadResultScreen(
     val requestedDesign = selectionContext?.design ?: localSelectedDesign
     val selectedDesign = if (
         tournamentFormat == TournamentFormat.GROUP_ROTATION &&
-        selectedResult == DownloadResultSelection.Overall
+        selectedResult == DownloadResultSelection.Overall &&
+        requestedDesign == DownloadResultDesignType.FREE_DESIGN
     ) {
         DownloadResultDesignType.IMAGE
     } else {
         requestedDesign
     }
-    val groupRotationOverallImageOnly =
+    val groupRotationOverallFreeDesignUnsupported =
         tournamentFormat == TournamentFormat.GROUP_ROTATION &&
             selectedResult == DownloadResultSelection.Overall
     val selectedTemplateId = selectionContext?.freeDesignTemplateId ?: localSelectedTemplateId
@@ -1626,7 +1663,7 @@ fun DownloadResultScreen(
                     },
                     testTag = DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG,
                 )
-                if (!groupRotationOverallImageOnly) {
+                if (!groupRotationOverallFreeDesignUnsupported) {
                     PointIqSelectionChip(
                         label = "Free Design",
                         selected = selectedDesign == DownloadResultDesignType.FREE_DESIGN,
@@ -1637,7 +1674,8 @@ fun DownloadResultScreen(
                         },
                         testTag = DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG,
                     )
-                    PointIqSelectionChip(
+                }
+                PointIqSelectionChip(
                         label = "My Design",
                         selected = selectedDesign == DownloadResultDesignType.MY_DESIGN,
                         onClick = {
@@ -1647,7 +1685,6 @@ fun DownloadResultScreen(
                         },
                         testTag = DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG,
                     )
-                }
             }
         }
 
@@ -1686,6 +1723,21 @@ fun DownloadResultScreen(
                                 selectedDesign == DownloadResultDesignType.FREE_DESIGN,
                             onSettingsClick = openPointTableDetails,
                         )
+                    is DownloadResultPreviewState.IncompatibleCustomDesign ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                text = "Saved design has ${previewState.savedRowCount} rows, " +
+                                    "but this result requires ${previewState.requiredRowCount}.",
+                                color = DownloadResultSelectedChipText,
+                                textAlign = TextAlign.Center,
+                            )
+                            Button(onClick = onDeleteSavedCustomDesign) {
+                                Text("Delete saved design")
+                            }
+                        }
                     DownloadResultPreviewState.ImportYourDesign ->
                         Button(
                             onClick = { onImportYourDesign(selectedResult) },

@@ -99,6 +99,7 @@ data class CustomDesignSetupDestination(
     val matchId: String,
     val downloadScope: String,
     val candidateUri: String,
+    val requiredRowCount: Int = 12,
 )
 
 @Serializable
