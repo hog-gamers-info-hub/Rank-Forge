@@ -6,7 +6,10 @@ import com.hoggamers.rankforge.data.auth.allowsAuthenticatedState
 import com.hoggamers.rankforge.data.auth.SupabaseClientProvider
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentityMode
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentityPersistenceRepository
+import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.Match
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.TournamentRepository
 import com.hoggamers.rankforge.domain.tournament.readIdentityMode
@@ -91,14 +94,25 @@ class SupabaseGroupRotationCloudMatchProvisioner @Inject constructor(
     private val clientProvider: SupabaseClientProvider,
     private val tournamentRepository: TournamentRepository,
     private val matchIdentityRepository: GroupRotationMatchIdentityPersistenceRepository,
+    private val syncDraftMatchesUseCase: SyncDraftMatchesUseCase,
 ) : GroupRotationCloudMatchProvisioner {
     override suspend fun ensureParent(
         tournamentId: String,
         matchId: String,
         expectedOwnerUserId: String?,
     ): GroupRotationCloudMatchProvisionResult {
-        val context = readUuidBackedMatch(tournamentId, matchId, expectedOwnerUserId)
+        val context = readUuidBackedMatch(
+            tournamentId = tournamentId,
+            matchId = matchId,
+            expectedOwnerUserId = expectedOwnerUserId,
+            includeStandard = true,
+        )
             ?: return GroupRotationCloudMatchProvisionResult.ValidationFailure
+        if (context is MatchCloudContext.Standard) {
+            val ownerUserId = currentOwnerUserId(expectedOwnerUserId)
+                ?: return GroupRotationCloudMatchProvisionResult.AuthenticationRequired
+            return ensureStandardParent(context.match, ownerUserId)
+        }
         if (context is MatchCloudContext.NotRequired) {
             return GroupRotationCloudMatchProvisionResult.NotRequired
         }
@@ -164,6 +178,7 @@ class SupabaseGroupRotationCloudMatchProvisioner @Inject constructor(
             is MatchCloudContext.UuidBacked -> context.match.id
             MatchCloudContext.NotRequired -> MatchCloudIdentity.matchId(tournamentId, matchId)
             null -> null
+            else -> MatchCloudIdentity.matchId(tournamentId, matchId)
         }
     }
 
@@ -273,11 +288,19 @@ class SupabaseGroupRotationCloudMatchProvisioner @Inject constructor(
         tournamentId: String,
         matchId: String,
         expectedOwnerUserId: String?,
+        includeStandard: Boolean = false,
     ): MatchCloudContext? {
         val ownerUserId = expectedOwnerUserId ?: currentOwnerUserId(null) ?: return null
         val tournament = tournamentRepository.observeByIdAndOwner(tournamentId, ownerUserId).first()
             ?: return null
         if (tournament.format != TournamentFormat.GROUP_ROTATION) {
+            if (includeStandard && tournament.format == TournamentFormat.STANDARD) {
+                val match = tournamentRepository.observeMatchesByTournamentIdAndOwner(tournamentId, ownerUserId)
+                    .first()
+                    .firstOrNull { it.id == matchId }
+                    ?: return null
+                return MatchCloudContext.Standard(match)
+            }
             return MatchCloudContext.NotRequired
         }
         val match = tournamentRepository.observeMatchesByTournamentIdAndOwner(tournamentId, ownerUserId)
@@ -301,6 +324,63 @@ class SupabaseGroupRotationCloudMatchProvisioner @Inject constructor(
         return if (expectedOwnerUserId == null || expectedOwnerUserId == ownerUserId) ownerUserId else null
     }
 
+    private suspend fun ensureStandardParent(
+        match: Match,
+        ownerUserId: String,
+    ): GroupRotationCloudMatchProvisionResult {
+        val expected = StandardMatchParentCloudExpectation(
+            id = MatchCloudIdentity.matchId(match.tournamentId, match.id)
+                ?: return GroupRotationCloudMatchProvisionResult.ValidationFailure,
+            tournamentId = match.tournamentId,
+            matchNumber = match.matchNumber,
+            matchDate = match.date.toString(),
+            mapName = match.mapName,
+        )
+        return try {
+            val existing = clientProvider.client
+                .from(MATCHES_TABLE)
+                .select { filter { eq("id", expected.id) } }
+                .decodeList<GroupRotationMatchParentCloudRow>()
+                .singleOrNull()
+            if (existing != null) {
+                return validateStandardExisting(existing, expected, ownerUserId)
+            }
+
+            if (match.status != MatchStatus.DRAFT) {
+                return GroupRotationCloudMatchProvisionResult.ValidationFailure
+            }
+            when (val syncResult = syncDraftMatchesUseCase.executeForRetry(
+                match.tournamentId,
+                ownerUserId,
+            )) {
+                DraftMatchCloudSyncResult.Success -> {
+                    val synced = clientProvider.client
+                        .from(MATCHES_TABLE)
+                        .select { filter { eq("id", expected.id) } }
+                        .decodeList<GroupRotationMatchParentCloudRow>()
+                        .singleOrNull()
+                        ?: return GroupRotationCloudMatchProvisionResult.ValidationFailure
+                    validateStandardExisting(synced, expected, ownerUserId)
+                }
+                DraftMatchCloudSyncResult.AuthenticationRequired ->
+                    GroupRotationCloudMatchProvisionResult.AuthenticationRequired
+                DraftMatchCloudSyncResult.AuthorizationFailure ->
+                    GroupRotationCloudMatchProvisionResult.AuthorizationFailure
+                DraftMatchCloudSyncResult.NetworkFailure ->
+                    GroupRotationCloudMatchProvisionResult.NetworkFailure
+                DraftMatchCloudSyncResult.ValidationFailure ->
+                    GroupRotationCloudMatchProvisionResult.ValidationFailure
+                is DraftMatchCloudSyncResult.Conflict,
+                is DraftMatchCloudSyncResult.PartialFailure,
+                -> GroupRotationCloudMatchProvisionResult.ValidationFailure
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            throwable.toProvisionResult()
+        }
+    }
+
     private fun validateExisting(
         existing: GroupRotationMatchParentCloudRow,
         expected: GroupRotationMatchParentCloudPayload,
@@ -319,8 +399,31 @@ class SupabaseGroupRotationCloudMatchProvisioner @Inject constructor(
         }
     }
 
+    private fun validateStandardExisting(
+        existing: GroupRotationMatchParentCloudRow,
+        expected: StandardMatchParentCloudExpectation,
+        ownerUserId: String,
+    ): GroupRotationCloudMatchProvisionResult {
+        if (existing.id != expected.id ||
+            existing.tournamentId != expected.tournamentId ||
+            existing.matchNumber != expected.matchNumber ||
+            existing.matchDate != expected.matchDate ||
+            existing.mapName != expected.mapName ||
+            existing.groupPairingKey != null ||
+            existing.status !in setOf("draft", "finalized")
+        ) {
+            return GroupRotationCloudMatchProvisionResult.ValidationFailure
+        }
+        return if (ownerUserId.isNotBlank()) {
+            GroupRotationCloudMatchProvisionResult.Ensured
+        } else {
+            GroupRotationCloudMatchProvisionResult.AuthorizationFailure
+        }
+    }
+
     private sealed interface MatchCloudContext {
         data object NotRequired : MatchCloudContext
+        data class Standard(val match: Match) : MatchCloudContext
         data class UuidBacked(val match: Match) : MatchCloudContext
     }
 
@@ -342,6 +445,14 @@ private data class GroupRotationMatchParentCloudPayload(
     @SerialName("map_name") val mapName: String,
     val status: String,
     @SerialName("group_pairing_key") val groupPairingKey: String,
+)
+
+private data class StandardMatchParentCloudExpectation(
+    val id: String,
+    val tournamentId: String,
+    val matchNumber: Int,
+    val matchDate: String,
+    val mapName: String,
 )
 
 @Serializable

@@ -148,6 +148,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.hilt.android.testing)
+    testImplementation("io.ktor:ktor-client-mock:3.5.1")
     ksp(libs.hilt.compiler)
     ksp(libs.androidx.room.compiler)
     kspTest(libs.hilt.compiler)
