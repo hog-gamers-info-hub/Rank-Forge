@@ -3,8 +3,10 @@ package com.hoggamers.rankforge.presentation.screen
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,10 +29,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -343,149 +345,178 @@ fun TournamentCreationScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag(TOURNAMENT_GROUP_ROTATION_CHECKBOX_TEST_TAG),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = PointIqCreateFieldHorizontalInset),
             ) {
-                Checkbox(
-                    checked = uiState.format == TournamentFormat.GROUP_ROTATION,
-                    onCheckedChange = { checked -> onGroupRotationChanged(checked) },
-                )
-                Text(
-                    text = stringResource(R.string.tournament_group_rotation_label),
-                    color = PointIqCreateHeader,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-
-            if (uiState.format == TournamentFormat.GROUP_ROTATION) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.tournament_group_count_label),
-                    color = PointIqCreateSubtitle,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
+                val groupRotationEnabled = uiState.format == TournamentFormat.GROUP_ROTATION
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onGroupRotationChanged(!groupRotationEnabled) }
+                        .testTag(TOURNAMENT_GROUP_ROTATION_CHECKBOX_TEST_TAG)
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    listOf(3, 4).forEach { groupCount ->
-                        val selected = uiState.groupCount == groupCount
-                        Button(
-                            onClick = { onGroupCountChanged(groupCount) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (selected) PointIqCreateCyan else PointIqCreateCtaDeepBlue,
-                                contentColor = Color.White,
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag(TOURNAMENT_GROUP_COUNT_OPTION_TEST_TAG_PREFIX + groupCount),
-                        ) {
-                            Text(
-                                text = stringResource(
+                    Text(
+                        text = stringResource(R.string.tournament_group_rotation_label),
+                        color = PointIqCreateFieldInactive,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (groupRotationEnabled) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = PointIqCreateCyan,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        Text(
+                            text = if (groupRotationEnabled) "Enabled" else "Enable",
+                            color = PointIqCreateCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal,
+                        )
+                        if (!groupRotationEnabled) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = PointIqCreateCyan,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+
+                if (groupRotationEnabled) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Use rotating group pairings instead of the standard 12-team format.",
+                        color = PointIqCreateSubtitle,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.tournament_group_count_label),
+                        color = PointIqCreateSubtitle,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(3, 4).forEach { groupCount ->
+                            val selected = uiState.groupCount == groupCount
+                            GroupRotationSelectionButton(
+                                label = stringResource(
                                     if (groupCount == 3) {
                                         R.string.tournament_group_count_three
                                     } else {
                                         R.string.tournament_group_count_four
                                     },
                                 ),
+                                selected = selected,
+                                onClick = { onGroupCountChanged(groupCount) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag(TOURNAMENT_GROUP_COUNT_OPTION_TEST_TAG_PREFIX + groupCount),
                             )
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.tournament_group_pairings_label),
-                    color = PointIqCreateSubtitle,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                availableGroupPairings(uiState.groupCount ?: 3)
-                    .chunked(2)
-                    .forEach { rowPairings ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.tournament_group_pairings_label),
+                        color = PointIqCreateSubtitle,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    availableGroupPairings(uiState.groupCount ?: 3)
+                        .chunked(2)
+                        .forEach { rowPairings ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             rowPairings.forEach { pairing ->
                                 val selected = pairing in uiState.selectedGroupPairings
-                                Button(
+                                GroupRotationSelectionButton(
+                                    label = pairingLabel(pairing),
+                                    selected = selected,
                                     onClick = { onGroupPairingToggled(pairing) },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (selected) PointIqCreateCyan else PointIqCreateCtaDeepBlue,
-                                        contentColor = Color.White,
-                                    ),
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag(
                                             TOURNAMENT_GROUP_PAIRING_TEST_TAG_PREFIX + pairing.canonicalKey,
                                         ),
-                                ) {
-                                    Text(text = pairingLabel(pairing))
-                                }
+                                )
                             }
                             if (rowPairings.size == 1) Spacer(modifier = Modifier.weight(1f))
                         }
                         Spacer(modifier = Modifier.height(6.dp))
-                    }
-                if (uiState.validationErrors[TournamentField.GROUP_CONFIGURATION] != null) {
-                    Text(
-                        text = stringResource(R.string.tournament_group_pairing_required_error),
-                        color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.sp,
-                    )
-                }
-                if (uiState.groupParticipationCounts.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = stringResource(R.string.tournament_group_pairing_participation_label),
-                        color = PointIqCreateSubtitle,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    uiState.groupParticipationCounts.forEach { (group, count) ->
+                        }
+                    if (uiState.validationErrors[TournamentField.GROUP_CONFIGURATION] != null) {
                         Text(
-                            text = stringResource(
-                                R.string.tournament_group_pairing_participation_count,
-                                groupLabel(group),
-                                count,
-                            ),
-                            color = PointIqCreateSubtitle,
+                            text = stringResource(R.string.tournament_group_pairing_required_error),
+                            color = MaterialTheme.colorScheme.error,
                             fontSize = 13.sp,
-                            modifier = Modifier.testTag(
-                                TOURNAMENT_GROUP_PARTICIPATION_COUNT_TEST_TAG_PREFIX + group.name,
-                            ),
                         )
                     }
-                    if (uiState.hasZeroGroupParticipation || uiState.hasUnevenGroupParticipation) {
-                        Column(
-                            modifier = Modifier.testTag(
-                                TOURNAMENT_GROUP_PARTICIPATION_WARNING_TEST_TAG,
-                            ),
-                        ) {
-                            if (uiState.hasZeroGroupParticipation) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.tournament_group_pairing_zero_participation_warning,
-                                    ),
-                                    color = PointIqCreateSubtitle,
-                                    fontSize = 13.sp,
-                                )
-                            }
-                            if (uiState.hasUnevenGroupParticipation) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.tournament_group_pairing_uneven_participation_warning,
-                                    ),
-                                    color = PointIqCreateSubtitle,
-                                    fontSize = 13.sp,
-                                )
+                    if (uiState.groupParticipationCounts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.tournament_group_pairing_participation_label),
+                            color = PointIqCreateSubtitle,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        uiState.groupParticipationCounts.forEach { (group, count) ->
+                            Text(
+                                text = stringResource(
+                                    R.string.tournament_group_pairing_participation_count,
+                                    groupLabel(group),
+                                    count,
+                                ),
+                                color = PointIqCreateSubtitle,
+                                fontSize = 13.sp,
+                                modifier = Modifier.testTag(
+                                    TOURNAMENT_GROUP_PARTICIPATION_COUNT_TEST_TAG_PREFIX + group.name,
+                                ),
+                            )
+                        }
+                        if (uiState.hasZeroGroupParticipation || uiState.hasUnevenGroupParticipation) {
+                            Column(
+                                modifier = Modifier.testTag(
+                                    TOURNAMENT_GROUP_PARTICIPATION_WARNING_TEST_TAG,
+                                ),
+                            ) {
+                                if (uiState.hasZeroGroupParticipation) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.tournament_group_pairing_zero_participation_warning,
+                                        ),
+                                        color = PointIqCreateSubtitle,
+                                        fontSize = 13.sp,
+                                    )
+                                }
+                                if (uiState.hasUnevenGroupParticipation) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.tournament_group_pairing_uneven_participation_warning,
+                                        ),
+                                        color = PointIqCreateSubtitle,
+                                        fontSize = 13.sp,
+                                    )
+                                }
                             }
                         }
                     }
@@ -569,6 +600,46 @@ private fun pairingLabel(pairing: GroupPairing): String =
     stringResource(groupStringRes(pairing.firstGroup)) +
         " × " +
         stringResource(groupStringRes(pairing.secondGroup))
+
+@Composable
+private fun GroupRotationSelectionButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (selected) PointIqCreateCyan else PointIqCreateBackground,
+            contentColor = if (selected) Color.White else PointIqCreateFieldInactive,
+            disabledContainerColor = PointIqCreateBackground,
+            disabledContentColor = PointIqCreateFieldInactive.copy(alpha = 0.6f),
+        ),
+        border = if (selected) {
+            null
+        } else {
+            BorderStroke(1.5.dp, PointIqCreateFieldInactive.copy(alpha = 0.8f))
+        },
+        modifier = modifier,
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text = label)
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .size(16.dp),
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun groupLabel(group: TournamentGroup): String = stringResource(groupStringRes(group))
