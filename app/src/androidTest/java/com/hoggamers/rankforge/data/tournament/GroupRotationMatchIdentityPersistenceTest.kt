@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
 import com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
@@ -96,6 +97,10 @@ class GroupRotationMatchIdentityPersistenceTest {
         )
 
         assertTrue(saved is GroupRotationMatchPersistenceResult.Saved)
+        setCurrentAssignments(
+            currentAssignment("A:B", 3, ALPHA_UUID),
+            currentAssignment("A:B", 11, BETA_UUID),
+        )
         val before = loaded(MATCH_ONE)
         assertEquals(listOf(3, 11), before.identity.teams.map { it.lobbySlotNumber })
         assertEquals(listOf(ALPHA_UUID, BETA_UUID), before.identity.teams.map { it.teamUUID })
@@ -126,6 +131,10 @@ class GroupRotationMatchIdentityPersistenceTest {
                 snapshot(pairing("A:C"), 9 to alpha()),
             ) is GroupRotationMatchPersistenceResult.Saved,
         )
+        setCurrentAssignments(
+            currentAssignment("A:B", 2, ALPHA_UUID),
+            currentAssignment("A:C", 9, ALPHA_UUID),
+        )
 
         assertEquals(2, loaded(MATCH_ONE).identity.teams.single().lobbySlotNumber)
         assertEquals(9, loaded(MATCH_TWO).identity.teams.single().lobbySlotNumber)
@@ -138,6 +147,7 @@ class GroupRotationMatchIdentityPersistenceTest {
         database.groupRotationTeamIdentityDao().upsertAll(
             listOf(identity(ALPHA_UUID, "Alpha Renamed")),
         )
+        setCurrentAssignments(currentAssignment("A:B", 4, ALPHA_UUID))
 
         val restored = loaded(MATCH_ONE).identity.teams.single()
         assertEquals(ALPHA_UUID, restored.teamUUID)
@@ -148,6 +158,7 @@ class GroupRotationMatchIdentityPersistenceTest {
     fun assignmentReplacementIsRejectedAndOriginalSnapshotRemains() = runBlocking {
         repository.save(tournament(), MATCH_ONE, snapshot(pairing("A:B"), 3 to alpha()))
         val rejected = repository.save(tournament(), MATCH_ONE, snapshot(pairing("A:B"), 3 to beta()))
+        setCurrentAssignments(currentAssignment("A:B", 3, ALPHA_UUID))
 
         assertTrue(rejected is GroupRotationMatchPersistenceResult.Invalid)
         assertEquals(ALPHA_UUID, loaded(MATCH_ONE).identity.teams.single().teamUUID)
@@ -211,6 +222,10 @@ class GroupRotationMatchIdentityPersistenceTest {
     fun invalidParticipantUuidAndDuplicatePlacementAreRejectedAtomically() = runBlocking {
         val initial = repository.save(tournament(), MATCH_ONE, snapshot(pairing("A:B"), 1 to alpha(), 2 to beta()))
         assertTrue(initial is GroupRotationMatchPersistenceResult.Saved)
+        setCurrentAssignments(
+            currentAssignment("A:B", 1, ALPHA_UUID),
+            currentAssignment("A:B", 2, BETA_UUID),
+        )
         val rejected = repository.save(
             tournament(),
             MATCH_ONE,
@@ -224,6 +239,104 @@ class GroupRotationMatchIdentityPersistenceTest {
 
         assertTrue(rejected is GroupRotationMatchPersistenceResult.Invalid)
         assertTrue(loaded(MATCH_ONE).participantResults.isEmpty())
+    }
+
+    @Test
+    fun draftReadRefreshesToCompletedCurrentPairingAndPreservesValidResults() = runBlocking {
+        repository.save(
+            tournament(),
+            MATCH_ONE,
+            snapshot(pairing("A:B"), 3 to alpha()),
+            participantResults = listOf(
+                GroupRotationMatchParticipantResult(
+                    teamUUID = ALPHA_UUID,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = 1,
+                    kills = 4,
+                ),
+            ),
+        )
+        setCurrentAssignments(
+            currentAssignment("A:B", 3, ALPHA_UUID),
+            currentAssignment("A:B", 11, BETA_UUID),
+        )
+
+        val refreshed = loaded(MATCH_ONE)
+
+        assertEquals(listOf(3, 11), refreshed.identity.teams.map { it.lobbySlotNumber })
+        assertEquals(listOf(ALPHA_UUID, BETA_UUID), refreshed.identity.teams.map { it.teamUUID })
+        assertEquals(listOf(ALPHA_UUID), refreshed.participantResults.map { it.teamUUID })
+        assertEquals(4, refreshed.participantResults.single().kills)
+        assertEquals(
+            listOf(ALPHA_UUID, BETA_UUID),
+            database.groupRotationMatchTeamAssignmentDao()
+                .readByMatchId(MATCH_ONE)
+                .map { it.teamUUID },
+        )
+    }
+
+    @Test
+    fun draftReadDropsStaleParticipantInsteadOfReassigningItByLobby() = runBlocking {
+        repository.save(
+            tournament(),
+            MATCH_ONE,
+            snapshot(pairing("A:B"), 3 to alpha()),
+            participantResults = listOf(
+                GroupRotationMatchParticipantResult(
+                    teamUUID = ALPHA_UUID,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = 1,
+                    kills = 4,
+                ),
+            ),
+        )
+        setCurrentAssignments(currentAssignment("A:B", 3, BETA_UUID))
+
+        val refreshed = loaded(MATCH_ONE)
+
+        assertEquals(listOf(BETA_UUID), refreshed.identity.teams.map { it.teamUUID })
+        assertTrue(refreshed.participantResults.isEmpty())
+        assertEquals(
+            listOf(BETA_UUID),
+            database.groupRotationMatchTeamAssignmentDao()
+                .readByMatchId(MATCH_ONE)
+                .map { it.teamUUID },
+        )
+        assertTrue(
+            database.groupRotationMatchParticipantResultDao()
+                .readByMatchId(MATCH_ONE)
+                .isEmpty(),
+        )
+    }
+
+    @Test
+    fun finalizedReadKeepsImmutableMatchIdentityWhenCurrentPairingChanges() = runBlocking {
+        repository.save(
+            tournament(),
+            MATCH_ONE,
+            snapshot(pairing("A:B"), 3 to alpha()),
+            participantResults = listOf(
+                GroupRotationMatchParticipantResult(
+                    teamUUID = ALPHA_UUID,
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = 1,
+                    kills = 4,
+                ),
+            ),
+        )
+        setCurrentAssignments(currentAssignment("A:B", 3, BETA_UUID))
+        database.matchDao().upsert(match(MATCH_ONE, "A:B").copy(status = MatchStatus.FINALIZED.name))
+
+        val restored = loaded(MATCH_ONE)
+
+        assertEquals(listOf(ALPHA_UUID), restored.identity.teams.map { it.teamUUID })
+        assertEquals(listOf(ALPHA_UUID), restored.participantResults.map { it.teamUUID })
+        assertEquals(
+            listOf(ALPHA_UUID),
+            database.groupRotationMatchTeamAssignmentDao()
+                .readByMatchId(MATCH_ONE)
+                .map { it.teamUUID },
+        )
     }
 
     private suspend fun loaded(matchId: String): GroupRotationMatchPersistenceSnapshotHolder =
@@ -282,6 +395,31 @@ class GroupRotationMatchIdentityPersistenceTest {
         displayName = displayName,
     )
 
+    private suspend fun setCurrentAssignments(vararg assignments: CurrentAssignment) {
+        database.groupRotationPairingTeamIdentityAssignmentDao()
+            .deleteByTournamentId(TOURNAMENT_ID)
+        if (assignments.isNotEmpty()) {
+            database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
+                assignments.map { assignment ->
+                    GroupRotationPairingTeamIdentityAssignmentEntity(
+                        tournamentId = TOURNAMENT_ID,
+                        pairingKey = assignment.pairingKey,
+                        lobbySlotNumber = assignment.lobbySlotNumber,
+                        teamUUID = assignment.teamUUID,
+                        nameCleared = assignment.nameCleared,
+                    )
+                },
+            )
+        }
+    }
+
+    private fun currentAssignment(
+        pairingKey: String,
+        lobbySlotNumber: Int,
+        teamUUID: String,
+        nameCleared: Boolean = false,
+    ) = CurrentAssignment(pairingKey, lobbySlotNumber, teamUUID, nameCleared)
+
     private fun identity(teamUUID: String, displayName: String) = GroupRotationTeamIdentityEntity(
         tournamentId = TOURNAMENT_ID,
         teamUUID = teamUUID,
@@ -294,6 +432,13 @@ class GroupRotationMatchIdentityPersistenceTest {
     private data class GroupRotationMatchPersistenceSnapshotHolder(
         val identity: GroupRotationMatchIdentitySnapshot,
         val participantResults: List<GroupRotationMatchParticipantResult>,
+    )
+
+    private data class CurrentAssignment(
+        val pairingKey: String,
+        val lobbySlotNumber: Int,
+        val teamUUID: String,
+        val nameCleared: Boolean,
     )
 
     private companion object {

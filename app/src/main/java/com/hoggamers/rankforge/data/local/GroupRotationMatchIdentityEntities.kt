@@ -138,6 +138,9 @@ interface GroupRotationMatchTeamAssignmentDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(assignments: List<GroupRotationMatchTeamAssignmentEntity>)
+
+    @Query("DELETE FROM group_rotation_match_team_assignments WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
 }
 
 @Dao

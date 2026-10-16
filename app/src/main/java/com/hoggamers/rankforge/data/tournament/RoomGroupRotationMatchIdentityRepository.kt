@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.data.local.GroupRotationMatchParticipantResultEnt
 import com.hoggamers.rankforge.data.local.GroupRotationMatchTeamAssignmentEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshotResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentityPersistenceRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
@@ -14,18 +15,23 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceIs
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingAssignment
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentity
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityNormalizer
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
+import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 
 class RoomGroupRotationMatchIdentityRepository @Inject constructor(
     private val database: RankForgeDatabase,
 ) : GroupRotationMatchIdentityPersistenceRepository {
     private val normalizer = GroupRotationTeamIdentityNormalizer()
+    private val snapshotResolver = com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshotResolver()
 
     /** Must be called from the caller's transaction after the snapshot was validated. */
     internal suspend fun clearParticipantResultsWithinTransaction(matchId: String) {
@@ -209,11 +215,21 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                 GroupRotationMatchPersistenceIssueCode.INVALID_PAIRING_KEY,
                 matchId,
             )
+        val assignmentDao = database.groupRotationMatchTeamAssignmentDao()
+        val storedAssignments = assignmentDao.readByMatchId(matchId)
+        val storedAssignmentIssues = validateStoredHeaderAndAssignments(
+            tournament = tournament,
+            matchId = matchId,
+            header = header,
+            assignments = storedAssignments,
+        )
+        if (storedAssignmentIssues.isNotEmpty()) {
+            return@withTransaction GroupRotationMatchPersistenceResult.Invalid(storedAssignmentIssues)
+        }
         val identitySnapshot = GroupRotationMatchIdentitySnapshot(
             tournamentId = tournament.id,
             pairing = pairing,
-            teams = database.groupRotationMatchTeamAssignmentDao()
-                .readByMatchId(matchId)
+            teams = storedAssignments
                 .sortedBy { it.lobbySlotNumber }
                 .map { assignment ->
                     identities.firstOrNull { it.teamUUID == assignment.teamUUID }?.let { identity ->
@@ -229,37 +245,88 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                     )
                 },
         )
+        val effectiveIdentitySnapshot = if (match.status == MatchStatus.DRAFT.name) {
+            when (val current = resolveCurrentDraftSnapshot(tournament, pairing, identities)) {
+                is GroupRotationMatchIdentitySnapshotResult.Loaded -> current.snapshot
+                is GroupRotationMatchIdentitySnapshotResult.Invalid ->
+                    return@withTransaction invalidCurrentDraftSnapshot(matchId, current.issues)
+            }
+        } else {
+            identitySnapshot
+        }
+        val effectiveAssignments = effectiveIdentitySnapshot.teams
+            .sortedBy { it.lobbySlotNumber }
+            .map { team ->
+                GroupRotationMatchTeamAssignmentEntity(
+                    matchId = matchId,
+                    tournamentId = tournament.id,
+                    lobbySlotNumber = team.lobbySlotNumber,
+                    teamUUID = team.teamUUID,
+                )
+            }
         val issues = validateMatchAndSnapshot(
             tournament = tournament,
             matchId = matchId,
             matchTournamentId = match.tournamentId,
             matchPairingKey = match.groupPairingKey,
-            snapshot = identitySnapshot,
+            snapshot = effectiveIdentitySnapshot,
             identities = identities.map { it.toDomain() },
         ) + validateStoredHeaderAndAssignments(
             tournament = tournament,
             matchId = matchId,
             header = header,
-            assignments = database.groupRotationMatchTeamAssignmentDao().readByMatchId(matchId),
+            assignments = effectiveAssignments,
         )
         if (issues.isNotEmpty()) {
             return@withTransaction GroupRotationMatchPersistenceResult.Invalid(issues.distinct())
         }
         val identitiesByUuid = identities.associateBy { it.teamUUID }
         val participantEntities = database.groupRotationMatchParticipantResultDao().readByMatchId(matchId)
+        val assignedTeamUuids = effectiveIdentitySnapshot.teams.map { it.teamUUID }.toSet()
+        val effectiveParticipantEntities = if (match.status == MatchStatus.DRAFT.name) {
+            participantEntities.filter { it.teamUUID in assignedTeamUuids }
+        } else {
+            participantEntities
+        }
         val participantIssues = validateParticipantEntities(
             matchId = matchId,
-            results = participantEntities,
-            assignedTeamUuids = identitySnapshot.teams.map { it.teamUUID }.toSet(),
+            results = effectiveParticipantEntities,
+            assignedTeamUuids = assignedTeamUuids,
             identitiesByUuid = identitiesByUuid,
         )
         if (participantIssues.isNotEmpty()) {
             return@withTransaction GroupRotationMatchPersistenceResult.Invalid(participantIssues)
         }
+        if (match.status == MatchStatus.DRAFT.name && storedAssignments != effectiveAssignments) {
+            val oldUuidByLobby = storedAssignments.associate { it.lobbySlotNumber to it.teamUUID }
+            val newLobbyByUuid = effectiveAssignments.associate { it.teamUUID to it.lobbySlotNumber }
+            val currentDraftValues = database.matchDraftValueDao().observeByMatchId(matchId).first()
+            val remappedDraftValues = currentDraftValues
+                .mapNotNull { value ->
+                    val teamUUID = oldUuidByLobby[value.teamSlotNumber]
+                    val newLobbySlot = teamUUID?.let(newLobbyByUuid::get)
+                    newLobbySlot?.let { value.copy(teamSlotNumber = it) }
+                }
+                .sortedBy { it.teamSlotNumber }
+            if (remappedDraftValues != currentDraftValues) {
+                database.matchDraftValueDao().deleteByMatchId(matchId)
+                database.matchDraftValueDao().upsertAll(remappedDraftValues)
+            }
+            assignmentDao.deleteByMatchId(matchId)
+            if (effectiveAssignments.isNotEmpty()) {
+                assignmentDao.insertAll(effectiveAssignments)
+            }
+            if (effectiveParticipantEntities.size != participantEntities.size) {
+                database.groupRotationMatchParticipantResultDao().deleteByMatchId(matchId)
+                if (effectiveParticipantEntities.isNotEmpty()) {
+                    database.groupRotationMatchParticipantResultDao().insertAll(effectiveParticipantEntities)
+                }
+            }
+        }
         GroupRotationMatchPersistenceResult.Loaded(
             GroupRotationMatchPersistenceSnapshot(
-                identity = identitySnapshot,
-                participantResults = participantEntities.map { entity ->
+                identity = effectiveIdentitySnapshot,
+                participantResults = effectiveParticipantEntities.map { entity ->
                     GroupRotationMatchParticipantResult(
                         teamUUID = entity.teamUUID,
                         participationStatus = MatchParticipationStatus.valueOf(entity.participationStatus),
@@ -271,6 +338,68 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
             ),
         )
     }
+
+    private suspend fun resolveCurrentDraftSnapshot(
+        tournament: Tournament,
+        pairing: GroupPairing,
+        identities: List<com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity>,
+    ): GroupRotationMatchIdentitySnapshotResult {
+        val assignmentEntities = database.groupRotationPairingTeamIdentityAssignmentDao()
+            .readByTournamentId(tournament.id)
+        val assignments = mutableListOf<GroupRotationPairingAssignment>()
+        assignmentEntities.forEach { entity ->
+            val assignmentPairing = runCatching { GroupPairing.fromCanonicalKey(entity.pairingKey) }
+                .getOrNull()
+                ?: return GroupRotationMatchIdentitySnapshotResult.Invalid(
+                    listOf(
+                        com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshotIssue(
+                            code = com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshotIssueCode.UNSELECTED_PAIRING,
+                            lobbySlotNumber = entity.lobbySlotNumber,
+                            teamUUID = entity.teamUUID,
+                            pairingKey = entity.pairingKey,
+                        ),
+                    ),
+                )
+            assignments += GroupRotationPairingAssignment(
+                tournamentId = entity.tournamentId,
+                pairingKey = assignmentPairing,
+                lobbySlotNumber = entity.lobbySlotNumber,
+                teamUUID = entity.teamUUID,
+                nameCleared = entity.nameCleared,
+            )
+        }
+        return snapshotResolver.resolve(
+            tournament = tournament,
+            pairing = pairing,
+            saved = GroupRotationTeamIdentityLocalSnapshot(
+                teams = identities.map { identity ->
+                    GroupRotationTeamIdentity(
+                        tournamentId = identity.tournamentId,
+                        teamUUID = identity.teamUUID,
+                        displayName = identity.displayName,
+                        normalizedName = identity.normalizedName,
+                    )
+                },
+                assignments = assignments,
+            ),
+        )
+    }
+
+    private fun invalidCurrentDraftSnapshot(
+        matchId: String,
+        issues: List<com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshotIssue>,
+    ): GroupRotationMatchPersistenceResult.Invalid = GroupRotationMatchPersistenceResult.Invalid(
+        issues.map { snapshotIssue ->
+            issue(
+                code = GroupRotationMatchPersistenceIssueCode.INVALID_STORED_DATA,
+                matchId = matchId,
+                lobbySlotNumber = snapshotIssue.lobbySlotNumber,
+                teamUUID = snapshotIssue.teamUUID,
+            )
+        }.ifEmpty {
+            listOf(issue(GroupRotationMatchPersistenceIssueCode.INVALID_STORED_DATA, matchId))
+        },
+    )
 
     private fun validateMatchAndSnapshot(
         tournament: Tournament,
