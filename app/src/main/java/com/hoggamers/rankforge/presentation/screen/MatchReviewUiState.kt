@@ -9,10 +9,12 @@ import com.hoggamers.rankforge.data.export.ResultExportFileFormat
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
+import com.hoggamers.rankforge.domain.tournament.nextAvailableMatchNumber
 import com.hoggamers.rankforge.domain.ocr.layout.OcrCropValidationProfiles
 import com.hoggamers.rankforge.domain.ocr.layout.OcrNormalizedCropRect
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
@@ -292,6 +294,37 @@ data class MatchReviewUiState(
             !matchId.isNullOrBlank() &&
             resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_UPPER) &&
             resultScreenshots.isOcrReady(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+}
+
+internal data class MatchReviewDisplayNumbers(
+    val matchNumber: Int,
+    val nextMatchNumber: Int?,
+)
+
+/**
+ * Match Review uses the same pairing-local order shown by Tournament Details.
+ * Persisted match numbers remain authoritative for Standard tournaments and for
+ * match creation; these values are display-only.
+ */
+internal fun calculateMatchReviewDisplayNumbers(
+    matches: List<Match>,
+    currentMatch: Match,
+): MatchReviewDisplayNumbers {
+    val pairing = currentMatch.groupPairing
+        ?: return MatchReviewDisplayNumbers(
+            matchNumber = currentMatch.matchNumber,
+            nextMatchNumber = nextAvailableMatchNumber(matches.map { it.matchNumber }),
+        )
+
+    val pairingMatches = matches
+        .filter { it.groupPairing == pairing }
+        .sortedWith(compareBy<Match> { it.matchNumber }.thenBy { it.id })
+    val pairingPosition = pairingMatches.indexOfFirst { it.id == currentMatch.id }
+
+    return MatchReviewDisplayNumbers(
+        matchNumber = if (pairingPosition >= 0) pairingPosition + 1 else currentMatch.matchNumber,
+        nextMatchNumber = pairingMatches.size + 1,
+    )
 }
 
 enum class CalculatedEvidenceRestoreStatus {

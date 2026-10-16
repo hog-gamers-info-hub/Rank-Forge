@@ -360,6 +360,81 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun groupRotationReviewUsesPairingWiseDisplayAndNextMatchNumbers() {
+        val pairingAb = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val pairingBc = GroupPairing(TournamentGroup.B, TournamentGroup.C)
+        val matches = listOf(
+            Match(
+                id = "bc-1",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 3,
+                date = LocalDate.of(2026, 10, 3),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairingBc,
+            ),
+            Match(
+                id = "ab-2",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 2,
+                date = LocalDate.of(2026, 10, 2),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairingAb,
+            ),
+            Match(
+                id = "ab-1",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 1),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairingAb,
+            ),
+        )
+
+        assertEquals(
+            MatchReviewDisplayNumbers(matchNumber = 1, nextMatchNumber = 2),
+            calculateMatchReviewDisplayNumbers(matches, matches.first()),
+        )
+    }
+
+    @Test
+    fun standardReviewKeepsTournamentWideDisplayNumbers() {
+        val matches = listOf(
+            Match(
+                id = "standard-1",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 1),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+            Match(
+                id = "standard-2",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 2,
+                date = LocalDate.of(2026, 10, 2),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+            Match(
+                id = "standard-3",
+                tournamentId = TOURNAMENT_ID,
+                matchNumber = 3,
+                date = LocalDate.of(2026, 10, 3),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+            ),
+        )
+
+        assertEquals(
+            MatchReviewDisplayNumbers(matchNumber = 3, nextMatchNumber = 4),
+            calculateMatchReviewDisplayNumbers(matches, matches.last()),
+        )
+    }
+
+    @Test
     fun groupRotationReviewPassesCurrentPairingToNextMatchWorkflow() = runTest {
         val tournamentId = "rotation-next-match"
         val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)

@@ -57,7 +57,6 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultRowInput
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
-import com.hoggamers.rankforge.domain.tournament.nextAvailableMatchNumber
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
@@ -372,6 +371,7 @@ class MatchReviewViewModel @Inject constructor(
                         matchId = matchId,
                     )
                 } else {
+                    val displayNumbers = calculateMatchReviewDisplayNumbers(matches, match)
                     if (uuidDraft != null) {
                         val projection = GroupRotationMatchPresentationProjection.project(uuidDraft.state)
                         val loadedProjection = projection as? GroupRotationMatchPresentationProjectionResult.Loaded
@@ -410,8 +410,8 @@ class MatchReviewViewModel @Inject constructor(
                                         ?.lobbySlotNumber
                                 }
                                 .toSet(),
-                            matchNumber = match.matchNumber,
-                            nextMatchNumber = nextAvailableMatchNumber(matches.map { it.matchNumber }),
+                            matchNumber = displayNumbers.matchNumber,
+                            nextMatchNumber = displayNumbers.nextMatchNumber,
                             existingMatchCount = matches.size,
                             status = match.status,
                             isUuidBackedGroupRotation = true,
@@ -534,8 +534,8 @@ class MatchReviewViewModel @Inject constructor(
                             .analyzeTeamSlotParticipation(canonicalTeamSlotNumbers)
                             .activeCount,
                         finalizedParticipantSlotNumbers = finalizedParticipantSlotNumbers,
-                        matchNumber = match.matchNumber,
-                        nextMatchNumber = nextAvailableMatchNumber(matches.map { it.matchNumber }),
+                        matchNumber = displayNumbers.matchNumber,
+                        nextMatchNumber = displayNumbers.nextMatchNumber,
                         existingMatchCount = matches.size,
                         status = match.status,
                         isLegacyFinalizedGroupRotation = isLegacyFinalizedGroupRotation,
