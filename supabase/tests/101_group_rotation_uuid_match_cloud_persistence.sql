@@ -253,16 +253,16 @@ select is((
         'e2b10000-0000-0000-0000-000000000001',
         '{"id":"e2b30000-0000-0000-0000-000000000001","tournament_id":"e2b10000-0000-0000-0000-000000000001","pairing_key":"A:B"}'::jsonb,
         '[{"lobby_slot_number":2,"team_uuid":"e2b20000-0000-0000-0000-000000000003"},{"lobby_slot_number":9,"team_uuid":"e2b20000-0000-0000-0000-000000000002"}]'::jsonb,
-        '[{"team_uuid":"e2b20000-0000-0000-0000-000000000003","participation_status":"PARTICIPATED","placement":1,"kills":5,"point_adjustment":1},{"team_uuid":"e2b20000-0000-0000-0000-000000000002","participation_status":"NO_SHOW","placement":null,"kills":0,"point_adjustment":0}]'::jsonb,
+        '[]'::jsonb,
         3,
         'e2b40000-0000-0000-0000-000000000004'
     )
-), 'success', 'draft match lobby identity can be replaced before finalization');
+), 'validation_failure', 'saved match lobby identity cannot be replaced');
 select is((
     select team_uuid from public.group_rotation_match_uuid_assignments
     where match_id = 'e2b30000-0000-0000-0000-000000000001'
         and lobby_slot_number = 2
-), 'e2b20000-0000-0000-0000-000000000003'::uuid, 'draft replacement stores the incoming UUID');
+), 'e2b20000-0000-0000-0000-000000000001'::uuid, 'immutable assignment rejection leaves the old UUID');
 
 select is((
     select outcome
@@ -271,7 +271,7 @@ select is((
         '{"id":"e2b30000-0000-0000-0000-000000000002","tournament_id":"e2b10000-0000-0000-0000-000000000001","pairing_key":"A:C"}'::jsonb,
         '[{"lobby_slot_number":7,"team_uuid":"e2b20000-0000-0000-0000-000000000003"}]'::jsonb,
         '[{"team_uuid":"e2b20000-0000-0000-0000-000000000003","participation_status":"PARTICIPATED","placement":null,"kills":0,"point_adjustment":0}]'::jsonb,
-        4,
+        3,
         'e2b40000-0000-0000-0000-000000000005'
     )
 ), 'success', 'a second match is persisted independently');
@@ -285,8 +285,8 @@ select is((
     from public.finalize_match_snapshot_v4(
         'e2b10000-0000-0000-0000-000000000001',
         'e2b30000-0000-0000-0000-000000000001',
-        '[{"team_uuid":"e2b20000-0000-0000-0000-000000000003","participation_status":"PARTICIPATED","placement":1,"kills":5,"point_adjustment":1},{"team_uuid":"e2b20000-0000-0000-0000-000000000002","participation_status":"NO_SHOW","placement":null,"kills":0,"point_adjustment":0}]'::jsonb,
-        5,
+        '[{"team_uuid":"e2b20000-0000-0000-0000-000000000001","participation_status":"PARTICIPATED","placement":1,"kills":5,"point_adjustment":1},{"team_uuid":"e2b20000-0000-0000-0000-000000000002","participation_status":"NO_SHOW","placement":null,"kills":0,"point_adjustment":0}]'::jsonb,
+        4,
         'e2b40000-0000-0000-0000-000000000006'
     )
 ), 'success', 'complete UUID result snapshot finalizes');
@@ -304,7 +304,7 @@ select is((
         'e2b10000-0000-0000-0000-000000000001',
         'e2b30000-0000-0000-0000-000000000001',
         '[{"team_uuid":"e2b20000-0000-0000-0000-000000000001","participation_status":"PARTICIPATED","placement":1,"kills":5,"point_adjustment":1},{"team_uuid":"e2b20000-0000-0000-0000-000000000002","participation_status":"NO_SHOW","placement":null,"kills":0,"point_adjustment":0}]'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000007'
     )
 ), 'already_finalized', 'repeat finalization is rejected');
@@ -338,7 +338,7 @@ select is((
         'e2b10000-0000-0000-0000-000000000001',
         'e2b30000-0000-0000-0000-000000000002',
         '[{"team_uuid":"e2b20000-0000-0000-0000-000000000003","participation_status":"PARTICIPATED","placement":null,"kills":2,"point_adjustment":0}]'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000009'
     )
 ), 'validation_failure', 'finalization rejects a participated row without placement');
@@ -378,7 +378,7 @@ select is((
         '{"id":"e2b30000-0000-0000-0000-000000000002","tournament_id":"e2b10000-0000-0000-0000-000000000001","pairing_key":"A:C"}'::jsonb,
         '[{"lobby_slot_number":7,"team_uuid":"e2b20000-0000-0000-0000-000000000011"}]'::jsonb,
         '[]'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000012'
     )
 ), 'validation_failure', 'a UUID from another tournament is rejected');
@@ -394,7 +394,7 @@ select is((
         '{"id":"e2b30000-0000-0000-0000-000000000002","tournament_id":"e2b10000-0000-0000-0000-000000000001","pairing_key":"A:C"}'::jsonb,
         '[{"lobby_slot_number":7,"team_uuid":"e2b20000-0000-0000-0000-000000000003"},{"lobby_slot_number":8,"team_uuid":"e2b20000-0000-0000-0000-000000000003"}]'::jsonb,
         '[]'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000015'
     )
 ), 'validation_failure', 'duplicate UUIDs within one match identity are rejected');
@@ -406,7 +406,7 @@ select is((
         '{"id":"e2b30000-0000-0000-0000-000000000002","tournament_id":"e2b10000-0000-0000-0000-000000000001","pairing_key":"A:C"}'::jsonb,
         '[{"lobby_slot_number":7,"team_uuid":"e2b20000-0000-0000-0000-000000000003"}]'::jsonb,
         '[{"team_uuid":"e2b20000-0000-0000-0000-000000000003","participation_status":"PARTICIPATED","placement":null,"kills":-1,"point_adjustment":0}]'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000016'
     )
 ), 'validation_failure', 'negative draft kills are rejected');
@@ -418,7 +418,7 @@ select is((
         '{"id":"e2b30000-0000-0000-0000-000000000002","tournament_id":"e2b10000-0000-0000-0000-000000000001","pairing_key":"A:C"}'::jsonb,
         '[{"lobby_slot_number":7,"team_uuid":"e2b20000-0000-0000-0000-000000000003"}]'::jsonb,
         '[{"team_uuid":"e2b20000-0000-0000-0000-000000000003","participation_status":"UNKNOWN","placement":null,"kills":0,"point_adjustment":0}]'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000017'
     )
 ), 'validation_failure', 'unknown draft participation status is rejected');
@@ -430,7 +430,7 @@ select is((
         '{"id":"e2b30000-0000-0000-0000-000000000002","tournament_id":"e2b10000-0000-0000-0000-000000000001","pairing_key":"A:C"}'::jsonb,
         '[{"lobby_slot_number":7,"team_uuid":"e2b20000-0000-0000-0000-000000000003"}]'::jsonb,
         '{}'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000018'
     )
 ), 'validation_failure', 'non-array draft results fail closed');
@@ -441,7 +441,7 @@ select is((
         'e2b10000-0000-0000-0000-000000000001',
         'e2b30000-0000-0000-0000-000000000002',
         '[{"team_uuid":"e2b20000-0000-0000-0000-000000000003","participation_status":"PARTICIPATED","placement":13,"kills":2,"point_adjustment":0}]'::jsonb,
-        6,
+        5,
         'e2b40000-0000-0000-0000-000000000019'
     )
 ), 'validation_failure', 'finalization rejects placement thirteen');
