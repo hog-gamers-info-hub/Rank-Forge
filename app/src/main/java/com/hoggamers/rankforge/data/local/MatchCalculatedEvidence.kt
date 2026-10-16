@@ -61,6 +61,8 @@ data class ResultCalculatedEvidence(
 data class ResultPositionCalculatedEvidence(
     val position: Int,
     val sourceScreenshotRole: MatchResultScreenshotRole? = null,
+    /** Semantic OCR role; absent in legacy evidence. The source role remains the physical slot. */
+    val semanticScreenshotRole: MatchResultScreenshotRole? = null,
     val cropLeft: Int? = null,
     val cropTop: Int? = null,
     val cropRight: Int? = null,

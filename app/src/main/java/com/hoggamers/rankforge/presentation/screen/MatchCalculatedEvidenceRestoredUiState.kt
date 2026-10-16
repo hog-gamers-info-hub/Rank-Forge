@@ -109,18 +109,39 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
             },
         ),
     )
+    val physicalSemanticAssociations = positions.mapNotNull { position ->
+        val physicalRole = position.sourceScreenshotRole ?: return@mapNotNull null
+        physicalRole to (position.semanticScreenshotRole ?: physicalRole)
+    }
+    val physicalCounts = physicalSemanticAssociations
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, values) -> values.distinct().size }
+    val semanticCounts = physicalSemanticAssociations
+        .groupBy({ it.second }, { it.first })
+        .mapValues { (_, values) -> values.distinct().size }
+    val semanticRoleByPhysicalScreenshotRole = physicalSemanticAssociations
+        .filter { (physicalRole, semanticRole) ->
+            physicalCounts[physicalRole] == 1 && semanticCounts[semanticRole] == 1
+        }
+        .toMap()
     val preview = MatchResultOcrPreviewUiState.Ready(
-        roles = positions.mapNotNull { it.sourceScreenshotRole }.distinct(),
+        roles = positions.mapNotNull { it.semanticScreenshotRole ?: it.sourceScreenshotRole }.distinct(),
         rows = previewRows,
         ignoredLowerRows = emptyList(),
         manualReviewRows = emptyList(),
         authoritativePositionCropsByRole = positions
             .mapNotNull { position ->
-                position.sourceScreenshotRole
-                    ?.let { role -> role to position.toAuthoritativePositionCropOrNull() }
+                val physicalRole = position.sourceScreenshotRole ?: return@mapNotNull null
+                if (semanticRoleByPhysicalScreenshotRole[physicalRole] !=
+                    (position.semanticScreenshotRole ?: physicalRole)
+                ) {
+                    return@mapNotNull null
+                }
+                physicalRole to position.toAuthoritativePositionCropOrNull()
             }
             .mapNotNull { (role, crop) -> crop?.let { role to it } }
             .groupBy({ it.first }, { it.second }),
+        semanticRoleByPhysicalScreenshotRole = semanticRoleByPhysicalScreenshotRole,
     )
     return MatchOcrReviewUiState.Ready(
         tournamentId = tournamentId,
@@ -173,7 +194,7 @@ private fun ResultPositionCalculatedEvidence.toRestoredPreviewRow(): MatchResult
     val applicability = playerKillApplicability()
     return MatchResultOcrPreviewRowUiState(
         position = position,
-        role = requireNotNull(sourceScreenshotRole),
+        role = semanticScreenshotRole ?: requireNotNull(sourceScreenshotRole),
         sourceLabel = RESTORED_EVIDENCE_LABEL,
         placementText = displayPlacement,
         slots = (1..4).map { slot ->

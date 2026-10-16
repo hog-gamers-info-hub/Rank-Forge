@@ -49,6 +49,8 @@ class MatchResultOcrCacheCodec @Inject constructor() {
             ),
             cropWidth = dto.cropWidth,
             cropHeight = dto.cropHeight,
+            physicalScreenshotRole = dto.physicalScreenshotRole
+                ?.let(MatchResultScreenshotRole::valueOf),
         )
     }.getOrNull()
 }
@@ -62,6 +64,8 @@ private data class MatchResultOcrCachedProcessedDto(
     val pixelCrop: MatchResultOcrPixelCropDto,
     val cropWidth: Int,
     val cropHeight: Int,
+    /** Optional physical source slot; absent in legacy cache payloads. */
+    val physicalScreenshotRole: String? = null,
 )
 
 @Serializable
@@ -143,6 +147,7 @@ private fun MatchResultOcrPreviewProcessingResult.Processed.toDto() = MatchResul
     ),
     cropWidth = cropWidth,
     cropHeight = cropHeight,
+    physicalScreenshotRole = physicalScreenshotRole?.name,
 )
 
 private fun MatchResultOcrExtractionResult.toDto() = MatchResultOcrExtractionDto(

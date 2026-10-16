@@ -30,6 +30,7 @@ data class MatchResultPositionCropPreview(
     val image: MatchResultPositionCropPreviewImage,
     val geometry: MatchResultPositionCrop? = null,
     val sourceScreenshotRole: MatchResultScreenshotRole? = null,
+    val semanticScreenshotRole: MatchResultScreenshotRole? = null,
 ) {
     init {
         require(position in 1..12) { "Result position must be in 1..12." }
@@ -86,6 +87,17 @@ internal fun MatchResultPositionCropPreviewState.sortedCrops(): List<MatchResult
         ?.sortedBy(MatchResultPositionCropPreview::position)
         .orEmpty()
 
+internal fun MatchResultPositionCropPreviewState.withSemanticScreenshotRole(
+    role: MatchResultScreenshotRole?,
+): MatchResultPositionCropPreviewState = when (this) {
+    MatchResultPositionCropPreviewState.Loading,
+    is MatchResultPositionCropPreviewState.Unavailable,
+    -> this
+    is MatchResultPositionCropPreviewState.Available -> copy(
+        crops = crops.map { crop -> crop.copy(semanticScreenshotRole = role) },
+    )
+}
+
 fun interface MatchResultPositionCropPreviewGenerator {
     suspend fun generate(
         localFile: File,
@@ -129,6 +141,7 @@ internal fun rasterizeResultPositionCropPreviews(
     source: Bitmap,
     sourceScreenshotRole: MatchResultScreenshotRole,
     authoritativeCrops: List<MatchResultPositionCrop>,
+    semanticScreenshotRole: MatchResultScreenshotRole? = null,
 ): MatchResultPositionCropPreviewState {
     if (authoritativeCrops.isEmpty()) {
         return MatchResultPositionCropPreviewState.Unavailable(
@@ -157,6 +170,7 @@ internal fun rasterizeResultPositionCropPreviews(
                     image = AndroidMatchResultPositionCropPreviewImage(previewBitmap),
                     geometry = crop,
                     sourceScreenshotRole = sourceScreenshotRole,
+                    semanticScreenshotRole = semanticScreenshotRole,
                 )
             }
         if (previews.isEmpty()) {

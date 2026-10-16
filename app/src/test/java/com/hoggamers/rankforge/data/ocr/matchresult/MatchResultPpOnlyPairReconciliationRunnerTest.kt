@@ -68,7 +68,15 @@ class MatchResultPpOnlyPairReconciliationRunnerTest {
         )
         assertEquals(
             MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            (results[0] as MatchResultOcrPreviewProcessingResult.Processed).physicalScreenshotRole,
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
             (results[1] as MatchResultOcrPreviewProcessingResult.Processed).extraction.role,
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            (results[1] as MatchResultOcrPreviewProcessingResult.Processed).physicalScreenshotRole,
         )
     }
 

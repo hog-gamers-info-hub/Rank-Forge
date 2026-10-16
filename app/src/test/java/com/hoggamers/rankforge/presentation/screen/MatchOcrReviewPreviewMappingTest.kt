@@ -173,6 +173,80 @@ class MatchOcrReviewPreviewMappingTest {
     }
 
     @Test
+    fun swappedSemanticRolesKeepCropsOnTheirOriginalPhysicalSlots() {
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    result = processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        rows = listOf(row(1, MatchResultOcrRowSource.UPPER_TEMPLATE)),
+                        positionCrops = listOf(positionCrop(1)),
+                        physicalRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    ),
+                ),
+                MatchResultOcrPreviewRoleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    result = processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        rows = listOf(row(11, MatchResultOcrRowSource.LOWER_ROW_A, MatchResultOcrVisualRow.A)),
+                        positionCrops = listOf(positionCrop(11)),
+                        physicalRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            result.semanticRoleByPhysicalScreenshotRole[MatchResultScreenshotRole.MATCH_RESULT_LOWER],
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            result.semanticRoleByPhysicalScreenshotRole[MatchResultScreenshotRole.MATCH_RESULT_UPPER],
+        )
+        assertEquals(
+            listOf(1),
+            result.visiblePositionCropsByRole()
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .map { it.position },
+        )
+        assertEquals(
+            listOf(11),
+            result.visiblePositionCropsByRole()
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .map { it.position },
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            result.rows.single { it.position == 1 }.role,
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            result.rows.single { it.position == 11 }.role,
+        )
+    }
+
+    @Test
+    fun missingPhysicalRoleDoesNotExposePositionCrops() {
+        val result = MatchResultOcrPreviewUiStateMapper.map(
+            listOf(
+                MatchResultOcrPreviewRoleResult(
+                    role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                    result = processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        rows = listOf(row(1, MatchResultOcrRowSource.UPPER_TEMPLATE)),
+                        positionCrops = listOf(positionCrop(1)),
+                        physicalRole = null,
+                    ),
+                ),
+            ),
+        ) as MatchResultOcrPreviewUiState.Ready
+
+        assertTrue(result.authoritativePositionCropsByRole.isEmpty())
+    }
+
+    @Test
     fun lowerPreviewMapsEmittedPositionsElevenAndTwelveAndNotesIgnoredManualRows() {
         val result = MatchResultOcrPreviewUiStateMapper.map(
             listOf(
@@ -504,6 +578,7 @@ class MatchOcrReviewPreviewMappingTest {
         ignored: List<MatchResultOcrIgnoredLowerVisualRow> = emptyList(),
         manual: List<MatchResultOcrManualReviewRow> = emptyList(),
         positionCrops: List<MatchResultPositionCrop> = emptyList(),
+        physicalRole: MatchResultScreenshotRole? = role,
     ): MatchResultOcrPreviewProcessingResult.Processed =
         MatchResultOcrPreviewProcessingResult.Processed(
             extraction = MatchResultOcrExtractionResult(
@@ -517,6 +592,7 @@ class MatchOcrReviewPreviewMappingTest {
             cropWidth = 1,
             cropHeight = 1,
             positionCrops = positionCrops,
+            physicalScreenshotRole = physicalRole,
         )
 
     private fun roleResult(

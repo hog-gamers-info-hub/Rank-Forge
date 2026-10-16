@@ -46,6 +46,11 @@ sealed interface MatchResultOcrPreviewUiState {
             MatchResultScreenshotRole,
             List<MatchResultPositionCrop>,
         > = emptyMap(),
+        /** Physical screenshot slot -> semantic OCR role for position-crop visibility. */
+        val semanticRoleByPhysicalScreenshotRole: Map<
+            MatchResultScreenshotRole,
+            MatchResultScreenshotRole,
+        > = emptyMap(),
     ) : MatchResultOcrPreviewUiState
 }
 
@@ -150,32 +155,44 @@ object MatchResultOcrPreviewUiStateMapper {
     ): MatchResultOcrPreviewUiState {
         val processed = processedResults.mapNotNull { result ->
             (result.result as? MatchResultOcrPreviewProcessingResult.Processed)?.let {
-                result.role to it.extraction
+                it.extraction.role to it
             }
         }
-        val authoritativePositionCropsByRole = processedResults.mapNotNull { result ->
-            (result.result as? MatchResultOcrPreviewProcessingResult.Processed)
-                ?.positionCrops
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { result.role to it }
+        val physicalSemanticAssociations = processed.mapNotNull { (semanticRole, result) ->
+            result.physicalScreenshotRole?.let { physicalRole ->
+                physicalRole to semanticRole
+            }
+        }
+        val physicalCounts = physicalSemanticAssociations.groupingBy { it.first }.eachCount()
+        val semanticCounts = physicalSemanticAssociations.groupingBy { it.second }.eachCount()
+        val safePhysicalSemanticAssociations = physicalSemanticAssociations.filter { (physicalRole, semanticRole) ->
+            physicalCounts[physicalRole] == 1 && semanticCounts[semanticRole] == 1
+        }
+        val semanticRoleByPhysicalScreenshotRole = safePhysicalSemanticAssociations.toMap()
+        val authoritativePositionCropsByRole = processed.mapNotNull { (semanticRole, result) ->
+            val physicalRole = result.physicalScreenshotRole ?: return@mapNotNull null
+            if (semanticRoleByPhysicalScreenshotRole[physicalRole] != semanticRole) return@mapNotNull null
+            result.positionCrops
+                .takeIf { it.isNotEmpty() }
+                ?.let { physicalRole to it }
         }.toMap()
-        val rows = processed.flatMap { (role, extraction) ->
-            extraction.rows.map { row -> row.toUiState(role) }
+        val rows = processed.flatMap { (semanticRole, result) ->
+            result.extraction.rows.map { row -> row.toUiState(semanticRole) }
         }.sortedBy { it.position }
-        val ignoredRows = processed.flatMap { (role, extraction) ->
-            extraction.ignoredLowerRows.map { ignored ->
+        val ignoredRows = processed.flatMap { (semanticRole, result) ->
+            result.extraction.ignoredLowerRows.map { ignored ->
                 MatchResultOcrPreviewIgnoredRowUiState(
-                    role = role,
+                    role = semanticRole,
                     visualRow = ignored.visualRow.name,
                     detectedPlacement = ignored.detectedPlacement,
                     reason = ignored.reason.name,
                 )
             }
         }
-        val manualRows = processed.flatMap { (role, extraction) ->
-            extraction.manualReviewRows.map { manual ->
+        val manualRows = processed.flatMap { (semanticRole, result) ->
+            result.extraction.manualReviewRows.map { manual ->
                 MatchResultOcrPreviewManualRowUiState(
-                    role = role,
+                    role = semanticRole,
                     visualRow = manual.visualRow.name,
                     detectedPlacementText = manual.detectedPlacementText,
                     reason = manual.reason.name,
@@ -191,6 +208,7 @@ object MatchResultOcrPreviewUiStateMapper {
                 ignoredLowerRows = ignoredRows,
                 manualReviewRows = manualRows,
                 authoritativePositionCropsByRole = authoritativePositionCropsByRole,
+                semanticRoleByPhysicalScreenshotRole = semanticRoleByPhysicalScreenshotRole,
             )
         }
     }
@@ -346,12 +364,19 @@ internal fun MatchResultOcrPreviewUiState.Ready.visiblePositionCropsByRole(): Ma
     MatchResultScreenshotRole,
     List<MatchResultPositionCrop>,
 > = authoritativePositionCropsByRole.mapValues { (role, crops) ->
+    if (
+        semanticRoleByPhysicalScreenshotRole.isNotEmpty() &&
+            role !in semanticRoleByPhysicalScreenshotRole
+    ) {
+        return@mapValues emptyList()
+    }
+    val semanticRole = semanticRoleByPhysicalScreenshotRole[role] ?: role
     val positionsWithRealAnchor = crops.asSequence()
         .filter(MatchResultPositionCrop::hasDetectedPositionAnchor)
         .map(MatchResultPositionCrop::position)
         .toSet()
     val positionsWithRealOcrContent = rows.asSequence()
-        .filter { row -> row.role == role && row.hasRealOcrContent() }
+        .filter { row -> row.role == semanticRole && row.hasRealOcrContent() }
         .map(MatchResultOcrPreviewRowUiState::position)
         .toSet()
     val visiblePositions = positionsWithRealAnchor union positionsWithRealOcrContent

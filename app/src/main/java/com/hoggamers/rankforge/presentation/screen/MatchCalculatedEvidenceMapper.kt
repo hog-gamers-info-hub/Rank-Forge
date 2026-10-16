@@ -236,9 +236,16 @@ internal object MatchCalculatedEvidenceMapper {
             val cropAndRole = cropsByPosition[position]
                 ?.firstOrNull()
             val sourceRole = cropAndRole?.first
-            val bounds = cropAndRole?.second?.bounds
+            val cropPreview = cropAndRole?.second
+            val bounds = cropPreview?.bounds
+            val semanticRole = sourceRole?.let {
+                preview?.semanticRoleByPhysicalScreenshotRole?.get(it)
+            }
             val previewRow = rowsByPosition[position]
-                ?.firstOrNull { row -> sourceRole == null || row.role == sourceRole }
+                ?.firstOrNull { row ->
+                    val expectedRole = semanticRole ?: sourceRole
+                    expectedRole == null || row.role == expectedRole
+                }
                 ?: rowsByPosition[position]?.firstOrNull()
             val reviewRow = reviewRowsByPosition[position]
             val draft = correctionDraft?.rows?.singleOrNull { row ->
@@ -266,6 +273,7 @@ internal object MatchCalculatedEvidenceMapper {
             ResultPositionCalculatedEvidence(
                 position = position,
                 sourceScreenshotRole = sourceRole,
+                semanticScreenshotRole = semanticRole,
                 cropLeft = bounds?.left,
                 cropTop = bounds?.top,
                 cropRight = bounds?.right,

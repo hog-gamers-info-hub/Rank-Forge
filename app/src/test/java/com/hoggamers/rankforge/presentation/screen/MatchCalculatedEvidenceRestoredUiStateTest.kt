@@ -161,6 +161,56 @@ class MatchCalculatedEvidenceRestoredUiStateTest {
     }
 
     @Test
+    fun swappedScreenshotEvidenceRestoresSemanticRowsOnPhysicalCropSlots() {
+        val state = MatchCalculatedEvidence(
+            result = ResultCalculatedEvidence(
+                positions = listOf(
+                    ResultPositionCalculatedEvidence(
+                        position = 1,
+                        sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        semanticScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        cropLeft = 1,
+                        cropTop = 2,
+                        cropRight = 3,
+                        cropBottom = 4,
+                        playerNames = listOf("Upper player", null, null, null),
+                    ),
+                    ResultPositionCalculatedEvidence(
+                        position = 11,
+                        sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        semanticScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        cropLeft = 11,
+                        cropTop = 12,
+                        cropRight = 13,
+                        cropBottom = 14,
+                        playerNames = listOf("Lower player", null, null, null),
+                    ),
+                ),
+            ),
+        ).toRestoredOcrReviewUiState(
+            tournamentId = "tournament",
+            matchId = "match",
+            teamNamesBySlot = emptyMap(),
+        ) as MatchOcrReviewUiState.Ready
+
+        val preview = state.matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, preview.rows.single { it.position == 1 }.role)
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, preview.rows.single { it.position == 11 }.role)
+        assertEquals(
+            listOf(1),
+            preview.visiblePositionCropsByRole()
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER)
+                .map { it.position },
+        )
+        assertEquals(
+            listOf(11),
+            preview.visiblePositionCropsByRole()
+                .getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                .map { it.position },
+        )
+    }
+
+    @Test
     fun invalidManualMetadataIsIgnored() {
         val state = restore(
             ResultPositionCalculatedEvidence(position = 12),

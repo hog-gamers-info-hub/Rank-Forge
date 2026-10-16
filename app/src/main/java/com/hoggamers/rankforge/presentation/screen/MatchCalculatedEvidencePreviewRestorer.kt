@@ -225,10 +225,13 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
                 .takeIf { crops ->
                     crops.isNotEmpty() && crops.map { it.position }.distinct().size == crops.size
                 } ?: return null
+            val semanticRoles = positions.map { it.semanticScreenshotRole }.distinct()
+            if (semanticRoles.size != 1) return null
             return rasterizeResultPositionCropPreviews(
                 source = source,
                 sourceScreenshotRole = role,
                 authoritativeCrops = crops,
+                semanticScreenshotRole = semanticRoles.single(),
             )
         } finally {
             if (!source.isRecycled) source.recycle()

@@ -29,6 +29,7 @@ class MatchCalculatedEvidenceCodecTest {
                 ResultPositionCalculatedEvidence(
                     position = 12,
                     sourceScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    semanticScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                     cropLeft = 11,
                     cropTop = 22,
                     cropRight = 333,

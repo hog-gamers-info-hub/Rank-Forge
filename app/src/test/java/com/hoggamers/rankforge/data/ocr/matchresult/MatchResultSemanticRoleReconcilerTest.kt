@@ -23,6 +23,14 @@ class MatchResultSemanticRoleReconcilerTest {
         assertEquals(setOf(*MatchResultScreenshotRole.entries.toTypedArray()), resolved.results.keys)
         assertEquals(0, resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER).pixelCrop.left)
         assertEquals(1, resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER).pixelCrop.left)
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER).physicalScreenshotRole,
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER).physicalScreenshotRole,
+        )
     }
 
     @Test
@@ -32,6 +40,14 @@ class MatchResultSemanticRoleReconcilerTest {
         val resolved = result as MatchResultSemanticRoleReconciliation.Resolved
         assertEquals(0, resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER).pixelCrop.left)
         assertEquals(1, resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER).pixelCrop.left)
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_UPPER).physicalScreenshotRole,
+        )
+        assertEquals(
+            MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            resolved.results.getValue(MatchResultScreenshotRole.MATCH_RESULT_LOWER).physicalScreenshotRole,
+        )
     }
 
     @Test
@@ -55,6 +71,27 @@ class MatchResultSemanticRoleReconcilerTest {
                 mapOf(
                     MatchResultScreenshotRole.MATCH_RESULT_UPPER to processed(MatchResultScreenshotRole.MATCH_RESULT_LOWER, 0),
                     MatchResultScreenshotRole.MATCH_RESULT_LOWER to processed(MatchResultScreenshotRole.MATCH_RESULT_LOWER, 1),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun inconsistentRecordedPhysicalRoleFailsSafely() {
+        assertEquals(
+            MatchResultSemanticRoleReconciliation.Conflict,
+            reconciler.reconcile(
+                mapOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_UPPER to processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        physicalMarker = 0,
+                        physicalRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    ),
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER to processed(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                        physicalMarker = 1,
+                        physicalRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+                    ),
                 ),
             ),
         )
@@ -90,14 +127,20 @@ class MatchResultSemanticRoleReconcilerTest {
         MatchResultScreenshotRole.MATCH_RESULT_UPPER to processed(
             if (upperStored == 0) MatchResultScreenshotRole.MATCH_RESULT_UPPER else MatchResultScreenshotRole.MATCH_RESULT_LOWER,
             upperStored,
+            physicalRole = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
         ),
         MatchResultScreenshotRole.MATCH_RESULT_LOWER to processed(
             if (lowerStored == 0) MatchResultScreenshotRole.MATCH_RESULT_UPPER else MatchResultScreenshotRole.MATCH_RESULT_LOWER,
             lowerStored,
+            physicalRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
         ),
     )
 
-    private fun processed(role: MatchResultScreenshotRole, physicalMarker: Int): MatchResultOcrPreviewProcessingResult.Processed {
+    private fun processed(
+        role: MatchResultScreenshotRole,
+        physicalMarker: Int,
+        physicalRole: MatchResultScreenshotRole? = null,
+    ): MatchResultOcrPreviewProcessingResult.Processed {
         val placement = MatchResultOcrField(
                         id = "PLACEMENT_${role.name}_$physicalMarker",
                         type = MatchResultOcrFieldType.PLACEMENT,
@@ -127,6 +170,7 @@ class MatchResultSemanticRoleReconcilerTest {
             cropWidth = 1,
             cropHeight = 1,
             source = MatchResultOcrPreviewSource.NEW_PP_POSITION,
+            physicalScreenshotRole = physicalRole,
         )
     }
 }

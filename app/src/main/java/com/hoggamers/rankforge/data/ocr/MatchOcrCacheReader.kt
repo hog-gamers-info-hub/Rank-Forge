@@ -64,7 +64,7 @@ class RoomMatchOcrCacheReader @Inject constructor(
             )
             val processed = readResult(identity, ownerUserId)
             MatchResultOcrPreviewRoleResult(
-                role = role,
+                role = processed?.extraction?.role ?: role,
                 result = processed ?: MatchResultOcrPreviewProcessingResult.MissingAsset,
             )
         }
