@@ -339,6 +339,50 @@ class GroupRotationMatchIdentityPersistenceTest {
         )
     }
 
+    @Test
+    fun finalizedReadProjectsOnlyExactClearedPairingNameWithoutMutatingSnapshot() = runBlocking {
+        database.matchDao().upsert(match(MATCH_TWO, "A:C"))
+        val participant = GroupRotationMatchParticipantResult(
+            teamUUID = ALPHA_UUID,
+            participationStatus = MatchParticipationStatus.PARTICIPATED,
+            placement = 1,
+            kills = 4,
+            pointAdjustment = 2,
+        )
+        repository.save(
+            tournament(),
+            MATCH_ONE,
+            snapshot(pairing("A:B"), 3 to alpha()),
+            participantResults = listOf(participant),
+        )
+        repository.save(
+            tournament(),
+            MATCH_TWO,
+            snapshot(pairing("A:C"), 9 to alpha()),
+            participantResults = listOf(participant),
+        )
+        setCurrentAssignments(
+            currentAssignment("A:B", 3, ALPHA_UUID, nameCleared = true),
+            currentAssignment("A:C", 9, ALPHA_UUID),
+        )
+        database.matchDao().upsert(match(MATCH_ONE, "A:B").copy(status = MatchStatus.FINALIZED.name))
+        database.matchDao().upsert(match(MATCH_TWO, "A:C").copy(status = MatchStatus.FINALIZED.name))
+
+        val assignmentsBefore = database.groupRotationMatchTeamAssignmentDao().readByMatchId(MATCH_ONE)
+        val resultsBefore = database.groupRotationMatchParticipantResultDao().readByMatchId(MATCH_ONE)
+
+        val clearedPairingMatch = loaded(MATCH_ONE)
+        val activePairingMatch = loaded(MATCH_TWO)
+
+        assertEquals(ALPHA_UUID, clearedPairingMatch.identity.teams.single().teamUUID)
+        assertEquals(3, clearedPairingMatch.identity.teams.single().lobbySlotNumber)
+        assertEquals("", clearedPairingMatch.identity.teams.single().displayName)
+        assertEquals(participant, clearedPairingMatch.participantResults.single())
+        assertEquals("Alpha", activePairingMatch.identity.teams.single().displayName)
+        assertEquals(assignmentsBefore, database.groupRotationMatchTeamAssignmentDao().readByMatchId(MATCH_ONE))
+        assertEquals(resultsBefore, database.groupRotationMatchParticipantResultDao().readByMatchId(MATCH_ONE))
+    }
+
     private suspend fun loaded(matchId: String): GroupRotationMatchPersistenceSnapshotHolder =
         when (val result = repository.read(tournament(), matchId)) {
             is GroupRotationMatchPersistenceResult.Loaded -> GroupRotationMatchPersistenceSnapshotHolder(

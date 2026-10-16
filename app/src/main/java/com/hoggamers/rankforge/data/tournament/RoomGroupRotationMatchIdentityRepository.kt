@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.hoggamers.rankforge.data.local.GroupRotationMatchIdentityHeaderEntity
 import com.hoggamers.rankforge.data.local.GroupRotationMatchParticipantResultEntity
 import com.hoggamers.rankforge.data.local.GroupRotationMatchTeamAssignmentEntity
+import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshotResult
@@ -245,7 +246,7 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                     )
                 },
         )
-        val effectiveIdentitySnapshot = if (match.status == MatchStatus.DRAFT.name) {
+        val authoritativeIdentitySnapshot = if (match.status == MatchStatus.DRAFT.name) {
             when (val current = resolveCurrentDraftSnapshot(tournament, pairing, identities)) {
                 is GroupRotationMatchIdentitySnapshotResult.Loaded -> current.snapshot
                 is GroupRotationMatchIdentitySnapshotResult.Invalid ->
@@ -254,7 +255,17 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
         } else {
             identitySnapshot
         }
-        val effectiveAssignments = effectiveIdentitySnapshot.teams
+        val effectiveIdentitySnapshot = if (match.status == MatchStatus.FINALIZED.name) {
+            projectFinalizedIdentitySnapshot(
+                snapshot = authoritativeIdentitySnapshot,
+                pairing = pairing,
+                assignments = database.groupRotationPairingTeamIdentityAssignmentDao()
+                    .readByTournamentId(tournament.id),
+            )
+        } else {
+            authoritativeIdentitySnapshot
+        }
+        val effectiveAssignments = authoritativeIdentitySnapshot.teams
             .sortedBy { it.lobbySlotNumber }
             .map { team ->
                 GroupRotationMatchTeamAssignmentEntity(
@@ -269,7 +280,7 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
             matchId = matchId,
             matchTournamentId = match.tournamentId,
             matchPairingKey = match.groupPairingKey,
-            snapshot = effectiveIdentitySnapshot,
+            snapshot = authoritativeIdentitySnapshot,
             identities = identities.map { it.toDomain() },
         ) + validateStoredHeaderAndAssignments(
             tournament = tournament,
@@ -282,7 +293,7 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
         }
         val identitiesByUuid = identities.associateBy { it.teamUUID }
         val participantEntities = database.groupRotationMatchParticipantResultDao().readByMatchId(matchId)
-        val assignedTeamUuids = effectiveIdentitySnapshot.teams.map { it.teamUUID }.toSet()
+        val assignedTeamUuids = authoritativeIdentitySnapshot.teams.map { it.teamUUID }.toSet()
         val effectiveParticipantEntities = if (match.status == MatchStatus.DRAFT.name) {
             participantEntities.filter { it.teamUUID in assignedTeamUuids }
         } else {
@@ -338,6 +349,22 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
             ),
         )
     }
+
+    private fun projectFinalizedIdentitySnapshot(
+        snapshot: GroupRotationMatchIdentitySnapshot,
+        pairing: GroupPairing,
+        assignments: List<GroupRotationPairingTeamIdentityAssignmentEntity>,
+    ): GroupRotationMatchIdentitySnapshot = snapshot.copy(
+        teams = snapshot.teams.map { team ->
+            val clearedInExactOccurrence = assignments.any { assignment ->
+                assignment.pairingKey == pairing.canonicalKey &&
+                    assignment.lobbySlotNumber == team.lobbySlotNumber &&
+                    assignment.teamUUID == team.teamUUID &&
+                    assignment.nameCleared
+            }
+            if (clearedInExactOccurrence) team.copy(displayName = "") else team
+        },
+    )
 
     private suspend fun resolveCurrentDraftSnapshot(
         tournament: Tournament,
