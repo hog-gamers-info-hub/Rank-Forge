@@ -175,6 +175,69 @@ class DownloadResultViewModelTest {
     }
 
     @Test
+    fun groupRotationLoadPreservesConfiguredPairingsAndMatchPairingSelection() = runBlocking {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val match = groupMatch().copy(
+            id = "group-match-ac",
+            groupPairing = pairing,
+        )
+        val tournament = groupTournament().copy(
+            selectedGroupPairings = listOf(
+                GroupPairing(TournamentGroup.A, TournamentGroup.B),
+                pairing,
+            ),
+        )
+        val viewModel = createViewModel(
+            tournament = tournament,
+            matches = listOf(match),
+            teamSlots = groupTeamSlots(),
+        )
+
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.uiState.first { state ->
+                state.selectedGroupPairings == tournament.selectedGroupPairings &&
+                    state.matches.size == 1 &&
+                    state.matches.single().groupPairing == pairing
+            }
+        }
+
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Match(match.id),
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        assertEquals(pairing, viewModel.selectionContext.value.selectedPairing)
+    }
+
+    @Test
+    fun groupRotationPairingOverallBlocksWholeTournamentDownload() = runBlocking {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val viewModel = createViewModel(
+            tournament = groupTournament(),
+            matches = listOf(groupMatch()),
+            teamSlots = groupTeamSlots(),
+        )
+
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.uiState.first { it.selectedGroupPairings.isNotEmpty() }
+        }
+        viewModel.selectPairing("tournament-id", pairing)
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.downloadState.first { it is DownloadResultDownloadState.Failure }
+        }
+        assertEquals(pairing, viewModel.selectionContext.value.selectedPairing)
+    }
+
+    @Test
     fun pointTableDetailsApplyPreservesCurrentFreeDesignTemplate() = runBlocking {
         val repository = FakePointTableDetailsRepository()
         val viewModel = createViewModel(pointTableDetailsRepository = repository)

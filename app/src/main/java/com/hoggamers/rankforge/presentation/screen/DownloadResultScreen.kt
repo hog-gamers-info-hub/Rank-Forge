@@ -132,6 +132,8 @@ import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
 import com.hoggamers.rankforge.domain.export.TournamentCsvExportInput
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModelBuildResult
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
@@ -164,6 +166,10 @@ import kotlinx.coroutines.withContext
 const val DOWNLOAD_RESULT_SCREEN_TEST_TAG = "download_result_screen"
 const val DOWNLOAD_RESULT_OVERALL_OPTION_TEST_TAG = "download_result_overall_option"
 const val DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX = "download_result_match_option_"
+const val DOWNLOAD_RESULT_PAIRING_ALL_OPTION_TEST_TAG = "download_result_pairing_all_option"
+const val DOWNLOAD_RESULT_PAIRING_OPTION_TEST_TAG_PREFIX = "download_result_pairing_option_"
+const val DOWNLOAD_RESULT_PAIRING_OVERALL_UNAVAILABLE_TEST_TAG =
+    "download_result_pairing_overall_unavailable"
 const val DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG = "download_result_design_image"
 const val DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG = "download_result_design_free"
 const val DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG = "download_result_design_my"
@@ -195,6 +201,7 @@ private val PointTableDetailsDateFormatter = DateTimeFormatter.ofPattern(
 data class DownloadResultMatchOption(
     val matchId: String,
     val matchNumber: Int,
+    val groupPairing: GroupPairing? = null,
 )
 
 data class DownloadResultFreeDesignOption(
@@ -205,6 +212,8 @@ data class DownloadResultFreeDesignOption(
 data class DownloadResultUiState(
     val matches: List<DownloadResultMatchOption> = emptyList(),
     val tournamentFormat: TournamentFormat? = null,
+    val groupCount: Int? = null,
+    val selectedGroupPairings: List<GroupPairing> = emptyList(),
     val freeDesignOptions: List<DownloadResultFreeDesignOption> =
         FreeDesignTemplateRegistry.all.map { template ->
             DownloadResultFreeDesignOption(
@@ -256,6 +265,7 @@ data class DownloadResultSelectionContext(
     val result: DownloadResultSelection = DownloadResultSelection.Overall,
     val design: DownloadResultDesignType = DownloadResultDesignType.IMAGE,
     val freeDesignTemplateId: String = FreeDesignTemplateRegistry.DEFAULT_TEMPLATE_ID,
+    val selectedPairing: GroupPairing? = null,
 )
 
 sealed interface DownloadResultPreviewState {
@@ -376,13 +386,20 @@ class DownloadResultViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            val tournamentFormat = getTournamentById(tournamentId).first()?.format
+            val tournament = getTournamentById(tournamentId).first()
+            val tournamentFormat = tournament?.format
             if (loadedTournamentId == tournamentId) {
                 val shouldNormalizeOverallDesign =
                     tournamentFormat == TournamentFormat.GROUP_ROTATION &&
                         selectedResult == DownloadResultSelection.Overall &&
                         selectedDesign != DownloadResultDesignType.IMAGE
-                _uiState.update { it.copy(tournamentFormat = tournamentFormat) }
+                _uiState.update {
+                    it.copy(
+                        tournamentFormat = tournamentFormat,
+                        groupCount = tournament?.groupCount,
+                        selectedGroupPairings = tournament?.selectedGroupPairings.orEmpty(),
+                    )
+                }
                 if (shouldNormalizeOverallDesign) {
                     select(
                         tournamentId = tournamentId,
@@ -394,16 +411,29 @@ class DownloadResultViewModel @Inject constructor(
         }
         viewModelScope.launch {
             observeMatches(tournamentId).collect { matches ->
-                _uiState.value = DownloadResultUiState(
-                    matches = matches
-                        .sortedBy { it.matchNumber }
-                        .map { match ->
-                            DownloadResultMatchOption(
-                                matchId = match.id,
-                                matchNumber = match.matchNumber,
-                            )
-                        },
-                )
+                val options = matches
+                    .sortedWith(compareBy<Match> { it.matchNumber }.thenBy { it.id })
+                    .map { match ->
+                        DownloadResultMatchOption(
+                            matchId = match.id,
+                            matchNumber = match.matchNumber,
+                            groupPairing = match.groupPairing,
+                        )
+                    }
+                _uiState.update { current -> current.copy(matches = options) }
+                val currentSelection = _selectionContext.value
+                val selectedMatch = currentSelection.result as? DownloadResultSelection.Match
+                val selectedPairing = selectedMatch
+                    ?.let { selection ->
+                        options.firstOrNull { it.matchId == selection.matchId }?.groupPairing
+                    }
+                if (
+                    currentSelection.tournamentId == tournamentId &&
+                    selectedMatch != null &&
+                    selectedPairing != null
+                ) {
+                    _selectionContext.update { it.copy(selectedPairing = selectedPairing) }
+                }
             }
         }
     }
@@ -607,6 +637,10 @@ class DownloadResultViewModel @Inject constructor(
         result: DownloadResultSelection,
         design: DownloadResultDesignType,
     ) {
+        val selectedMatchPairing = (result as? DownloadResultSelection.Match)
+            ?.let { selection ->
+                _uiState.value.matches.firstOrNull { it.matchId == selection.matchId }?.groupPairing
+            }
         val effectiveDesign = if (
             result == DownloadResultSelection.Overall &&
             _uiState.value.tournamentFormat == TournamentFormat.GROUP_ROTATION
@@ -619,6 +653,7 @@ class DownloadResultViewModel @Inject constructor(
             tournamentId = tournamentId,
             result = result,
             design = effectiveDesign,
+            selectedPairing = selectedMatchPairing ?: _selectionContext.value.selectedPairing,
         )
         previewJob?.cancel()
         customDesignId = null
@@ -652,6 +687,24 @@ class DownloadResultViewModel @Inject constructor(
                 _previewState.value = DownloadResultPreviewState.Unavailable
             }
         }
+    }
+
+    fun selectPairing(
+        tournamentId: String,
+        pairing: GroupPairing?,
+    ) {
+        if (loadedTournamentId != tournamentId) return
+        _selectionContext.value = _selectionContext.value.copy(
+            tournamentId = tournamentId,
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+            selectedPairing = pairing,
+        )
+        select(
+            tournamentId = tournamentId,
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
     }
 
     fun selectFreeDesignTemplate(
@@ -849,6 +902,14 @@ class DownloadResultViewModel @Inject constructor(
         result: DownloadResultSelection,
     ): ResultDownloadRequest? {
         val tournament = getTournamentById(tournamentId).first() ?: return null
+        if (
+            tournament.format == TournamentFormat.GROUP_ROTATION &&
+            result == DownloadResultSelection.Overall &&
+            _selectionContext.value.tournamentId == tournamentId &&
+            _selectionContext.value.selectedPairing != null
+        ) {
+            return null
+        }
         val matches = observeMatches(tournamentId).first()
         val teamSlots = observeTournamentSlots(tournamentId).first()
         val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
@@ -1161,6 +1222,8 @@ fun DownloadResultRoute(
     DownloadResultScreen(
         matches = uiState.matches,
         tournamentFormat = uiState.tournamentFormat,
+        groupCount = uiState.groupCount,
+        selectedGroupPairings = uiState.selectedGroupPairings,
         freeDesignOptions = uiState.freeDesignOptions,
         onBack = onBack,
         initialDesign = initialDesign,
@@ -1176,6 +1239,9 @@ fun DownloadResultRoute(
         hasSavedCustomDesign = hasSavedCustomDesign,
         onResultSelected = { selection, design ->
             viewModel.select(tournamentId, selection, design)
+        },
+        onPairingSelected = { pairing ->
+            viewModel.selectPairing(tournamentId, pairing)
         },
         onDesignSelected = { selection, design ->
             viewModel.select(tournamentId, selection, design)
@@ -1223,6 +1289,8 @@ fun DownloadResultRoute(
 fun DownloadResultScreen(
     matches: List<DownloadResultMatchOption>,
     tournamentFormat: TournamentFormat? = TournamentFormat.STANDARD,
+    groupCount: Int? = null,
+    selectedGroupPairings: List<GroupPairing> = emptyList(),
     onBack: () -> Unit,
     freeDesignOptions: List<DownloadResultFreeDesignOption> =
         FreeDesignTemplateRegistry.all.map { template ->
@@ -1244,6 +1312,7 @@ fun DownloadResultScreen(
     logoOperationError: String? = null,
     logoSaveInProgress: Boolean = false,
     onResultSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
+    onPairingSelected: (GroupPairing?) -> Unit = {},
     onDesignSelected: (DownloadResultSelection, DownloadResultDesignType) -> Unit = { _, _ -> },
     onFreeDesignTemplateSelected: (String) -> Unit = {},
     onFreeDesignSettingsClick: () -> Unit = {},
@@ -1274,6 +1343,8 @@ fun DownloadResultScreen(
     var localSelectedTemplateId by remember(selectedFreeDesignTemplateId) {
         mutableStateOf(selectedFreeDesignTemplateId)
     }
+    var localPairingSelectionWasChanged by remember { mutableStateOf(false) }
+    var localSelectedPairing by remember { mutableStateOf<GroupPairing?>(null) }
     val selectedResult = selectionContext?.result ?: localSelectedResult
     val requestedDesign = selectionContext?.design ?: localSelectedDesign
     val selectedDesign = if (
@@ -1288,11 +1359,49 @@ fun DownloadResultScreen(
         tournamentFormat == TournamentFormat.GROUP_ROTATION &&
             selectedResult == DownloadResultSelection.Overall
     val selectedTemplateId = selectionContext?.freeDesignTemplateId ?: localSelectedTemplateId
+    val initialMatchPairing = remember(matches, initialResult) {
+        (initialResult as? DownloadResultSelection.Match)
+            ?.let { selection ->
+                matches.firstOrNull { it.matchId == selection.matchId }?.groupPairing
+            }
+    }
+    val selectedPairing = if (selectionContext != null) {
+        selectionContext.selectedPairing
+            ?: (selectionContext.result as? DownloadResultSelection.Match)
+                ?.let { initialMatchPairing }
+    } else if (localPairingSelectionWasChanged) {
+        localSelectedPairing
+    } else {
+        initialMatchPairing
+    }
+    val pairingSpecificOverall =
+        tournamentFormat == TournamentFormat.GROUP_ROTATION &&
+            selectedResult == DownloadResultSelection.Overall &&
+            selectedPairing != null
+    val displayedGroupPairings = if (groupCount == 3) {
+        selectedGroupPairings.sortedWith(
+            compareBy<GroupPairing> { it.firstGroup.ordinal }
+                .thenBy { it.secondGroup.ordinal },
+        )
+    } else {
+        selectedGroupPairings
+    }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showPointTableDetailsDialog by remember { mutableStateOf(false) }
     var pointTableDetailsDraft by remember { mutableStateOf(PointTableDetailsUiState()) }
     var logoEditorWasOpen by remember { mutableStateOf(false) }
-    val orderedMatches = remember(matches) { matches.sortedBy { it.matchNumber } }
+    val orderedMatches = remember(matches) {
+        matches.sortedWith(compareBy<DownloadResultMatchOption> { it.matchNumber }.thenBy { it.matchId })
+    }
+    val visibleMatches = if (tournamentFormat == TournamentFormat.GROUP_ROTATION) {
+        if (selectedPairing == null) {
+            emptyList()
+        } else {
+            orderedMatches.filter { it.groupPairing == selectedPairing }
+        }
+    } else {
+        orderedMatches
+    }
 
     LaunchedEffect(logoEditorState) {
         if (logoEditorState != null) {
@@ -1360,6 +1469,51 @@ fun DownloadResultScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        if (tournamentFormat == TournamentFormat.GROUP_ROTATION) {
+            DownloadResultSectionTitle(text = "Pairing")
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PointIqSelectionChip(
+                    label = "All Pairings",
+                    selected = selectedPairing == null,
+                    onClick = {
+                        if (selectionContext == null) {
+                            localPairingSelectionWasChanged = true
+                            localSelectedPairing = null
+                            localSelectedResult = DownloadResultSelection.Overall
+                        }
+                        onPairingSelected(null)
+                    },
+                    testTag = DOWNLOAD_RESULT_PAIRING_ALL_OPTION_TEST_TAG,
+                )
+                displayedGroupPairings.forEach { pairing ->
+                    PointIqSelectionChip(
+                        label = groupRotationPairingLabel(pairing),
+                        selected = selectedPairing == pairing,
+                        onClick = {
+                            if (selectionContext == null) {
+                                localPairingSelectionWasChanged = true
+                                localSelectedPairing = pairing
+                                localSelectedResult = DownloadResultSelection.Overall
+                            }
+                            onPairingSelected(pairing)
+                        },
+                        testTag = DOWNLOAD_RESULT_PAIRING_OPTION_TEST_TAG_PREFIX +
+                            pairing.canonicalKey,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
         DownloadResultSectionTitle(text = "Result")
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -1380,16 +1534,26 @@ fun DownloadResultScreen(
                 },
                 testTag = DOWNLOAD_RESULT_OVERALL_OPTION_TEST_TAG,
             )
-            orderedMatches.forEach { match ->
+            visibleMatches.forEachIndexed { index, match ->
+                val displayNumber = if (tournamentFormat == TournamentFormat.GROUP_ROTATION) {
+                    index + 1
+                } else {
+                    match.matchNumber
+                }
                 PointIqSelectionChip(
-                    label = "Match ${match.matchNumber}",
+                    label = "Match $displayNumber",
                     selected = selectedResult == DownloadResultSelection.Match(match.matchId),
                     onClick = {
                         val selection = DownloadResultSelection.Match(match.matchId)
                         if (selectionContext == null) localSelectedResult = selection
                         onResultSelected(selection, selectedDesign)
                     },
-                    testTag = DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX + match.matchNumber,
+                    testTag = DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX +
+                        if (tournamentFormat == TournamentFormat.GROUP_ROTATION) {
+                            "${selectedPairing?.canonicalKey}_$displayNumber"
+                        } else {
+                            match.matchNumber.toString()
+                        },
                 )
             }
         }
@@ -1453,11 +1617,19 @@ fun DownloadResultScreen(
                 .aspectRatio(1f),
             contentAlignment = Alignment.Center,
         ) {
-            when (selectedDesign) {
-                DownloadResultDesignType.IMAGE,
-                DownloadResultDesignType.FREE_DESIGN,
-                DownloadResultDesignType.MY_DESIGN,
-                -> when (previewState) {
+            if (pairingSpecificOverall) {
+                Text(
+                    text = "Pairing Overall is not available yet.",
+                    modifier = Modifier.testTag(DOWNLOAD_RESULT_PAIRING_OVERALL_UNAVAILABLE_TEST_TAG),
+                    color = DownloadResultSelectedChipText,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                when (selectedDesign) {
+                    DownloadResultDesignType.IMAGE,
+                    DownloadResultDesignType.FREE_DESIGN,
+                    DownloadResultDesignType.MY_DESIGN,
+                    -> when (previewState) {
                     is DownloadResultPreviewState.ResultImage ->
                         DownloadResultBitmapPreview(
                             pngBytes = previewState.pngBytes,
@@ -1505,6 +1677,7 @@ fun DownloadResultScreen(
                     ) {
                         DownloadResultStandingsShimmerPreview(modifier = Modifier.fillMaxSize())
                     }
+                    }
                 }
             }
 
@@ -1543,7 +1716,8 @@ fun DownloadResultScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         DownloadResultPrimaryButton(
-            enabled = previewState is DownloadResultPreviewState.ResultImage &&
+            enabled = !pairingSpecificOverall &&
+                previewState is DownloadResultPreviewState.ResultImage &&
                 !downloadState.isBusy,
             onClick = { onDownload(selectedResult, selectedDesign) },
         )

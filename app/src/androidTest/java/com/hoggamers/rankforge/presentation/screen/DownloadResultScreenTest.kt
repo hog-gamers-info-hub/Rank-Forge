@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -17,6 +18,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.data.export.FreeDesignTemplateRegistry
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -82,6 +85,128 @@ class DownloadResultScreenTest {
         composeTestRule.runOnIdle {
             assertEquals(DownloadResultDesignType.IMAGE, downloadDesign)
         }
+    }
+
+    @Test
+    fun groupRotationPairingSelectionFiltersMatchesAndUsesPairingNumbers() {
+        val ab = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val bc = GroupPairing(TournamentGroup.B, TournamentGroup.C)
+        var selectedResult: DownloadResultSelection? = null
+        var selectedPairing: GroupPairing? = null
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(
+                        DownloadResultMatchOption("bc-2", 4, bc),
+                        DownloadResultMatchOption("ab-2", 5, ab),
+                        DownloadResultMatchOption("bc-1", 1, bc),
+                        DownloadResultMatchOption("ab-1", 2, ab),
+                    ),
+                    tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                    selectedGroupPairings = listOf(ab, bc),
+                    onBack = {},
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    onResultSelected = { result, _ -> selectedResult = result },
+                    onPairingSelected = { pairing -> selectedPairing = pairing },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_PAIRING_ALL_OPTION_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(
+            DOWNLOAD_RESULT_PAIRING_OPTION_TEST_TAG_PREFIX + bc.canonicalKey,
+        ).performClick()
+        composeTestRule.onNodeWithText("Match 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 2").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Match 3").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(
+            DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX + "${bc.canonicalKey}_1",
+        ).performClick()
+
+        composeTestRule.runOnIdle {
+            assertEquals(bc, selectedPairing)
+            assertEquals(DownloadResultSelection.Match("bc-1"), selectedResult)
+        }
+    }
+
+    @Test
+    fun fourGroupPairingOptionsUseConfiguredOrderAndMembership() {
+        val configured = listOf(
+            GroupPairing(TournamentGroup.A, TournamentGroup.D),
+            GroupPairing(TournamentGroup.B, TournamentGroup.C),
+        )
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = emptyList(),
+                    tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                    groupCount = 4,
+                    selectedGroupPairings = configured,
+                    onBack = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(
+            DOWNLOAD_RESULT_PAIRING_OPTION_TEST_TAG_PREFIX + configured[0].canonicalKey,
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(
+            DOWNLOAD_RESULT_PAIRING_OPTION_TEST_TAG_PREFIX + configured[1].canonicalKey,
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(
+            DOWNLOAD_RESULT_PAIRING_OPTION_TEST_TAG_PREFIX + "A:B",
+        ).assertCountEquals(0)
+    }
+
+    @Test
+    fun groupRotationPairingOverallIsUnavailableAndDownloadIsDisabled() {
+        val ab = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = emptyList(),
+                    tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                    selectedGroupPairings = listOf(ab),
+                    selectionContext = DownloadResultSelectionContext(
+                        tournamentId = "tournament-id",
+                        result = DownloadResultSelection.Overall,
+                        selectedPairing = ab,
+                    ),
+                    onBack = {},
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_PAIRING_OVERALL_UNAVAILABLE_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Download").assertIsNotEnabled()
+    }
+
+    @Test
+    fun standardResultChipsKeepPersistedMatchNumbersAndNoPairingSection() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = listOf(
+                        DownloadResultMatchOption("match-5", 5),
+                        DownloadResultMatchOption("match-2", 2),
+                    ),
+                    onBack = {},
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(DOWNLOAD_RESULT_PAIRING_ALL_OPTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(
+            DOWNLOAD_RESULT_MATCH_OPTION_TEST_TAG_PREFIX + "5",
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 5").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 2").assertIsDisplayed()
     }
 
     @Test
