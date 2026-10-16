@@ -19,9 +19,19 @@ class MatchResultSemanticRoleReconciler {
         if (physicalResults.keys != MatchResultScreenshotRole.entries.toSet()) {
             return MatchResultSemanticRoleReconciliation.Incomplete
         }
-        val processedByRole = physicalResults.values
-            .filterIsInstance<MatchResultOcrPreviewProcessingResult.Processed>()
-            .groupBy { it.extraction.role }
+        val processedByRole = physicalResults.entries
+            .filter { (_, result) -> result is MatchResultOcrPreviewProcessingResult.Processed }
+            .map { (physicalRole, result) ->
+                physicalRole to (result as MatchResultOcrPreviewProcessingResult.Processed)
+            }
+            .mapNotNull { (physicalRole, processed) ->
+                when (val recordedPhysicalRole = processed.physicalScreenshotRole) {
+                    null -> physicalRole to processed.copy(physicalScreenshotRole = physicalRole)
+                    physicalRole -> physicalRole to processed
+                    else -> null
+                }
+            }
+            .groupBy { (_, processed) -> processed.extraction.role }
         if (processedByRole.keys != MatchResultScreenshotRole.entries.toSet()) {
             return if (physicalResults.values.all {
                 it is MatchResultOcrPreviewProcessingResult.Processed
@@ -36,7 +46,7 @@ class MatchResultSemanticRoleReconciler {
         }
         return MatchResultSemanticRoleReconciliation.Resolved(
             results = MatchResultScreenshotRole.entries.associateWith { role ->
-                processedByRole.getValue(role).single()
+                processedByRole.getValue(role).single().second
             },
         )
     }

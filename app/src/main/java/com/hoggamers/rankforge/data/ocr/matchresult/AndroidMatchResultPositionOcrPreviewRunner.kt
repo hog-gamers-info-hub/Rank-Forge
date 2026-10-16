@@ -268,6 +268,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                         cropHeight = source.height,
                         positionCrops = processingGeometry.crops,
                         source = MatchResultOcrPreviewSource.NEW_PP_POSITION,
+                        physicalScreenshotRole = prepared.identity.role,
                     )
                 } finally {
                     if (inputBitmap !== source && !inputBitmap.isRecycled) inputBitmap.recycle()

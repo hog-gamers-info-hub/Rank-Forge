@@ -130,6 +130,7 @@ class MatchResultOcrCacheCodecTest {
         pixelCrop = OcrPixelCropRect(left = 10, top = 20, right = 900, bottom = 700),
         cropWidth = 800,
         cropHeight = 600,
+        physicalScreenshotRole = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
     )
 
     private fun field(

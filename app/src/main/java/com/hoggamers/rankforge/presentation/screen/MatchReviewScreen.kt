@@ -436,11 +436,14 @@ fun MatchReviewRoute(
     LaunchedEffect(tournamentId, matchId, ocrUiState) {
         val ready = ocrUiState as? MatchOcrReviewUiState.Ready ?: return@LaunchedEffect
         if (ready.evidenceSource == MatchOcrReviewEvidenceSource.LIVE) {
+            val resultPreview = ready.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready
             viewModel.updateResultPositionCropPreviews(
-                authoritativePositionCropsByRole =
-                    (ready.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
-                        ?.visiblePositionCropsByRole()
-                        .orEmpty(),
+                authoritativePositionCropsByRole = resultPreview
+                    ?.visiblePositionCropsByRole()
+                    .orEmpty(),
+                semanticRoleByPhysicalScreenshotRole = resultPreview
+                    ?.semanticRoleByPhysicalScreenshotRole
+                    .orEmpty(),
             )
         }
     }
@@ -4445,6 +4448,7 @@ private fun ResultScreenshotSelector(
                 .map { preview ->
                     ResultPositionPageItem(
                         role = role,
+                        semanticRole = preview.semanticScreenshotRole ?: role,
                         position = preview.position,
                         preview = preview,
                     )
@@ -4453,10 +4457,7 @@ private fun ResultScreenshotSelector(
         .groupBy { it.position }
         .values
         .mapNotNull { items ->
-            items.firstOrNull { item ->
-                item.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER &&
-                    item.position >= 11
-            } ?: items.firstOrNull()
+            selectResultPositionPageItem(items)
         }
         .sortedBy { it.position }
     val ocrPositions = ocrPositionItems.map { item -> item.position }.toSet()
@@ -4912,6 +4913,7 @@ private fun ResultScreenshotPage(
                 items = positionCropPreviews.map { preview ->
                     ResultPositionPageItem(
                         role = role,
+                        semanticRole = preview.semanticScreenshotRole ?: role,
                         position = preview.position,
                         preview = preview,
                     )
@@ -4993,11 +4995,23 @@ private fun ResultScreenshotPage(
     }
 }
 
-private data class ResultPositionPageItem(
+internal data class ResultPositionPageItem(
     val position: Int,
     val role: MatchResultScreenshotRole? = null,
+    val semanticRole: MatchResultScreenshotRole? = null,
     val preview: MatchResultPositionCropPreview? = null,
 )
+
+internal fun selectResultPositionPageItem(
+    items: List<ResultPositionPageItem>,
+): ResultPositionPageItem? =
+    items.firstOrNull { item ->
+        item.position >= 11 && item.semanticRole == MatchResultScreenshotRole.MATCH_RESULT_LOWER
+    } ?: items.firstOrNull { item ->
+        item.position >= 11 &&
+            item.semanticRole == null &&
+            item.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER
+    } ?: items.firstOrNull()
 
 internal fun calculateResultPositionPreviewHeight(
     availableWidth: Dp,

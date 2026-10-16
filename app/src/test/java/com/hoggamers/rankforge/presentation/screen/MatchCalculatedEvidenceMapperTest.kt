@@ -132,6 +132,30 @@ class MatchCalculatedEvidenceMapperTest {
     }
 
     @Test
+    fun persistsSemanticRoleSeparatelyFromPhysicalCropSourceRole() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val sourcePreview = sourceOcrState.matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
+        val ocrState = sourceOcrState.copy(
+            matchResultOcrPreview = sourcePreview.copy(
+                rows = sourcePreview.rows.map { row ->
+                    row.copy(role = MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+                },
+                semanticRoleByPhysicalScreenshotRole = mapOf(
+                    MatchResultScreenshotRole.MATCH_RESULT_LOWER to
+                        MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                ),
+            ),
+        )
+
+        val evidence = requireNotNull(MatchCalculatedEvidenceMapper.map(reviewState, ocrState))
+        val result = evidence.result.positions.single { it.position == 12 }
+
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_LOWER, result.sourceScreenshotRole)
+        assertEquals(MatchResultScreenshotRole.MATCH_RESULT_UPPER, result.semanticScreenshotRole)
+        assertEquals(11, result.cropLeft)
+    }
+
+    @Test
     fun groupRotationPersistsLocalLobbySlotAndCanonicalTeamIdentitySeparately() {
         val (reviewState, standardOcrState) = mapperInput()
         val localToCanonical = listOf(14, 3, 18, 7, 16, 5, 6, 15, 2, 17, 4, 13)

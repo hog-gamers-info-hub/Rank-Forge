@@ -16,6 +16,8 @@ sealed interface MatchResultOcrPreviewProcessingResult {
         /** The authoritative physical-screenshot geometry used by production PP processing. */
         val positionCrops: List<MatchResultPositionCrop> = emptyList(),
         val source: MatchResultOcrPreviewSource = MatchResultOcrPreviewSource.NEW_PP_POSITION,
+        /** The stored screenshot slot that supplied this semantic OCR result and geometry. */
+        val physicalScreenshotRole: MatchResultScreenshotRole? = null,
     ) : MatchResultOcrPreviewProcessingResult
 
     data object MissingAsset : MatchResultOcrPreviewProcessingResult

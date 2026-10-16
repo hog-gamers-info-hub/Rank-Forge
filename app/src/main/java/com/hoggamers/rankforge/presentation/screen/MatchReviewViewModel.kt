@@ -909,12 +909,17 @@ class MatchReviewViewModel @Inject constructor(
     /** Supplies the physical geometry returned by production Result OCR to the preview path. */
     fun updateResultPositionCropPreviews(
         authoritativePositionCropsByRole: Map<MatchResultScreenshotRole, List<MatchResultPositionCrop>>,
+        semanticRoleByPhysicalScreenshotRole: Map<
+            MatchResultScreenshotRole,
+            MatchResultScreenshotRole,
+        > = emptyMap(),
     ) {
         if (!resultPositionCropPreviewsRequested) return
         MatchResultScreenshotRole.entries.forEach { storedRole ->
             generateResultPositionCropPreviews(
                 storedRole = storedRole,
                 authoritativeCrops = authoritativePositionCropsByRole[storedRole].orEmpty(),
+                semanticRole = semanticRoleByPhysicalScreenshotRole[storedRole],
             )
         }
     }
@@ -3914,11 +3919,12 @@ class MatchReviewViewModel @Inject constructor(
     private fun generateResultPositionCropPreviews(
         storedRole: MatchResultScreenshotRole,
         authoritativeCrops: List<MatchResultPositionCrop>,
+        semanticRole: MatchResultScreenshotRole? = null,
     ) {
         val slot = _uiState.value.resultScreenshots.slot(storedRole)
         val sourceInputKey = slot.resultPositionCropPreviewSourceInputKey()
         val inputKey = sourceInputKey?.let { source ->
-            source + ":" + authoritativeCrops
+            source + ":" + (semanticRole?.name ?: "UNKNOWN") + ":" + authoritativeCrops
                 .sortedBy { it.position }
                 .joinToString(";") { crop ->
                     "${crop.position},${crop.column},${crop.bounds.left},${crop.bounds.top}," +
@@ -3977,7 +3983,7 @@ class MatchReviewViewModel @Inject constructor(
                         confirmedCrop = crop,
                         storedRole = storedRole,
                         authoritativeCrops = authoritativeCrops,
-                    )
+                    ).withSemanticScreenshotRole(semanticRole)
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation

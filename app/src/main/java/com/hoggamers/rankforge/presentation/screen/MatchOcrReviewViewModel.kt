@@ -338,15 +338,19 @@ class MatchOcrReviewViewModel @Inject constructor(
             val (roleResults, lobbyOutcome) = coroutineScope {
                 val resultOcr = async {
                     MatchResultScreenshotRole.entries.map { role ->
-                        MatchResultOcrPreviewRoleResult(
-                            role = role,
-                            result = matchResultOcrPreviewRunner.process(
-                                MatchResultScreenshotIdentity(
-                                    tournamentId = tournamentId,
-                                    matchId = matchId,
-                                    role = role,
-                                ),
+                        val result = matchResultOcrPreviewRunner.process(
+                            MatchResultScreenshotIdentity(
+                                tournamentId = tournamentId,
+                                matchId = matchId,
+                                role = role,
                             ),
+                        )
+                        MatchResultOcrPreviewRoleResult(
+                            role = (result as? MatchResultOcrPreviewProcessingResult.Processed)
+                                ?.extraction
+                                ?.role
+                                ?: role,
+                            result = result,
                         )
                     }
                 }
