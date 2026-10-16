@@ -175,7 +175,7 @@ class DownloadResultScreenTest {
                         selectedPairing = ab,
                     ),
                     onBack = {},
-                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    previewState = DownloadResultPreviewState.Unavailable,
                 )
             }
         }
@@ -183,6 +183,34 @@ class DownloadResultScreenTest {
         composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_PAIRING_OVERALL_UNAVAILABLE_TEST_TAG)
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("Download").assertIsNotEnabled()
+    }
+
+    @Test
+    fun groupRotationPairingOverallWithImageEnablesDownload() {
+        var downloadCalls = 0
+        val ab = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                DownloadResultScreen(
+                    matches = emptyList(),
+                    tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                    selectedGroupPairings = listOf(ab),
+                    selectionContext = DownloadResultSelectionContext(
+                        tournamentId = "tournament-id",
+                        result = DownloadResultSelection.Overall,
+                        selectedPairing = ab,
+                    ),
+                    onBack = {},
+                    previewState = DownloadResultPreviewState.ResultImage(testPngBytes()),
+                    onDownload = { _, _ -> downloadCalls++ },
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(DOWNLOAD_RESULT_PAIRING_OVERALL_UNAVAILABLE_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithText("Download").assertIsEnabled().performClick()
+        assertEquals(1, downloadCalls)
     }
 
     @Test

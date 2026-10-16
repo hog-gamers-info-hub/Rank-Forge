@@ -297,6 +297,97 @@ class TournamentResultImageModelBuilderTest {
         )
     }
 
+    @Test
+    fun uuidBackedPairingOverallIncludesOnlyParticipatingTeamsFromSelectedPairing() {
+        val tournament = groupTournament(3)
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val selectedMatch = uuidMatch("selected-pairing-match", 1, pairing)
+        val input = input(
+            tournament = tournament,
+            teamSlots = permanentSlots(18),
+            matches = listOf(selectedMatch),
+            pairingScope = pairing,
+        ).copy(
+            groupRotationV4OverallImageInput = GroupRotationV4OverallImageInput.Valid(
+                teamIdentitySnapshot = GroupRotationTeamIdentityLocalSnapshot(
+                    teams = uuidIdentities(tournament, 18),
+                    assignments = listOf(
+                        GroupRotationPairingAssignment(
+                            tournamentId = tournament.id,
+                            pairingKey = pairing,
+                            lobbySlotNumber = 1,
+                            teamUUID = uuid(1),
+                            nameCleared = true,
+                        ),
+                    ),
+                ),
+                finalizedMatchSnapshots = mapOf(
+                    selectedMatch.id to uuidSnapshot(
+                        tournament = tournament,
+                        pairing = pairing,
+                        teams = listOf(1, 2),
+                        results = listOf(
+                            uuidResult(uuid(1), placement = 1, kills = 2),
+                            uuidResult(uuid(2), placement = 2),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val model = success(builder.build(input))
+        assertEquals(pairing, model.pairingScope)
+        assertEquals(2, model.rows.size)
+        assertEquals("", model.rows.single { it.teamName.isBlank() }.teamName)
+        assertEquals(1, model.rows.single { it.teamName == "Team 2" }.matchesPlayed)
+    }
+
+    @Test
+    fun uuidBackedPairingOverallFailsInsteadOfTruncatingMoreThanTwelveParticipants() {
+        val tournament = groupTournament(3)
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val matchOne = uuidMatch("selected-pairing-match-1", 1, pairing)
+        val matchTwo = uuidMatch("selected-pairing-match-2", 2, pairing)
+        val input = input(
+            tournament = tournament,
+            teamSlots = permanentSlots(18),
+            matches = listOf(matchOne, matchTwo),
+            pairingScope = pairing,
+        ).copy(
+            groupRotationV4OverallImageInput = GroupRotationV4OverallImageInput.Valid(
+                teamIdentitySnapshot = GroupRotationTeamIdentityLocalSnapshot(
+                    teams = uuidIdentities(tournament, 18),
+                    assignments = emptyList(),
+                ),
+                finalizedMatchSnapshots = mapOf(
+                    matchOne.id to uuidSnapshot(
+                        tournament = tournament,
+                        pairing = pairing,
+                        teams = (1..6).toList(),
+                        results = (1..6).map { number ->
+                            uuidResult(uuid(number), placement = number)
+                        },
+                    ),
+                    matchTwo.id to uuidSnapshot(
+                        tournament = tournament,
+                        pairing = pairing,
+                        teams = (7..13).toList(),
+                        results = (7..13).mapIndexed { index, number ->
+                            uuidResult(uuid(number), placement = index + 1)
+                        },
+                    ),
+                ),
+            ),
+        )
+
+        val result = builder.build(input)
+        assertTrue(
+            (result as TournamentResultImageModelBuildResult.Failure).failures.contains(
+                TournamentResultImageModelFailure.STANDINGS_GENERATION_FAILURE,
+            ),
+        )
+    }
+
     private fun success(result: TournamentResultImageModelBuildResult): TournamentResultExportModel =
         (result as TournamentResultImageModelBuildResult.Success).model
 
@@ -304,11 +395,13 @@ class TournamentResultImageModelBuilderTest {
         tournament: Tournament,
         teamSlots: List<TeamSlot>,
         matches: List<Match>,
+        pairingScope: GroupPairing? = null,
     ) = TournamentCsvExportInput(
         tournament = tournament,
         matches = matches,
         teamSlots = teamSlots,
         rosterPlayers = emptyList(),
+        pairingScope = pairingScope,
     )
 
     private fun standardTournament() = Tournament(

@@ -8,6 +8,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.export.MatchResultExportModel
 import com.hoggamers.rankforge.domain.export.ResultExportRow
 import com.hoggamers.rankforge.domain.export.TournamentResultExportModel
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,7 +55,29 @@ class ResultCanvasRendererTest {
     }
 
     @Test
-    fun overallImageRendererSupportsOnlyFullThreeAndFourGroupLayouts() {
+    fun pairingScopedOverallIncludesPairingLabelAndPreservesMetadata() {
+        val canvas = RecordingCanvas()
+        try {
+            assertEquals(
+                ResultCanvasRenderResult.Success,
+                renderer.renderForOverallImage(
+                    canvas,
+                    tournamentModel(
+                        pairingScope = GroupPairing(TournamentGroup.A, TournamentGroup.B),
+                    ),
+                    LocalDate.of(2026, 9, 3),
+                ),
+            )
+            assertEquals("A×B Overall -- 03 Sep 2026", canvas.texts[2].text)
+            assertEquals("Champions Cup 2026", canvas.texts[0].text)
+            assertEquals("HOG Gamers", canvas.texts[1].text)
+        } finally {
+            canvas.recycle()
+        }
+    }
+
+    @Test
+    fun overallImageRendererSupportsPairingRowsAndFullGroupLayouts() {
         listOf(
             18 to 755f,
             24 to 935f,
@@ -253,11 +277,13 @@ class ResultCanvasRendererTest {
     private fun tournamentModel(
         stageName: String = "HOG Gamers",
         rowCount: Int = 12,
+        pairingScope: GroupPairing? = null,
     ) = TournamentResultExportModel(
         tournamentName = "Champions Cup 2026",
         stageName = stageName,
         finalizedMatchCount = 2,
         rows = rows(rowCount),
+        pairingScope = pairingScope,
     )
 
     private fun rows(rowCount: Int = 12): List<ResultExportRow> = (1..rowCount).map { rank ->

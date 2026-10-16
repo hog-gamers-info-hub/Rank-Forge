@@ -16,6 +16,9 @@ data class MatchCsvExportInput(
     val match: Match,
     val teamSlots: List<TeamSlot>,
     val rosterPlayers: List<RosterPlayer>,
+    val displayMatchNumber: Int? = null,
+    val groupRotationV4MatchPersistenceSnapshot:
+        com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot? = null,
 )
 
 enum class MatchCsvExportFailure {
@@ -28,6 +31,7 @@ enum class MatchCsvExportFailure {
     MISSING_TEAM_IDENTITY,
     MISSING_KILL_VALUE,
     INVALID_KILL_COUNT,
+    INVALID_UUID_RESULT_DATA,
 }
 
 sealed interface MatchCsvExportResult {
@@ -90,7 +94,7 @@ class MatchCsvExporter(
                     tournamentId = input.tournament.id,
                     tournamentName = input.tournament.name,
                     matchId = input.match.id,
-                    matchLabel = "Match ${input.match.matchNumber}",
+                    matchLabel = "Match ${input.displayMatchNumber ?: input.match.matchNumber}",
                     matchFinalizedAt = "",
                     rowNumber = index + 1,
                     placement = result.placement,

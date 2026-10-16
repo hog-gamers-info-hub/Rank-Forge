@@ -140,6 +140,16 @@ class TournamentResultImageModelBuilder(
                 0
             }
         }
+        val pairingScope = input.pairingScope
+        if (
+            pairingScope != null &&
+            (
+                pairingScope !in input.tournament.selectedGroupPairings ||
+                    input.matches.any { match -> match.groupPairing != pairingScope }
+                )
+        ) {
+            failures += TournamentResultImageModelFailure.INVALID_UUID_RESULT_DATA
+        }
         val identities = v4Input.teamIdentitySnapshot.teams
         val identitiesByUuid = identities.associateBy { it.teamUUID }
         val activeAssignedTeamUUIDs = v4Input.teamIdentitySnapshot.assignments
@@ -183,6 +193,7 @@ class TournamentResultImageModelBuilder(
             failures += TournamentResultImageModelFailure.INVALID_UUID_RESULT_DATA
         }
 
+        val participatingTeamUUIDs = linkedSetOf<String>()
         val totals = identities.associate { identity ->
             identity.teamUUID to MutableUuidStanding()
         }.toMutableMap()
@@ -196,23 +207,23 @@ class TournamentResultImageModelBuilder(
                     match = match,
                     snapshot = snapshot,
                     identitiesByUuid = identitiesByUuid,
+                    pairingScope = pairingScope,
                     failures = failures,
                 )
-                if (failures.isEmpty() || !failures.contains(TournamentResultImageModelFailure.INVALID_UUID_RESULT_DATA)) {
-                    snapshot.participantResults.forEach { result ->
-                        if (result.participationStatus == MatchParticipationStatus.PARTICIPATED) {
-                            val placement = result.placement
-                            if (placement != null) {
-                                val standing = totals[result.teamUUID]
-                                if (standing != null) {
-                                    standing.totalPositionPoints += PositionPointsEngine()(placement)
-                                    standing.totalKillPoints += KillPointsEngine()(result.kills)
-                                    standing.totalPoints +=
-                                        MatchTotalEngine()(placement, result.kills) + result.pointAdjustment
-                                    if (placement == 1) standing.firstPlaceFinishes++
-                                    standing.latestMatchPlacement = placement
-                                    standing.matchesIncluded++
-                                }
+                snapshot.participantResults.forEach { result ->
+                    if (result.participationStatus == MatchParticipationStatus.PARTICIPATED) {
+                        participatingTeamUUIDs += result.teamUUID
+                        val placement = result.placement
+                        if (placement != null) {
+                            val standing = totals[result.teamUUID]
+                            if (standing != null) {
+                                standing.totalPositionPoints += PositionPointsEngine()(placement)
+                                standing.totalKillPoints += KillPointsEngine()(result.kills)
+                                standing.totalPoints +=
+                                    MatchTotalEngine()(placement, result.kills) + result.pointAdjustment
+                                if (placement == 1) standing.firstPlaceFinishes++
+                                standing.latestMatchPlacement = placement
+                                standing.matchesIncluded++
                             }
                         }
                     }
@@ -220,11 +231,19 @@ class TournamentResultImageModelBuilder(
             }
         }
 
+        val outputIdentities = if (pairingScope == null) {
+            identities
+        } else {
+            if (participatingTeamUUIDs.size !in 1..GroupRotationPairingLobbySlot.MAX_LOBBY_SLOT_NUMBER) {
+                failures += TournamentResultImageModelFailure.STANDINGS_GENERATION_FAILURE
+            }
+            identities.filter { identity -> identity.teamUUID in participatingTeamUUIDs }
+        }
         if (failures.isNotEmpty() || identities.size != capacity) {
             return TournamentResultImageModelBuildResult.Failure(failures)
         }
 
-        val orderedIdentities = identities.sortedBy { identity -> identity.teamUUID }
+        val orderedIdentities = outputIdentities.sortedBy { identity -> identity.teamUUID }
         val standingsByOrdinal = orderedIdentities.mapIndexed { index, identity ->
             val standing = totals.getValue(identity.teamUUID)
             CumulativeTournamentStanding(
@@ -241,16 +260,27 @@ class TournamentResultImageModelBuilder(
         val identityByOrdinal = orderedIdentities.withIndex().associate { (index, identity) ->
             index + 1 to identity
         }
+        val blankDisplayNameTeamUUIDs = if (pairingScope == null) {
+            fullyClearedAssignedTeamUUIDs
+        } else {
+            v4Input.teamIdentitySnapshot.assignments
+                .filter { assignment ->
+                    assignment.pairingKey == pairingScope && assignment.nameCleared
+                }
+                .map { assignment -> assignment.teamUUID }
+                .toSet()
+        }
         return TournamentResultImageModelBuildResult.Success(
             TournamentResultExportModel(
                 tournamentName = input.tournament.name,
                 stageName = input.tournament.stageName,
                 finalizedMatchCount = finalizedMatches.size,
+                pairingScope = pairingScope,
                 rows = orderedStandings.mapIndexed { index, tieBreakStanding ->
                     val identity = identityByOrdinal.getValue(tieBreakStanding.standing.teamSlotNumber)
                     tieBreakStanding.toResultExportRow(
                         rank = index + 1,
-                        teamName = if (identity.teamUUID in fullyClearedAssignedTeamUUIDs) {
+                        teamName = if (identity.teamUUID in blankDisplayNameTeamUUIDs) {
                             ""
                         } else {
                             identity.displayName.trim()
@@ -293,6 +323,7 @@ class TournamentResultImageModelBuilder(
         match: Match,
         snapshot: GroupRotationMatchPersistenceSnapshot,
         identitiesByUuid: Map<String, GroupRotationTeamIdentity>,
+        pairingScope: GroupPairing?,
         failures: MutableSet<TournamentResultImageModelFailure>,
     ) {
         val identity = snapshot.identity
@@ -302,6 +333,7 @@ class TournamentResultImageModelBuilder(
         if (
             identity.tournamentId != input.tournament.id ||
             identity.pairing !in input.tournament.selectedGroupPairings ||
+            (pairingScope != null && identity.pairing != pairingScope) ||
             match.groupPairing != identity.pairing ||
             teams.isEmpty() ||
             teams.size > GroupRotationPairingLobbySlot.MAX_LOBBY_SLOT_NUMBER ||

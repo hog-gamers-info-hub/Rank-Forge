@@ -641,6 +641,7 @@ class DownloadResultViewModel @Inject constructor(
             ?.let { selection ->
                 _uiState.value.matches.firstOrNull { it.matchId == selection.matchId }?.groupPairing
             }
+        val selectedPairing = selectedMatchPairing ?: _selectionContext.value.selectedPairing
         val effectiveDesign = if (
             result == DownloadResultSelection.Overall &&
             _uiState.value.tournamentFormat == TournamentFormat.GROUP_ROTATION
@@ -653,7 +654,7 @@ class DownloadResultViewModel @Inject constructor(
             tournamentId = tournamentId,
             result = result,
             design = effectiveDesign,
-            selectedPairing = selectedMatchPairing ?: _selectionContext.value.selectedPairing,
+            selectedPairing = selectedPairing,
         )
         previewJob?.cancel()
         customDesignId = null
@@ -661,7 +662,7 @@ class DownloadResultViewModel @Inject constructor(
         _previewState.value = DownloadResultPreviewState.Loading
         previewJob = viewModelScope.launch {
             try {
-                val request = buildRequest(tournamentId, result)
+                val request = buildRequest(tournamentId, result, selectedPairing)
                 if (request == null) {
                     _previewState.value = DownloadResultPreviewState.Unavailable
                     return@launch
@@ -762,9 +763,16 @@ class DownloadResultViewModel @Inject constructor(
         downloadJob?.cancel()
         pendingDocument = null
         _downloadState.value = DownloadResultDownloadState.Generating
+        val selectedPairing = if (result == DownloadResultSelection.Overall) {
+            _selectionContext.value
+                .takeIf { it.tournamentId == tournamentId }
+                ?.selectedPairing
+        } else {
+            null
+        }
         downloadJob = viewModelScope.launch {
             val outcome = try {
-                val request = buildRequest(tournamentId, result)
+                val request = buildRequest(tournamentId, result, selectedPairing)
                 if (request == null) {
                     ResultDownloadExecutionResult.Failure(
                         com.hoggamers.rankforge.data.export.ResultDownloadFailure.INVALID_CONTEXT,
@@ -900,31 +908,36 @@ class DownloadResultViewModel @Inject constructor(
     private suspend fun buildRequest(
         tournamentId: String,
         result: DownloadResultSelection,
+        pairingScope: GroupPairing? = null,
     ): ResultDownloadRequest? {
         val tournament = getTournamentById(tournamentId).first() ?: return null
-        if (
-            tournament.format == TournamentFormat.GROUP_ROTATION &&
-            result == DownloadResultSelection.Overall &&
-            _selectionContext.value.tournamentId == tournamentId &&
-            _selectionContext.value.selectedPairing != null
-        ) {
-            return null
-        }
         val matches = observeMatches(tournamentId).first()
+        val selectedMatch = (result as? DownloadResultSelection.Match)
+            ?.let { selection -> matches.firstOrNull { it.id == selection.matchId } }
+        val effectivePairingScope = pairingScope ?: selectedMatch?.groupPairing
+        val scopedMatches = if (effectivePairingScope == null) {
+            matches
+        } else {
+            matches.filter { match -> match.groupPairing == effectivePairingScope }
+        }
         val teamSlots = observeTournamentSlots(tournamentId).first()
         val rosterPlayers = observeRoster(tournamentId).first().values.flatten()
         val groupRotationV4OverallImageInput = if (result == DownloadResultSelection.Overall) {
             when (
                 val readResult = groupRotationV4OverallImageInputReader.read(
                     tournament = tournament,
-                    matches = matches,
+                    matches = scopedMatches,
                     persistedTeamSlots = teamSlots,
                 )
             ) {
                 is GroupRotationV4OverallImageReadResult.Available -> readResult.input
-                GroupRotationV4OverallImageReadResult.Legacy -> null
+                GroupRotationV4OverallImageReadResult.Legacy -> {
+                    if (pairingScope != null) return null
+                    null
+                }
                 GroupRotationV4OverallImageReadResult.Invalid ->
-                    GroupRotationV4OverallImageInput.Invalid
+                    if (pairingScope != null) return null
+                    else GroupRotationV4OverallImageInput.Invalid
             }
         } else {
             null
@@ -933,20 +946,49 @@ class DownloadResultViewModel @Inject constructor(
             DownloadResultSelection.Overall -> ResultDownloadRequest.WholeTournament(
                 TournamentCsvExportInput(
                     tournament = tournament,
-                    matches = matches,
+                    matches = scopedMatches,
                     teamSlots = teamSlots,
                     rosterPlayers = rosterPlayers,
                     groupRotationV4OverallImageInput = groupRotationV4OverallImageInput,
+                    pairingScope = effectivePairingScope,
                 ),
             )
-            is DownloadResultSelection.Match -> matches.firstOrNull { it.id == result.matchId }
+            is DownloadResultSelection.Match -> selectedMatch
                 ?.let { match ->
+                    val v4Snapshot = if (tournament.format == TournamentFormat.GROUP_ROTATION) {
+                        when (
+                            val readResult = groupRotationV4OverallImageInputReader.read(
+                                tournament = tournament,
+                                matches = listOf(match),
+                                persistedTeamSlots = teamSlots,
+                            )
+                        ) {
+                            is GroupRotationV4OverallImageReadResult.Available ->
+                                readResult.input.finalizedMatchSnapshots[match.id]
+                                    ?: return null
+                            GroupRotationV4OverallImageReadResult.Legacy -> null
+                            GroupRotationV4OverallImageReadResult.Invalid -> return null
+                        }
+                    } else {
+                        null
+                    }
+                    val displayMatchNumber = if (effectivePairingScope == null) {
+                        null
+                    } else {
+                        scopedMatches
+                            .sortedWith(compareBy<Match> { it.matchNumber }.thenBy { it.id })
+                            .indexOfFirst { it.id == match.id }
+                            .takeIf { it >= 0 }
+                            ?.plus(1)
+                    }
                     ResultDownloadRequest.CurrentMatch(
                         MatchCsvExportInput(
                             tournament = tournament,
                             match = match,
                             teamSlots = teamSlots,
                             rosterPlayers = rosterPlayers,
+                            displayMatchNumber = displayMatchNumber,
+                            groupRotationV4MatchPersistenceSnapshot = v4Snapshot,
                         ),
                     )
                 }
@@ -1617,7 +1659,10 @@ fun DownloadResultScreen(
                 .aspectRatio(1f),
             contentAlignment = Alignment.Center,
         ) {
-            if (pairingSpecificOverall) {
+            if (
+                pairingSpecificOverall &&
+                    previewState is DownloadResultPreviewState.Unavailable
+            ) {
                 Text(
                     text = "Pairing Overall is not available yet.",
                     modifier = Modifier.testTag(DOWNLOAD_RESULT_PAIRING_OVERALL_UNAVAILABLE_TEST_TAG),
@@ -1716,8 +1761,7 @@ fun DownloadResultScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         DownloadResultPrimaryButton(
-            enabled = !pairingSpecificOverall &&
-                previewState is DownloadResultPreviewState.ResultImage &&
+            enabled = previewState is DownloadResultPreviewState.ResultImage &&
                 !downloadState.isBusy,
             onClick = { onDownload(selectedResult, selectedDesign) },
         )

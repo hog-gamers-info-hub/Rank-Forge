@@ -59,7 +59,7 @@ object ResultLayoutSpec {
 
     /** Supported overall PointIQ image layouts; arbitrary row counts fail closed. */
     fun overallImageLayoutForRowCount(rowCount: Int): ResultRenderLayout? = when (rowCount) {
-        RESULT_ROW_COUNT -> legacyLayoutForRowCount(rowCount)
+        in 1..RESULT_ROW_COUNT -> legacyLayoutForRowCount(rowCount)
         OVERALL_IMAGE_GROUP_ROW_COUNT_3,
         OVERALL_IMAGE_GROUP_ROW_COUNT_4,
         -> {
