@@ -67,7 +67,9 @@ class ResultLayoutSpecTest {
     }
 
     @Test
-    fun overallImageLayoutsSupportOnlyStandardThreeGroupAndFourGroupRowCounts() {
+    fun overallImageLayoutsSupportPairingRowsThroughTwelveAndFullGroupRows() {
+        assertEquals(1190, ResultLayoutSpec.overallImageLayoutForRowCount(1)?.pngHeight)
+        assertEquals(1190, ResultLayoutSpec.overallImageLayoutForRowCount(6)?.pngHeight)
         assertEquals(1190, ResultLayoutSpec.overallImageLayoutForRowCount(12)?.pngHeight)
         assertEquals(775, ResultLayoutSpec.overallImageLayoutForRowCount(18)?.logicalPageHeight)
         assertEquals(1550, ResultLayoutSpec.overallImageLayoutForRowCount(18)?.pngHeight)

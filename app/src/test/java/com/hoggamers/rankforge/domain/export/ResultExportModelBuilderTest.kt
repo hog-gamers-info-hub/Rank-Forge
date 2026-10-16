@@ -9,7 +9,15 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.Tournament
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -90,6 +98,114 @@ class ResultExportModelBuilderTest {
         assertEquals(0, model.rows.last().positionPoints)
         assertEquals(0, model.rows.last().totalPoints)
         assertEquals(0, model.rows.last().matchesPlayed)
+    }
+
+    @Test
+    fun uuidBackedCurrentMatchUsesSavedSnapshotAndPairingLocalNumber() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val tournament = validTournament().copy(
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 3,
+            selectedGroupPairings = defaultGroupPairings(3),
+        )
+        val snapshot = GroupRotationMatchPersistenceSnapshot(
+            identity = GroupRotationMatchIdentitySnapshot(
+                tournamentId = tournament.id,
+                pairing = pairing,
+                teams = listOf(
+                    GroupRotationMatchTeamIdentity(1, "uuid-alpha", "Historical Alpha"),
+                    GroupRotationMatchTeamIdentity(2, "uuid-beta", ""),
+                    GroupRotationMatchTeamIdentity(3, "uuid-gamma", "Historical Gamma"),
+                ),
+            ),
+            participantResults = listOf(
+                GroupRotationMatchParticipantResult(
+                    teamUUID = "uuid-alpha",
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = 2,
+                    kills = 4,
+                    pointAdjustment = 2,
+                ),
+                GroupRotationMatchParticipantResult(
+                    teamUUID = "uuid-beta",
+                    participationStatus = MatchParticipationStatus.NO_SHOW,
+                    placement = null,
+                    kills = 0,
+                ),
+                GroupRotationMatchParticipantResult(
+                    teamUUID = "uuid-gamma",
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = 1,
+                    kills = 1,
+                ),
+            ),
+        )
+
+        val model = matchSuccess(
+            builder.buildMatch(
+                MatchCsvExportInput(
+                    tournament = tournament,
+                    match = validMatch(matchNumber = 9).copy(groupPairing = pairing),
+                    teamSlots = validTeamSlots(),
+                    rosterPlayers = emptyList(),
+                    displayMatchNumber = 1,
+                    groupRotationV4MatchPersistenceSnapshot = snapshot,
+                ),
+            ),
+        )
+
+        assertEquals(1, model.matchNumber)
+        assertEquals(
+            listOf("Historical Alpha", "Historical Gamma", ""),
+            model.rows.map { it.teamName },
+        )
+        assertEquals(listOf(1, 2, null), model.rows.map { it.rank })
+        assertEquals(15, model.rows.first().totalPoints)
+        assertEquals(13, model.rows[1].totalPoints)
+        assertEquals(0, model.rows[2].totalPoints)
+        assertEquals(listOf(4, 1, 0), model.rows.map { it.totalKills })
+    }
+
+    @Test
+    fun invalidUuidCurrentMatchSnapshotIsRejectedBeforeLegacyFallback() {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val tournament = validTournament().copy(
+            format = TournamentFormat.GROUP_ROTATION,
+            groupCount = 3,
+            selectedGroupPairings = defaultGroupPairings(3),
+        )
+        val snapshot = GroupRotationMatchPersistenceSnapshot(
+            identity = GroupRotationMatchIdentitySnapshot(
+                tournamentId = tournament.id,
+                pairing = pairing,
+                teams = listOf(
+                    GroupRotationMatchTeamIdentity(1, "uuid-alpha", "Alpha"),
+                    GroupRotationMatchTeamIdentity(2, "uuid-beta", "Beta"),
+                ),
+            ),
+            participantResults = listOf(
+                GroupRotationMatchParticipantResult(
+                    teamUUID = "uuid-alpha",
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = 1,
+                    kills = 1,
+                ),
+            ),
+        )
+
+        val failure = matchFailure(
+            builder.buildMatch(
+                MatchCsvExportInput(
+                    tournament = tournament,
+                    match = validMatch().copy(groupPairing = pairing),
+                    teamSlots = validTeamSlots(),
+                    rosterPlayers = emptyList(),
+                    groupRotationV4MatchPersistenceSnapshot = snapshot,
+                ),
+            ),
+        )
+
+        assertEquals(setOf(MatchCsvExportFailure.INVALID_UUID_RESULT_DATA), failure.failures)
     }
 
     @Test

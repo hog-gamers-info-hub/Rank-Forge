@@ -79,9 +79,14 @@ class ResultCanvasRenderer {
         tournamentName = model.tournamentName,
         stageName = model.stageName,
         subtitle = if (displayDate == null) {
-            "Overall standings"
+            model.pairingScope?.let { pairing ->
+                "${pairing.firstGroup.name}×${pairing.secondGroup.name} Overall"
+            } ?: "Overall standings"
         } else {
-            "Overall standings -- ${displayDate.format(DATE_FORMATTER)}"
+            val scopeLabel = model.pairingScope?.let { pairing ->
+                "${pairing.firstGroup.name}×${pairing.secondGroup.name} Overall"
+            } ?: "Overall standings"
+            "$scopeLabel -- ${displayDate.format(DATE_FORMATTER)}"
         },
         rows = model.rows,
         layout = ResultLayoutSpec.overallImageLayoutForRowCount(model.rows.size),

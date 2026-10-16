@@ -4,6 +4,7 @@ import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStanding
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalSnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
@@ -30,6 +31,7 @@ data class TournamentCsvExportInput(
     val teamSlots: List<TeamSlot>,
     val rosterPlayers: List<RosterPlayer>,
     val groupRotationV4OverallImageInput: GroupRotationV4OverallImageInput? = null,
+    val pairingScope: GroupPairing? = null,
 )
 
 enum class TournamentCsvExportFailure {

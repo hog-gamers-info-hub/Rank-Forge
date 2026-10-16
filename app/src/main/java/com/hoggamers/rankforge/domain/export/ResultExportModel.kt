@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.domain.export
 
+import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import java.time.LocalDate
 
 data class ResultExportRow(
@@ -26,6 +27,7 @@ data class TournamentResultExportModel(
     val stageName: String,
     val finalizedMatchCount: Int,
     val rows: List<ResultExportRow>,
+    val pairingScope: GroupPairing? = null,
 )
 
 sealed interface MatchResultExportModelBuildResult {

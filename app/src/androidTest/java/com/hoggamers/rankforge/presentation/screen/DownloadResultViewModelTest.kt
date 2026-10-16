@@ -20,6 +20,7 @@ import com.hoggamers.rankforge.data.export.NoOpCustomDesignResultDownloadCoordin
 import com.hoggamers.rankforge.data.export.NoOpFreeDesignResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.NoOpResultDocumentWriter
 import com.hoggamers.rankforge.data.export.ResultDownloadCoordinator
+import com.hoggamers.rankforge.data.export.ResultDownloadRequest
 import com.hoggamers.rankforge.data.export.NoOpResultDownloadCoordinator
 import com.hoggamers.rankforge.data.export.ResultDownloadExecutionResult
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
@@ -31,6 +32,13 @@ import com.hoggamers.rankforge.data.local.PointTableLogoImageStore
 import com.hoggamers.rankforge.data.local.PointTableLogoImageStoreResult
 import com.hoggamers.rankforge.data.local.PointTableLogoPlacement
 import com.hoggamers.rankforge.domain.export.ResultExportModelBuilder
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInput
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageInputReader
+import com.hoggamers.rankforge.domain.export.GroupRotationV4OverallImageReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityLocalSnapshot
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchParticipantResult
@@ -172,6 +180,261 @@ class DownloadResultViewModelTest {
         } as DownloadResultPreviewState.ResultImage
 
         assertEquals(1684 to 1550, pngDimensions(preview.pngBytes))
+    }
+
+    @Test
+    fun groupRotationLoadPreservesConfiguredPairingsAndMatchPairingSelection() = runBlocking {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val match = groupMatch().copy(
+            id = "group-match-ac",
+            groupPairing = pairing,
+        )
+        val tournament = groupTournament().copy(
+            selectedGroupPairings = listOf(
+                GroupPairing(TournamentGroup.A, TournamentGroup.B),
+                pairing,
+            ),
+        )
+        val viewModel = createViewModel(
+            tournament = tournament,
+            matches = listOf(match),
+            teamSlots = groupTeamSlots(),
+        )
+
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.uiState.first { state ->
+                state.selectedGroupPairings == tournament.selectedGroupPairings &&
+                    state.matches.size == 1 &&
+                    state.matches.single().groupPairing == pairing
+            }
+        }
+
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Match(match.id),
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        assertEquals(pairing, viewModel.selectionContext.value.selectedPairing)
+    }
+
+    @Test
+    fun groupRotationPairingOverallBlocksWholeTournamentDownload() = runBlocking {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        val viewModel = createViewModel(
+            tournament = groupTournament(),
+            matches = listOf(groupMatch()),
+            teamSlots = groupTeamSlots(),
+        )
+
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.uiState.first { it.selectedGroupPairings.isNotEmpty() }
+        }
+        viewModel.selectPairing("tournament-id", pairing)
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.downloadState.first { it is DownloadResultDownloadState.Failure }
+        }
+        assertEquals(pairing, viewModel.selectionContext.value.selectedPairing)
+    }
+
+    @Test
+    fun groupRotationPairingOverallUsesScopedUuidMatchesForPreviewAndDownload() = runBlocking {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val match = groupMatch().copy(
+            id = "group-match-ab",
+            groupPairing = pairing,
+        )
+        val receivedRequest = CompletableDeferred<ResultDownloadRequest>()
+        val coordinator = object : ResultDownloadCoordinator {
+            override suspend fun execute(
+                request: ResultDownloadRequest,
+                format: com.hoggamers.rankforge.data.export.ResultExportFileFormat,
+                onSaving: suspend () -> Unit,
+            ): ResultDownloadExecutionResult {
+                receivedRequest.complete(request)
+                return ResultDownloadExecutionResult.Failure(ResultDownloadFailure.GENERATION_FAILED)
+            }
+        }
+        val reader = object : GroupRotationV4OverallImageInputReader {
+            override suspend fun read(
+                tournament: Tournament,
+                matches: List<Match>,
+                persistedTeamSlots: List<TeamSlot>,
+            ): GroupRotationV4OverallImageReadResult =
+                GroupRotationV4OverallImageReadResult.Available(
+                    GroupRotationV4OverallImageInput.Valid(
+                        teamIdentitySnapshot = GroupRotationTeamIdentityLocalSnapshot(
+                            teams = (1..18).map { number ->
+                                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentity(
+                                    tournamentId = tournament.id,
+                                    teamUUID = "uuid-$number",
+                                    displayName = "Team $number",
+                                    normalizedName = "team $number",
+                                )
+                            },
+                            assignments = emptyList(),
+                        ),
+                        finalizedMatchSnapshots = mapOf(
+                            match.id to GroupRotationMatchPersistenceSnapshot(
+                                identity = GroupRotationMatchIdentitySnapshot(
+                                    tournamentId = tournament.id,
+                                    pairing = pairing,
+                                    teams = listOf(1, 2).mapIndexed { index, number ->
+                                        GroupRotationMatchTeamIdentity(
+                                            lobbySlotNumber = index + 1,
+                                            teamUUID = "uuid-$number",
+                                            displayName = "Team $number",
+                                        )
+                                    },
+                                ),
+                                participantResults = listOf(
+                                    com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult(
+                                        teamUUID = "uuid-1",
+                                        participationStatus = MatchParticipationStatus.PARTICIPATED,
+                                        placement = 1,
+                                        kills = 1,
+                                    ),
+                                    com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult(
+                                        teamUUID = "uuid-2",
+                                        participationStatus = MatchParticipationStatus.PARTICIPATED,
+                                        placement = 2,
+                                        kills = 0,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+        }
+        val viewModel = createViewModel(
+            tournament = groupTournament(),
+            matches = listOf(match),
+            teamSlots = groupTeamSlots(),
+            resultCoordinator = coordinator,
+            groupRotationV4OverallImageInputReader = reader,
+        )
+
+        viewModel.load("tournament-id")
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.uiState.first { it.selectedGroupPairings.isNotEmpty() }
+        }
+        viewModel.selectPairing("tournament-id", pairing)
+
+        val preview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { it is DownloadResultPreviewState.ResultImage }
+        }
+        assertTrue(preview is DownloadResultPreviewState.ResultImage)
+
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+        val request = withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedRequest.await() }
+        val wholeTournament = request as ResultDownloadRequest.WholeTournament
+        assertEquals(pairing, wholeTournament.input.pairingScope)
+        assertEquals(listOf(match.id), wholeTournament.input.matches.map { it.id })
+    }
+
+    @Test
+    fun groupRotationCurrentMatchUsesPersistedUuidSnapshotForPreviewAndDownload() = runBlocking {
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.B)
+        val match = groupMatch().copy(
+            id = "group-match-ab",
+            matchNumber = 8,
+            groupPairing = pairing,
+        )
+        val snapshot = GroupRotationMatchPersistenceSnapshot(
+            identity = GroupRotationMatchIdentitySnapshot(
+                tournamentId = "tournament-id",
+                pairing = pairing,
+                teams = (1..12).map { slotNumber ->
+                    GroupRotationMatchTeamIdentity(
+                        lobbySlotNumber = slotNumber,
+                        teamUUID = "uuid-$slotNumber",
+                        displayName = "Saved Team $slotNumber",
+                    )
+                },
+            ),
+            participantResults = (1..12).map { slotNumber ->
+                com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult(
+                    teamUUID = "uuid-$slotNumber",
+                    participationStatus = MatchParticipationStatus.PARTICIPATED,
+                    placement = slotNumber,
+                    kills = slotNumber,
+                )
+            },
+        )
+        val reader = object : GroupRotationV4OverallImageInputReader {
+            override suspend fun read(
+                tournament: Tournament,
+                matches: List<Match>,
+                persistedTeamSlots: List<TeamSlot>,
+            ): GroupRotationV4OverallImageReadResult =
+                GroupRotationV4OverallImageReadResult.Available(
+                    GroupRotationV4OverallImageInput.Valid(
+                        teamIdentitySnapshot = GroupRotationTeamIdentityLocalSnapshot(
+                            teams = (1..18).map { number ->
+                                com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentity(
+                                    tournamentId = tournament.id,
+                                    teamUUID = "uuid-$number",
+                                    displayName = "Saved Team $number",
+                                    normalizedName = "saved team $number",
+                                )
+                            },
+                            assignments = emptyList(),
+                        ),
+                        finalizedMatchSnapshots = mapOf(match.id to snapshot),
+                    ),
+                )
+        }
+        val receivedRequest = CompletableDeferred<ResultDownloadRequest>()
+        val coordinator = object : ResultDownloadCoordinator {
+            override suspend fun execute(
+                request: ResultDownloadRequest,
+                format: com.hoggamers.rankforge.data.export.ResultExportFileFormat,
+                onSaving: suspend () -> Unit,
+            ): ResultDownloadExecutionResult {
+                receivedRequest.complete(request)
+                return ResultDownloadExecutionResult.Failure(ResultDownloadFailure.GENERATION_FAILED)
+            }
+        }
+        val viewModel = createViewModel(
+            tournament = groupTournament(),
+            matches = listOf(match),
+            teamSlots = groupTeamSlots(),
+            resultCoordinator = coordinator,
+            groupRotationV4OverallImageInputReader = reader,
+        )
+
+        viewModel.load("tournament-id")
+        viewModel.select(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Match(match.id),
+            design = DownloadResultDesignType.IMAGE,
+        )
+        val preview = withTimeout(TimeUnit.SECONDS.toMillis(5)) {
+            viewModel.previewState.first { it is DownloadResultPreviewState.ResultImage }
+        }
+        assertTrue(preview is DownloadResultPreviewState.ResultImage)
+
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Match(match.id),
+            design = DownloadResultDesignType.IMAGE,
+        )
+        val request = withTimeout(TimeUnit.SECONDS.toMillis(3)) { receivedRequest.await() }
+        val currentMatch = request as ResultDownloadRequest.CurrentMatch
+        assertEquals(1, currentMatch.input.displayMatchNumber)
+        assertEquals(snapshot, currentMatch.input.groupRotationV4MatchPersistenceSnapshot)
     }
 
     @Test
@@ -1021,6 +1284,8 @@ class DownloadResultViewModelTest {
         resultCoordinator: ResultDownloadCoordinator = NoOpResultDownloadCoordinator,
         pointTableLogoImageStore: PointTableLogoImageStore = FakePointTableLogoImageStore(),
         pointTableLogoRenderResolver: PointTableLogoRenderResolver? = null,
+        groupRotationV4OverallImageInputReader: GroupRotationV4OverallImageInputReader =
+            GroupRotationV4OverallImageInputReader.LegacyOnly,
         tournament: Tournament = tournament(),
         matches: List<Match> = listOf(match()),
         teamSlots: List<TeamSlot> = teamSlots(),
@@ -1056,6 +1321,7 @@ class DownloadResultViewModelTest {
             pointTableDetailsRepository = pointTableDetailsRepository,
             pointTableLogoImageStore = pointTableLogoImageStore,
             pointTableLogoRenderResolver = logoResolver,
+            groupRotationV4OverallImageInputReader = groupRotationV4OverallImageInputReader,
         )
     }
 
