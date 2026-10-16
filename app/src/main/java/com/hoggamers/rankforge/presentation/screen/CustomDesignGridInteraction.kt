@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import androidx.compose.ui.geometry.Offset
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignAnchorField
 import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignEffectiveGridGeometry
+import com.hoggamers.rankforge.domain.ocr.customdesign.CustomDesignRowCapacity
 import kotlin.math.abs
 
 data class CustomDesignGridHitCandidates(
@@ -83,7 +84,7 @@ fun constrainCustomDesignRowSourceY(
     geometry: CustomDesignEffectiveGridGeometry,
     minimumSeparation: Float = CUSTOM_DESIGN_MIN_ROW_SEPARATION_SOURCE_PX,
 ): Float? {
-    if (rank !in CUSTOM_DESIGN_RANK_RANGE ||
+    if (rank !in geometry.rowY.keys ||
         !sourceY.isFinite() ||
         !minimumSeparation.isFinite() ||
         minimumSeparation < 0f
@@ -110,4 +111,6 @@ fun constrainCustomDesignRowSourceY(
 
 const val CUSTOM_DESIGN_GRID_HIT_TOLERANCE_DP = 8
 const val CUSTOM_DESIGN_MIN_ROW_SEPARATION_SOURCE_PX = 1f
-val CUSTOM_DESIGN_RANK_RANGE = 1..12
+val CUSTOM_DESIGN_RANK_RANGE = CustomDesignRowCapacity.rankRange(
+    CustomDesignRowCapacity.DEFAULT_ROW_COUNT,
+)

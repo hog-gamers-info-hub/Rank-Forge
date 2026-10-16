@@ -59,7 +59,7 @@ class DownloadResultScreenTest {
     }
 
     @Test
-    fun groupRotationOverallExposesOnlyStandardImageDesign() {
+    fun groupRotationOverallExposesImageAndMyDesignButNotFreeDesign() {
         var downloadDesign: DownloadResultDesignType? = null
         composeTestRule.setContent {
             RankForgeTheme {
@@ -79,8 +79,8 @@ class DownloadResultScreenTest {
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG)
-            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG)
+            .assertIsDisplayed()
         composeTestRule.onNodeWithText("Download").performClick()
         composeTestRule.runOnIdle {
             assertEquals(DownloadResultDesignType.IMAGE, downloadDesign)

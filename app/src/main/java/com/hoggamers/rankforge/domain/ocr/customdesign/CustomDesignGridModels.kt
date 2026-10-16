@@ -26,8 +26,8 @@ data class CustomDesignGridGeometry(
     val hasAllColumns: Boolean
         get() = columnX.keys.containsAll(CustomDesignAnchorField.REQUIRED_FIELDS)
 
-    val hasAllRows: Boolean
-        get() = rowY.keys.containsAll((1..12).toSet())
+    fun hasAllRows(rowCapacity: Int = CustomDesignRowCapacity.DEFAULT_ROW_COUNT): Boolean =
+        rowY.keys.containsAll(CustomDesignRowCapacity.rankRange(rowCapacity).toSet())
 
     fun cellCenter(
         field: CustomDesignAnchorField,

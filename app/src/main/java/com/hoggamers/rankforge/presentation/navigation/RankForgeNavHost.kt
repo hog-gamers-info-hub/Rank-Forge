@@ -899,13 +899,14 @@ fun RankForgeNavHost(
                     DownloadResultSelection.Overall
                 },
                 onBack = onBack,
-                onOpenCustomDesignSetup = { matchId, scope, candidateUri ->
+                onOpenCustomDesignSetup = { matchId, scope, requiredRowCount, candidateUri ->
                     navController.navigate(
                         CustomDesignSetupDestination(
                             tournamentId = destination.tournamentId,
                             matchId = matchId,
                             downloadScope = scope.name,
                             candidateUri = candidateUri,
+                            requiredRowCount = requiredRowCount,
                         ),
                     )
                 },
@@ -915,6 +916,7 @@ fun RankForgeNavHost(
             val destination = backStackEntry.toRoute<CustomDesignSetupDestination>()
             CustomDesignSetupRoute(
                 candidateUri = destination.candidateUri,
+                requiredRowCount = destination.requiredRowCount,
                 onBack = { navController.popBackStack() },
                 onSaveSuccessConfirmed = {
                     val downloadDestination = DownloadResultDestination(

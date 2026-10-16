@@ -16,6 +16,22 @@ class CustomDesignAnchorDetectorTest {
     private val detector = CustomDesignAnchorDetector()
 
     @Test
+    fun expectedEighteenRowCapacityAcceptsRanksBeyondTheStandardTwelve() {
+        val anchors = detector.detect(
+            sourceWidth = 1080,
+            sourceHeight = 1350,
+            labels = labels(win = "WIN"),
+            blocks = block(
+                line(element("WIN", 300, 100, 340, 120)),
+                line(element("18", 100, 1200, 120, 1230)),
+            ),
+            expectedRowCapacity = 18,
+        )
+
+        assertEquals(setOf(18), anchors.rowY.keys)
+    }
+
+    @Test
     fun headerNormalizationAllowsCaseWhitespaceAndTerminalPunctuationButNotTypos() {
         val blocks = block(
             line(element("win", 100, 100, 140, 120)),
