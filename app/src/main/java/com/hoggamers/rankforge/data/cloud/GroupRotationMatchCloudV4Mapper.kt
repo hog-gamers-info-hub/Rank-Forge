@@ -36,6 +36,7 @@ object GroupRotationMatchCloudV4Mapper {
             tournamentId = request.tournamentId,
             matchId = request.matchId,
             source = request.source,
+            requireNonEmptyIdentity = false,
         )
         val resultIssues = validateResults(
             identitySnapshot = request.source.identitySnapshot,
@@ -83,6 +84,7 @@ object GroupRotationMatchCloudV4Mapper {
             tournamentId = request.tournamentId,
             matchId = request.matchId,
             source = request.source,
+            requireNonEmptyIdentity = true,
         )
         val resultIssues = validateResults(
             identitySnapshot = request.source.identitySnapshot,
@@ -131,6 +133,7 @@ object GroupRotationMatchCloudV4Mapper {
         tournamentId: String,
         matchId: String,
         source: GroupRotationMatchCloudV4RequestSource,
+        requireNonEmptyIdentity: Boolean,
     ): List<GroupRotationMatchCloudV4Issue> {
         val issues = mutableListOf<GroupRotationMatchCloudV4Issue>()
         val persistence = source.identitySnapshot
@@ -138,7 +141,7 @@ object GroupRotationMatchCloudV4Mapper {
         val saved = source.savedIdentitySnapshot
         val normalizer = GroupRotationTeamIdentityNormalizer()
 
-        if (persistence.identity.teams.isEmpty()) {
+        if (requireNonEmptyIdentity && persistence.identity.teams.isEmpty()) {
             issues += issue(GroupRotationMatchCloudV4IssueCode.EMPTY_MATCH_IDENTITY)
         }
 
@@ -149,13 +152,20 @@ object GroupRotationMatchCloudV4Mapper {
             issues += issue(GroupRotationMatchCloudV4IssueCode.UNSELECTED_PAIRING)
         }
 
+        val activeAssignedTeamUUIDs = saved.assignments
+            .filterNot { it.nameCleared }
+            .map { it.teamUUID }
+            .toSet()
         val validTeams = saved.teams.map { team ->
             if (team.tournamentId != tournamentId) {
                 issues += issue(GroupRotationMatchCloudV4IssueCode.TEAM_UUID_TOURNAMENT_MISMATCH, teamUUID = team.teamUUID)
             }
-            if (!isCanonicalUuid(team.teamUUID) ||
-                team.displayName.isBlank() ||
-                team.normalizedName != normalizer.normalize(team.displayName)
+            val normalizedName = normalizer.normalize(team.displayName)
+            if (
+                !isCanonicalUuid(team.teamUUID) ||
+                    (team.displayName.isBlank() &&
+                        (team.normalizedName.isNotBlank() || team.teamUUID in activeAssignedTeamUUIDs)) ||
+                    (team.displayName.isNotBlank() && team.normalizedName != normalizedName)
             ) {
                 issues += issue(GroupRotationMatchCloudV4IssueCode.INVALID_UUID_IDENTITY, teamUUID = team.teamUUID)
             }
@@ -164,9 +174,14 @@ object GroupRotationMatchCloudV4Mapper {
         validTeams.groupBy { it.teamUUID }.filterValues { it.size > 1 }.keys.forEach { teamUUID ->
             issues += issue(GroupRotationMatchCloudV4IssueCode.DUPLICATE_TEAM_UUID, teamUUID = teamUUID)
         }
-        validTeams.groupBy { it.normalizedName }.filterValues { it.size > 1 }.keys.forEach { normalizedName ->
-            issues += issue(GroupRotationMatchCloudV4IssueCode.DUPLICATE_NORMALIZED_NAME)
-        }
+        validTeams
+            .filter { it.normalizedName.isNotBlank() }
+            .groupBy { it.normalizedName }
+            .filterValues { it.size > 1 }
+            .keys
+            .forEach {
+                issues += issue(GroupRotationMatchCloudV4IssueCode.DUPLICATE_NORMALIZED_NAME)
+            }
         val teamsByUuid = validTeams.associateBy { it.teamUUID }
 
         validateAssignments(

@@ -158,6 +158,7 @@ class GroupRotationMatchCloudV4Test {
                 GroupRotationPairingAssignment(T, PAIRING, 1, U1, nameCleared = true),
                 GroupRotationPairingAssignment(T, PAIRING, 5, U2),
                 GroupRotationPairingAssignment(T, PAIRING, 12, U3),
+                GroupRotationPairingAssignment(T, GroupPairing(TournamentGroup.B, TournamentGroup.C), 2, U1),
             ),
         )
 
@@ -174,6 +175,143 @@ class GroupRotationMatchCloudV4Test {
             listOf(U1, U2, U3),
             (result as GroupRotationV4MappingResult.Success).parameters.matchIdentity.map { it.teamUUID },
         )
+    }
+
+    @Test
+    fun fullyClearedRegisteredIdentityIsValidWhenUuidIsNotActive() {
+        val saved = savedIdentitySnapshot(
+            teams = listOf(
+                team(U1, ""),
+                team(U2, "Bravo"),
+                team(U3, "Charlie"),
+            ),
+            assignments = listOf(
+                GroupRotationPairingAssignment(T, PAIRING, 1, U1, nameCleared = true),
+                GroupRotationPairingAssignment(T, PAIRING, 5, U2),
+                GroupRotationPairingAssignment(T, PAIRING, 12, U3),
+            ),
+        )
+
+        val result = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament(),
+            draftRequest(
+                persistence(lobbySlots = emptyList()).copy(
+                    identity = GroupRotationMatchIdentitySnapshot(
+                        tournamentId = T,
+                        pairing = PAIRING,
+                        teams = listOf(matchTeam(5, U2), matchTeam(12, U3)),
+                    ),
+                ),
+                savedIdentitySnapshot = saved,
+            ),
+        )
+
+        assertTrue(result is GroupRotationV4MappingResult.Success)
+        assertEquals(
+            listOf(U2, U3),
+            (result as GroupRotationV4MappingResult.Success).parameters.matchIdentity.map { it.teamUUID },
+        )
+    }
+
+    @Test
+    fun multipleFullyClearedRegisteredIdentitiesAreNotDuplicateNames() {
+        val saved = savedIdentitySnapshot(
+            teams = listOf(
+                team(U1, ""),
+                team(U2, ""),
+                team(U3, "Charlie"),
+            ),
+            assignments = listOf(
+                GroupRotationPairingAssignment(T, PAIRING, 1, U1, nameCleared = true),
+                GroupRotationPairingAssignment(T, PAIRING, 5, U2, nameCleared = true),
+                GroupRotationPairingAssignment(T, PAIRING, 12, U3),
+            ),
+        )
+
+        val result = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament(),
+            draftRequest(persistence(lobbySlots = listOf(1, 5, 12)), savedIdentitySnapshot = saved),
+        )
+
+        assertTrue(result is GroupRotationV4MappingResult.Success)
+    }
+
+    @Test
+    fun blankRegisteredIdentityStillFailsWhenUuidIsActive() {
+        val saved = savedIdentitySnapshot(
+            teams = listOf(
+                team(U1, ""),
+                team(U2, "Bravo"),
+                team(U3, "Charlie"),
+            ),
+            assignments = listOf(
+                GroupRotationPairingAssignment(T, PAIRING, 1, U1, nameCleared = true),
+                GroupRotationPairingAssignment(T, PAIRING, 5, U2),
+                GroupRotationPairingAssignment(T, PAIRING, 12, U3),
+                GroupRotationPairingAssignment(
+                    T,
+                    GroupPairing(TournamentGroup.B, TournamentGroup.C),
+                    2,
+                    U1,
+                ),
+            ),
+        )
+
+        val result = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament(),
+            draftRequest(persistence(lobbySlots = listOf(1, 5, 12)), savedIdentitySnapshot = saved),
+        )
+
+        assertTrue(result is GroupRotationV4MappingResult.Invalid)
+        assertTrue((result as GroupRotationV4MappingResult.Invalid).issues.any {
+            it.code == GroupRotationMatchCloudV4IssueCode.INVALID_UUID_IDENTITY && it.teamUUID == U1
+        })
+    }
+
+    @Test
+    fun duplicateNonBlankRegisteredNamesRemainRejected() {
+        val saved = savedIdentitySnapshot(
+            teams = listOf(
+                team(U1, "Alpha"),
+                team(U2, "Alpha"),
+                team(U3, "Charlie"),
+            ),
+        )
+
+        val result = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament(),
+            draftRequest(persistence(lobbySlots = listOf(1, 5, 12)), savedIdentitySnapshot = saved),
+        )
+
+        assertTrue(result is GroupRotationV4MappingResult.Invalid)
+        assertTrue((result as GroupRotationV4MappingResult.Invalid).issues.any {
+            it.code == GroupRotationMatchCloudV4IssueCode.DUPLICATE_NORMALIZED_NAME
+        })
+    }
+
+    @Test
+    fun emptyDraftIdentityIsAllowedButEmptyFinalizationIsRejected() {
+        val saved = GroupRotationTeamIdentityLocalSnapshot(
+            teams = listOf(team(U1, "")),
+            assignments = emptyList(),
+        )
+        val draft = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament(),
+            draftRequest(persistence(lobbySlots = emptyList()), savedIdentitySnapshot = saved),
+        )
+        val finalization = GroupRotationMatchCloudV4Mapper.mapFinalization(
+            tournament(),
+            finalRequest(persistence(lobbySlots = emptyList()), savedIdentitySnapshot = saved),
+        )
+
+        assertTrue(draft is GroupRotationV4MappingResult.Success)
+        val draftParameters = (draft as GroupRotationV4MappingResult.Success).parameters
+        assertTrue(draftParameters.matchIdentity.isEmpty())
+        assertTrue(draftParameters.matchResults.isEmpty())
+        assertTrue(finalization is GroupRotationV4MappingResult.Invalid)
+        assertTrue((finalization as GroupRotationV4MappingResult.Invalid).issues.any {
+            it.code == GroupRotationMatchCloudV4IssueCode.EMPTY_MATCH_IDENTITY
+        })
     }
 
     @Test
