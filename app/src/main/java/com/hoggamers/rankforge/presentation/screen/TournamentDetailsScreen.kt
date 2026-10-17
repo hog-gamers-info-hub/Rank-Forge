@@ -11,14 +11,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -434,22 +435,22 @@ private fun PointIqTournamentHero(
     isDeleting: Boolean,
 ) {
     val heroShape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(2.5f)
             .clip(heroShape),
     ) {
+        val minimumHeroHeight = maxWidth / 2.5f
         Image(
             painter = painterResource(R.drawable.pointiq_tournament_details_hero),
             contentDescription = null,
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             alignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.matchParentSize(),
         )
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
@@ -460,6 +461,12 @@ private fun PointIqTournamentHero(
                     ),
                 ),
         )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = minimumHeroHeight),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -575,9 +582,9 @@ private fun PointIqTournamentHero(
                 }
             }
         }
+        Spacer(modifier = Modifier.height(8.dp))
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
         ) {
@@ -599,6 +606,8 @@ private fun PointIqTournamentHero(
                     fontSize = 17.sp,
                     lineHeight = 22.sp,
                     fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(modifier = Modifier.height(5.dp))
             }
@@ -608,6 +617,7 @@ private fun PointIqTournamentHero(
                 fontSize = 16.sp,
                 lineHeight = 21.sp,
             )
+        }
         }
     }
 }
