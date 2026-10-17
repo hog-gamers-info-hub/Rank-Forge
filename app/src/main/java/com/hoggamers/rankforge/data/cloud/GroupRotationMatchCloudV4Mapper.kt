@@ -207,7 +207,7 @@ object GroupRotationMatchCloudV4Mapper {
                     teamUUID = team.teamUUID,
                 )
             }
-            if (!isCanonicalUuid(team.teamUUID) || team.displayName.isBlank()) {
+            if (!isCanonicalUuid(team.teamUUID)) {
                 issues += issue(GroupRotationMatchCloudV4IssueCode.INVALID_UUID_IDENTITY, teamUUID = team.teamUUID)
             }
             if (teamsByUuid[team.teamUUID] == null) {

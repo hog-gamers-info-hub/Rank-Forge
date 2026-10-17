@@ -178,6 +178,56 @@ class GroupRotationMatchCloudV4Test {
     }
 
     @Test
+    fun finalizedCloudSyncIgnoresLaterClearedPairingName() {
+        val saved = savedIdentitySnapshot(
+            teams = listOf(
+                team(U1, "Alpha"),
+                team(U2, "Bravo"),
+                team(U3, "Charlie"),
+            ),
+            assignments = listOf(
+                GroupRotationPairingAssignment(T, PAIRING, 1, U1, nameCleared = true),
+                GroupRotationPairingAssignment(T, PAIRING, 5, U2),
+                GroupRotationPairingAssignment(T, PAIRING, 12, U3),
+            ),
+        )
+        val snapshot = persistence(lobbySlots = listOf(1, 5, 12)).copy(
+            identity = GroupRotationMatchIdentitySnapshot(
+                tournamentId = T,
+                pairing = PAIRING,
+                teams = listOf(
+                    matchTeam(1, U1, ""),
+                    matchTeam(5, U2),
+                    matchTeam(12, U3),
+                ),
+            ),
+            participantResults = listOf(
+                participant(U1, MatchParticipationStatus.PARTICIPATED, 1, 4),
+            ),
+        )
+
+        val draft = GroupRotationMatchCloudV4Mapper.mapDraft(
+            tournament(),
+            draftRequest(snapshot, savedIdentitySnapshot = saved),
+        )
+        val finalization = GroupRotationMatchCloudV4Mapper.mapFinalization(
+            tournament(),
+            finalRequest(snapshot, savedIdentitySnapshot = saved),
+        )
+
+        assertTrue(draft is GroupRotationV4MappingResult.Success)
+        assertEquals(
+            listOf(U1, U2, U3),
+            (draft as GroupRotationV4MappingResult.Success).parameters.matchIdentity.map { it.teamUUID },
+        )
+        assertTrue(finalization is GroupRotationV4MappingResult.Success)
+        val finalParameters = (finalization as GroupRotationV4MappingResult.Success).parameters
+        assertEquals(listOf(U1), finalParameters.matchResults.map { it.teamUUID })
+        assertEquals(listOf(4), finalParameters.matchResults.map { it.kills })
+        assertFalse(Json.encodeToString(finalParameters).contains("display_name"))
+    }
+
+    @Test
     fun fullyClearedRegisteredIdentityIsValidWhenUuidIsNotActive() {
         val saved = savedIdentitySnapshot(
             teams = listOf(
