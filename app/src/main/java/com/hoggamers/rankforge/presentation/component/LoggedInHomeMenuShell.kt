@@ -50,10 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -62,10 +59,9 @@ import com.hoggamers.rankforge.R
 private val PointIqHomeBackground = Color(0xFF031225)
 private val PointIqHomeAmbientBlue = Color(0xFF0B386F)
 private val PointIqHomeHeader = Color(0xFFF6F8FF)
-private val PointIqHomeHeaderBlue = Color(0xFF176AF7)
-private val PointIqMenuEnabledIcon = Color(0xFF5AAEFF)
-private val PointIqMenuDisabled = Color(0xFF7D9DCE)
-private val PointIqMenuSeparator = Color(0xFF176AF7).copy(alpha = 0.55f)
+private val PointIqMenuEnabledIcon = Color(0xFF4AABF5)
+private val PointIqMenuDisabled = Color(0xFF708BAE)
+private val PointIqMenuSeparator = Color(0xFF176AF7).copy(alpha = 0.22f)
 
 const val LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG = "logged_in_home_menu_button"
 const val LOGGED_IN_HOME_BACK_ITEM_TEST_TAG = "logged_in_home_back_item"
@@ -86,6 +82,7 @@ fun PointIqPageHeader(
     onBack: () -> Unit,
     backTestTag: String,
     backEnabled: Boolean = true,
+    compactMenuStyle: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -109,16 +106,16 @@ fun PointIqPageHeader(
                 contentDescription = backDescription,
                 tint = PointIqHomeHeader,
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(if (compactMenuStyle) 24.dp else 32.dp)
                     .offset(y = (-6).dp),
             )
         }
         Text(
             text = title,
             color = PointIqHomeHeader,
-            fontSize = 24.sp,
-            lineHeight = 28.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = if (compactMenuStyle) 22.sp else 24.sp,
+            lineHeight = if (compactMenuStyle) 26.sp else 28.sp,
+            fontWeight = if (compactMenuStyle) FontWeight.SemiBold else FontWeight.Bold,
         )
     }
 }
@@ -207,9 +204,10 @@ private fun PointIqFullScreenMenu(
             title = stringResource(R.string.logged_in_home_menu_title),
             onBack = onBack,
             backTestTag = LOGGED_IN_HOME_BACK_ITEM_TEST_TAG,
+            compactMenuStyle = true,
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         PointIqMenuPrimaryItem(
             icon = Icons.Filled.Person,
@@ -247,7 +245,6 @@ private fun PointIqFullScreenMenu(
             text = stringResource(R.string.logged_in_home_settings),
             testTag = LOGGED_IN_HOME_SETTINGS_ITEM_TEST_TAG,
         )
-        PointIqMenuSeparator()
     }
 }
 
@@ -270,22 +267,22 @@ private fun PointIqMenuPrimaryItem(
             imageVector = icon,
             contentDescription = null,
             tint = PointIqMenuEnabledIcon,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(22.dp),
         )
         Spacer(modifier = Modifier.size(16.dp))
         Text(
             text = text,
             color = PointIqHomeHeader,
-            fontSize = 18.sp,
-            lineHeight = 24.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = PointIqMenuEnabledIcon,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -296,6 +293,7 @@ private fun PointIqMenuSeparator() {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
+            .padding(start = 38.dp)
             .background(PointIqMenuSeparator),
     )
 }
@@ -320,15 +318,15 @@ private fun PointIqMenuDisabledItem(
             imageVector = icon,
             contentDescription = null,
             tint = PointIqMenuDisabled,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(22.dp),
         )
         Spacer(modifier = Modifier.size(16.dp))
         Text(
             text = text,
             color = PointIqMenuDisabled,
-            fontSize = 18.sp,
-            lineHeight = 24.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -344,7 +342,7 @@ private fun PointIqHomeHeader(
             .padding(
                 start = 20.dp,
                 top = 16.dp,
-                end = 24.dp,
+                end = 20.dp,
                 bottom = 8.dp,
             ),
         verticalAlignment = Alignment.CenterVertically,
@@ -352,6 +350,7 @@ private fun PointIqHomeHeader(
         IconButton(
             onClick = onMenuClick,
             modifier = Modifier
+                .size(48.dp)
                 .testTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG)
                 .semantics {
                     contentDescription = openMenuDescription
@@ -364,41 +363,17 @@ private fun PointIqHomeHeader(
                 modifier = Modifier.size(28.dp),
             )
         }
-
-        Spacer(modifier = Modifier.size(12.dp))
-
-        Image(
-            painter = painterResource(R.drawable.pointiq_brand_mark),
-            contentDescription = null,
-            modifier = Modifier.size(40.dp),
-        )
-
-        Spacer(modifier = Modifier.size(10.dp))
-
-        val brandText = buildAnnotatedString {
-            withStyle(
-                SpanStyle(
-                    color = PointIqHomeHeader,
-                    fontWeight = FontWeight.Bold,
-                ),
-            ) {
-                append(stringResource(R.string.pointiq_brand_point))
-            }
-            withStyle(
-                SpanStyle(
-                    color = PointIqHomeHeaderBlue,
-                    fontWeight = FontWeight.Bold,
-                ),
-            ) {
-                append(stringResource(R.string.pointiq_brand_iq))
-            }
+        Spacer(modifier = Modifier.weight(1f))
+        Box(
+            modifier = Modifier.size(48.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.pointiq_brand_mark),
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+            )
         }
-
-        Text(
-            text = brandText,
-            fontSize = 23.sp,
-            lineHeight = 27.sp,
-        )
     }
 }
 

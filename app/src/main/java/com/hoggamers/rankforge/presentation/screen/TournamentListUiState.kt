@@ -6,6 +6,8 @@ import com.hoggamers.rankforge.domain.tournament.TournamentSummary
 
 data class TournamentListUiState(
     val tournaments: List<TournamentListItemUiState> = emptyList(),
+    val isDeleting: Boolean = false,
+    val deletionError: TournamentDeletionUiError? = null,
 ) {
     val isEmpty: Boolean
         get() = tournaments.isEmpty()

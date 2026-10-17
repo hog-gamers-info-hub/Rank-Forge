@@ -40,7 +40,7 @@ import com.hoggamers.rankforge.presentation.component.PointIqPageHeader
 import com.hoggamers.rankforge.presentation.component.pointIqHomeBackground
 import kotlinx.coroutines.launch
 
-private const val CONTACT_EMAIL = "pointiq.officials@gmail.com"
+private const val CONTACT_EMAIL = "team@point-iq.com"
 private const val INSTAGRAM_URL =
     "https://www.instagram.com/esporton_official?stkn=enNjdHRweXZzZGhz"
 private const val WHATSAPP_URL =
@@ -48,9 +48,9 @@ private const val WHATSAPP_URL =
 private const val INSTAGRAM_PACKAGE = "com.instagram.android"
 private const val WHATSAPP_PACKAGE = "com.whatsapp"
 
-private val ContactUsIcon = Color(0xFF5AAEFF)
+private val ContactUsIcon = Color(0xFF4AABF5)
 private val ContactUsText = Color(0xFFF6F8FF)
-private val ContactUsSeparator = Color(0xFF176AF7).copy(alpha = 0.55f)
+private val ContactUsSeparator = Color(0xFF176AF7).copy(alpha = 0.22f)
 
 private enum class ContactIcon(@get:DrawableRes val drawableRes: Int) {
     Email(R.drawable.ic_contact_gmail),
@@ -126,9 +126,10 @@ fun ContactUsScreen(
             title = stringResource(R.string.contact_us_title),
             onBack = onBack,
             backTestTag = CONTACT_US_SCREEN_TEST_TAG + "_back",
+            compactMenuStyle = true,
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         ContactUsRow(
             icon = ContactIcon.Email,
@@ -150,7 +151,6 @@ fun ContactUsScreen(
             testTag = CONTACT_US_WHATSAPP_ROW_TEST_TAG,
             onClick = onWhatsAppClick,
         )
-        ContactUsSeparator()
     }
 }
 
@@ -173,15 +173,15 @@ private fun ContactUsRow(
             painter = painterResource(icon.drawableRes),
             contentDescription = null,
             tint = ContactUsIcon,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(22.dp),
         )
         Spacer(modifier = Modifier.size(16.dp))
         Text(
             text = text,
             color = ContactUsText,
-            fontSize = 18.sp,
-            lineHeight = 24.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -192,6 +192,7 @@ private fun ContactUsSeparator() {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
+            .padding(start = 38.dp)
             .background(ContactUsSeparator),
     )
 }
