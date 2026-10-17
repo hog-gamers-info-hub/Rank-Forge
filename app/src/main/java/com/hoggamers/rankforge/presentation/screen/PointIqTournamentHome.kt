@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +45,7 @@ private val PointIqHomeBlue = Color(0xFF176AF7)
 private val PointIqHomeCyan = Color(0xFF17C9F2)
 private val PointIqHomeCard = Color(0xFF071B3E)
 private val PointIqHomeBorder = PointIqHomeBlue.copy(alpha = 0.55f)
+private val PointIqHomeDanger = Color(0xFFFF9A9A)
 
 const val POINTIQ_HOME_CREATE_TOURNAMENT_TEST_TAG = "pointiq_home_create_tournament"
 
@@ -52,6 +55,9 @@ internal fun PointIqTournamentHomeContent(
     onCreateTournament: () -> Unit,
     onOpenTournamentDetails: (String) -> Unit,
     onOpenAllTournaments: () -> Unit,
+    onDeleteTournament: ((TournamentListItemUiState) -> Unit)? = null,
+    isDeleting: Boolean = false,
+    deletionErrorMessage: String? = null,
 ) {
     Box(
         modifier = Modifier
@@ -86,6 +92,43 @@ internal fun PointIqTournamentHomeContent(
                     PointIqTournamentSummaryCard(
                         tournament = tournament,
                         onClick = { onOpenTournamentDetails(tournament.id) },
+                        onDeleteClick = onDeleteTournament?.let { deleteTournament ->
+                            { deleteTournament(tournament) }
+                        },
+                    )
+                }
+            }
+
+            if (isDeleting) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = PointIqHomeCyan,
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(
+                            text = stringResource(R.string.tournament_delete_in_progress),
+                            color = PointIqHomeSubtitle,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                        )
+                    }
+                }
+            }
+
+            if (deletionErrorMessage != null) {
+                item {
+                    Text(
+                        text = deletionErrorMessage,
+                        color = PointIqHomeDanger,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -162,6 +205,7 @@ private fun PointIqRecentHeader(
 internal fun PointIqTournamentSummaryCard(
     tournament: TournamentListItemUiState,
     onClick: () -> Unit,
+    onDeleteClick: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(12.dp)
     val teamsText = stringResource(
@@ -188,7 +232,10 @@ internal fun PointIqTournamentSummaryCard(
             .border(1.dp, PointIqHomeBorder, shape)
             .clickable(onClick = onClick)
             .testTag(TOURNAMENT_LIST_ITEM_TEST_TAG_PREFIX + tournament.id)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(
+                horizontal = if (onDeleteClick != null) 12.dp else 16.dp,
+                vertical = if (onDeleteClick != null) 8.dp else 10.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
@@ -198,8 +245,8 @@ internal fun PointIqTournamentSummaryCard(
             Text(
                 text = tournament.name,
                 color = PointIqHomeHeader,
-                fontSize = 18.sp,
-                lineHeight = 22.sp,
+                fontSize = 16.sp,
+                lineHeight = 20.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -207,8 +254,8 @@ internal fun PointIqTournamentSummaryCard(
             Text(
                 text = "Free Fire MAX  •  Squad",
                 color = PointIqHomeSubtitle,
-                fontSize = 14.sp,
-                lineHeight = 19.sp,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -219,20 +266,41 @@ internal fun PointIqTournamentSummaryCard(
                     matchesText,
                 ),
                 color = PointIqHomeSubtitle,
-                fontSize = 14.sp,
-                lineHeight = 19.sp,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
 
         Spacer(modifier = Modifier.size(12.dp))
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = PointIqHomeInactiveBlue,
-            modifier = Modifier.size(24.dp),
-        )
+        if (onDeleteClick == null) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = PointIqHomeInactiveBlue,
+                modifier = Modifier.size(24.dp),
+            )
+        } else {
+            Column(
+                modifier = Modifier.align(Alignment.Top),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clickable(onClick = onDeleteClick),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = stringResource(R.string.tournament_delete_action),
+                        tint = PointIqHomeInactiveBlue,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

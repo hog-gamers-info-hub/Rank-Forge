@@ -18,6 +18,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -31,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.presentation.component.LoggedInHomeMenuShell
+import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudRestorationSummary
 
@@ -49,6 +53,11 @@ const val TOURNAMENT_CLOUD_RESTORATION_LOADING_TEST_TAG = "tournament_cloud_rest
 const val TOURNAMENT_CLOUD_RESTORATION_ITEM_TEST_TAG_PREFIX = "tournament_cloud_restoration_item_"
 const val TOURNAMENT_CLOUD_RESTORATION_ITEM_PROGRESS_TEST_TAG_PREFIX =
     "tournament_cloud_restoration_item_progress_"
+
+private data class PendingTournamentDeletion(
+    val tournamentId: String,
+    val tournamentName: String,
+)
 
 @Composable
 fun TournamentListRoute(
@@ -72,6 +81,7 @@ fun TournamentListRoute(
         onOpenContactUs = onOpenContactUs,
         openDrawerOnEnter = openDrawerOnEnter,
         onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
+        onDeleteTournament = viewModel::deleteTournament,
     )
 }
 
@@ -97,7 +107,13 @@ fun TournamentListScreen(
     onOpenContactUs: () -> Unit = {},
     openDrawerOnEnter: Boolean = false,
     onDrawerOpenRequestConsumed: () -> Unit = {},
+    onDeleteTournament: ((String) -> Unit)? = null,
 ) {
+    var pendingDeletion by remember { mutableStateOf<PendingTournamentDeletion?>(null) }
+    val deletionErrorMessage = uiState.deletionError?.let { error ->
+        stringResource(error.toMessageRes())
+    }
+
     LoggedInHomeMenuShell(
         onOpenAccount = onOpenAuth,
         onOpenAllTournaments = onOpenAllTournaments,
@@ -108,11 +124,41 @@ fun TournamentListScreen(
                 onCreateTournament = onCreateTournament,
                 onOpenTournamentDetails = onOpenTournamentDetails,
                 onOpenAllTournaments = onOpenAllTournaments,
+                onDeleteTournament = onDeleteTournament?.let {
+                    { tournament ->
+                        if (!uiState.isDeleting) {
+                            pendingDeletion = PendingTournamentDeletion(
+                                tournamentId = tournament.id,
+                                tournamentName = tournament.name,
+                            )
+                        }
+                    }
+                },
+                isDeleting = uiState.isDeleting,
+                deletionErrorMessage = deletionErrorMessage,
             )
         },
         openDrawerOnEnter = openDrawerOnEnter,
         onDrawerOpenRequestConsumed = onDrawerOpenRequestConsumed,
     )
+
+    pendingDeletion?.let { target ->
+        if (!uiState.isDeleting) {
+            PointIqConfirmationDialog(
+                onDismissRequest = { pendingDeletion = null },
+                title = stringResource(R.string.tournament_delete_title),
+                message = stringResource(R.string.tournament_delete_message, target.tournamentName),
+                onDismiss = { pendingDeletion = null },
+                dismissLabel = stringResource(R.string.cancel_action),
+                onConfirm = {
+                    pendingDeletion = null
+                    onDeleteTournament?.invoke(target.tournamentId)
+                },
+                confirmLabel = stringResource(R.string.tournament_delete_confirm_action),
+                destructive = true,
+            )
+        }
+    }
 }
 
 @Composable
@@ -121,12 +167,18 @@ private fun LoggedInTournamentHomeContent(
     onCreateTournament: () -> Unit,
     onOpenTournamentDetails: (String) -> Unit,
     onOpenAllTournaments: () -> Unit,
+    onDeleteTournament: ((TournamentListItemUiState) -> Unit)? = null,
+    isDeleting: Boolean = false,
+    deletionErrorMessage: String? = null,
 ) {
     PointIqTournamentHomeContent(
         uiState = uiState,
         onCreateTournament = onCreateTournament,
         onOpenTournamentDetails = onOpenTournamentDetails,
         onOpenAllTournaments = onOpenAllTournaments,
+        onDeleteTournament = onDeleteTournament,
+        isDeleting = isDeleting,
+        deletionErrorMessage = deletionErrorMessage,
     )
 }
 
@@ -361,6 +413,19 @@ private fun TournamentCloudRestorationUiState.restoreStatusText(): String = when
         stringResource(R.string.restore_tournament_queued)
     TournamentCloudRestorationUiState.QueuePersistenceFailure ->
         stringResource(R.string.restore_tournament_queue_persistence_failed)
+}
+
+private fun TournamentDeletionUiError.toMessageRes(): Int = when (this) {
+    TournamentDeletionUiError.TARGET_NOT_FOUND -> R.string.tournament_delete_target_not_found_error
+    TournamentDeletionUiError.AUTHENTICATION_REQUIRED -> R.string.tournament_delete_authentication_error
+    TournamentDeletionUiError.AUTHORIZATION_FAILURE -> R.string.tournament_delete_authorization_error
+    TournamentDeletionUiError.VALIDATION_FAILURE -> R.string.tournament_delete_validation_error
+    TournamentDeletionUiError.STORAGE_FAILURE -> R.string.tournament_delete_storage_error
+    TournamentDeletionUiError.REMOTE_FAILURE -> R.string.tournament_delete_remote_error
+    TournamentDeletionUiError.LOCAL_CLEANUP_FAILURE -> R.string.tournament_delete_local_cleanup_error
+    TournamentDeletionUiError.PREPARATION_FAILURE,
+    TournamentDeletionUiError.UNKNOWN,
+    -> R.string.tournament_delete_generic_error
 }
 
 @Composable
