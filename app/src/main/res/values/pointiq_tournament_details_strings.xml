@@ -5,12 +5,13 @@
     <string name="tournament_details_edit_teams_action">Edit Teams</string>
     <string name="tournament_details_game_mode_presentation">Free Fire MAX  •  Squad</string>
     <string name="tournament_details_hero_date">%1$s</string>
-    <string name="tournament_details_match_processing_title">Match Results</string>
+    <string name="tournament_details_match_processing_title">Calculate Points</string>
     <string name="tournament_details_match_processing_subtitle">Process screenshots into result</string>
     <string name="tournament_details_match_number_action">Match %1$d</string>
     <string name="tournament_details_match_number_label">Match %1$d</string>
-    <string name="tournament_details_match_status_ready">Created</string>
-    <string name="tournament_details_match_status_finalized">Finalized</string>
-    <string name="tournament_details_view_calculated_standings_title">View Standings</string>
+    <string name="tournament_details_match_status_ready">Continue calculation</string>
+    <string name="tournament_details_match_status_finalized">Result Finalized</string>
+    <string name="tournament_details_view_calculated_standings_title">View Overall Standings</string>
     <string name="tournament_details_view_calculated_standings_subtitle">View current calculated tournament standings</string>
+    <string name="tournament_details_download_results_action">Download Results</string>
 </resources>
