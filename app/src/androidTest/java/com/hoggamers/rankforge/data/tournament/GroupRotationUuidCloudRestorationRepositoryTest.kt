@@ -6,11 +6,20 @@ import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
+import com.hoggamers.rankforge.data.local.GroupRotationMatchIdentityHeaderEntity
 import com.hoggamers.rankforge.data.local.GroupRotationMatchParticipantResultEntity
 import com.hoggamers.rankforge.data.local.GroupRotationMatchTeamAssignmentEntity
 import com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
+import com.hoggamers.rankforge.data.local.MatchLobbyScreenshotAssetEntity
+import com.hoggamers.rankforge.data.local.MatchOcrCorrectionSnapshotEntity
+import com.hoggamers.rankforge.data.local.MatchOcrEvidenceEntity
+import com.hoggamers.rankforge.data.local.MatchOcrRowEvidenceEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
+import com.hoggamers.rankforge.data.local.ScreenshotMetadataEntity
+import com.hoggamers.rankforge.data.local.ScreenshotLocalStatus
+import com.hoggamers.rankforge.data.local.ScreenshotUploadStatus
 import com.hoggamers.rankforge.data.local.SyncRevisionEntity
 import com.hoggamers.rankforge.data.local.TournamentEntity
 import com.hoggamers.rankforge.data.local.TournamentGroupPairingEntity
@@ -20,6 +29,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingAssignment
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidMatchRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentity
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamIdentityReadResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidCloudRestorationSnapshot
@@ -40,6 +50,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -162,6 +173,173 @@ class GroupRotationUuidCloudRestorationRepositoryTest {
             GroupRotationTeamIdentityEntity(T, U1, "Phoenix", "phoenix"),
             database.groupRotationTeamIdentityDao().readByTournamentId(T).single(),
         )
+    }
+
+    @Test
+    fun retainedDraftUuidMatchPreservesEvidenceAndReplacesUuidChildren() = runBlocking {
+        seedExistingTournament()
+        repository = RoomTournamentRepository(database)
+        repository.observeAll().first()
+        val existingMatch = Match(
+            id = MATCH,
+            tournamentId = T,
+            matchNumber = 1,
+            date = LocalDate.of(2026, 10, 12),
+            mapName = "Local Map",
+            status = MatchStatus.DRAFT,
+            groupPairing = pairing("A:B"),
+        )
+        val retainedScreenshot = MatchLobbyScreenshotAssetEntity(
+            tournamentId = T,
+            matchId = MATCH,
+            lobbyScreenshotIndex = 1,
+            ownerUserId = OWNER,
+            localRelativePath = "screenshots/$MATCH/lobby/1/original.png",
+            fileExtension = "png",
+            mimeType = "image/png",
+            originalWidth = 100,
+            originalHeight = 100,
+            byteSize = 3,
+            sha256 = "a".repeat(64),
+            localStatus = ScreenshotLocalStatus.PRESERVED.name,
+            uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+            uploadFailureCode = null,
+            storageBucket = "bucket",
+            storageObjectPath = "users/$OWNER/$MATCH/lobby/1/original.png",
+            cropProfileId = "lobby",
+            cropLeft = 0.1,
+            cropTop = 0.1,
+            cropRight = 0.9,
+            cropBottom = 0.9,
+            createdAt = 1,
+            updatedAt = 2,
+            preservedAt = 2,
+            uploadedAt = 2,
+            revision = 1,
+        )
+        val retainedEvidence = MatchOcrEvidenceEntity(MATCH, T, "retained", 3, "preserved")
+        val retainedRow = MatchOcrRowEvidenceEntity(
+            MATCH,
+            T,
+            0,
+            "raw",
+            1,
+            2,
+            1,
+            "confidence",
+            "safe",
+            false,
+        )
+        val retainedCorrection = MatchOcrCorrectionSnapshotEntity(
+            MATCH,
+            T,
+            0,
+            1,
+            2,
+            1,
+            true,
+            false,
+            false,
+            3,
+            "manual",
+        )
+        val retainedCalculated = MatchCalculatedEvidenceEntity(
+            MATCH,
+            T,
+            OWNER,
+            "lobby-evidence",
+            "result-evidence",
+            3,
+        )
+        database.withTransaction {
+            database.matchDao().upsert(existingMatch.toEntity())
+            database.screenshotMetadataDao().upsert(
+                ScreenshotMetadataEntity(
+                    matchId = MATCH,
+                    tournamentId = T,
+                    ownerUserId = OWNER,
+                    localRelativePath = "screenshots/$MATCH/original.png",
+                    fileExtension = "png",
+                    mimeType = "image/png",
+                    width = 100,
+                    height = 100,
+                    byteSize = 3,
+                    sha256 = "b".repeat(64),
+                    storageBucket = "bucket",
+                    storageObjectPath = "users/$OWNER/$MATCH/original.png",
+                    localStatus = ScreenshotLocalStatus.PRESERVED.name,
+                    uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
+                    uploadFailureCode = null,
+                    createdAt = 1,
+                    updatedAt = 2,
+                    preservedAt = 2,
+                    uploadedAt = 2,
+                    revision = 1,
+                ),
+            )
+            database.matchLobbyScreenshotAssetDao().upsert(retainedScreenshot)
+            database.matchOcrEvidenceDao().insertSnapshot(
+                retainedEvidence,
+                listOf(retainedRow),
+                listOf(retainedCorrection),
+            )
+            database.matchCalculatedEvidenceDao().upsert(retainedCalculated)
+            database.groupRotationMatchIdentityHeaderDao().insert(
+                GroupRotationMatchIdentityHeaderEntity(MATCH, T, "A:B"),
+            )
+            database.groupRotationMatchTeamAssignmentDao().insertAll(
+                listOf(GroupRotationMatchTeamAssignmentEntity(MATCH, T, 5, U1)),
+            )
+            database.groupRotationMatchParticipantResultDao().insertAll(
+                listOf(
+                    GroupRotationMatchParticipantResultEntity(
+                        MATCH,
+                        T,
+                        U1,
+                        MatchParticipationStatus.PARTICIPATED.name,
+                        1,
+                        2,
+                        0,
+                    ),
+                ),
+            )
+        }
+
+        val cloudMatch = existingMatch.copy(mapName = "Cloud Map")
+        val restored = repository.restoreGroupRotationUuidSnapshot(
+            retainedDraftUuidSnapshot(cloudMatch),
+            OWNER,
+        )
+
+        assertEquals(GroupRotationUuidLocalRestoreResult.Restored, restored)
+        assertEquals(cloudMatch.toEntity(), database.matchDao().readById(MATCH))
+        assertEquals(retainedScreenshot, database.matchLobbyScreenshotAssetDao().readByMatchAndIndex(MATCH, 1))
+        assertEquals(MATCH, database.screenshotMetadataDao().readByMatchId(MATCH)?.matchId)
+        assertEquals(retainedEvidence, database.matchOcrEvidenceDao().readMatchEvidence(MATCH))
+        assertEquals(listOf(retainedRow), database.matchOcrEvidenceDao().readRowEvidence(MATCH))
+        assertEquals(listOf(retainedCorrection), database.matchOcrEvidenceDao().readCorrectionSnapshots(MATCH))
+        assertEquals(retainedCalculated, database.matchCalculatedEvidenceDao().readByOwner(T, MATCH, OWNER))
+        assertEquals(
+            listOf(GroupRotationMatchTeamAssignmentEntity(MATCH, T, 5, U2)),
+            database.groupRotationMatchTeamAssignmentDao().readByMatchId(MATCH),
+        )
+        assertEquals(
+            listOf(
+                GroupRotationMatchParticipantResultEntity(
+                    MATCH,
+                    T,
+                    U2,
+                    MatchParticipationStatus.PARTICIPATED.name,
+                    1,
+                    9,
+                    0,
+                ),
+            ),
+            database.groupRotationMatchParticipantResultDao().readByMatchId(MATCH),
+        )
+        database.openHelper.readableDatabase.query("PRAGMA foreign_key_check").use { cursor ->
+            assertTrue(!cursor.moveToFirst())
+        }
     }
 
     @Test
@@ -393,6 +571,43 @@ class GroupRotationUuidCloudRestorationRepositoryTest {
         assignments = assignments,
         matches = emptyList(),
         uuidMatches = emptyList(),
+        cloudRevision = CloudRevision(7),
+    )
+
+    private fun retainedDraftUuidSnapshot(match: Match) = GroupRotationUuidCloudRestorationSnapshot(
+        parent = TournamentCloudRestorationSnapshot(
+            tournament = tournament(),
+            slots = (1..18).map { slot -> TeamSlot.create(T, slot) },
+            players = emptyList(),
+            cloudRevision = CloudRevision(7),
+            pairingLobbySlots = emptyList(),
+        ),
+        identities = listOf(
+            GroupRotationTeamIdentity(T, U2, "Cloud Team", "cloud team"),
+        ),
+        assignments = listOf(
+            GroupRotationPairingAssignment(T, pairing("A:B"), 5, U2),
+        ),
+        matches = listOf(match),
+        uuidMatches = listOf(
+            GroupRotationUuidMatchRestorationSnapshot(
+                match = match,
+                identity = GroupRotationMatchIdentitySnapshot(
+                    tournamentId = T,
+                    pairing = pairing("A:B"),
+                    teams = listOf(GroupRotationMatchTeamIdentity(5, U2, "Cloud Team")),
+                ),
+                participantResults = listOf(
+                    GroupRotationMatchParticipantResult(
+                        teamUUID = U2,
+                        participationStatus = MatchParticipationStatus.PARTICIPATED,
+                        placement = 1,
+                        kills = 9,
+                        pointAdjustment = 0,
+                    ),
+                ),
+            ),
+        ),
         cloudRevision = CloudRevision(7),
     )
 

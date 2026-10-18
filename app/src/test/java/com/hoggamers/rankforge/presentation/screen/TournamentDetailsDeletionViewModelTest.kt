@@ -41,6 +41,8 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import java.time.LocalDate
@@ -221,6 +223,12 @@ class TournamentDetailsDeletionViewModelTest {
         syncDraftMatches = DraftMatchCloudSyncAction {
             QueueAwareActionResult(
                 primaryResult = DraftMatchCloudSyncResult.Success,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        },
+        uploadTournament = TournamentCloudUploadAction {
+            QueueAwareActionResult(
+                primaryResult = TournamentCloudUploadResult.Success(1),
                 queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
             )
         },

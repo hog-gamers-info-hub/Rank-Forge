@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
@@ -73,10 +74,15 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
-private const val LOBBY_SCREENSHOT_DESCRIPTION =
-    "Select all the screenshots of the lobby after all players have joined. Crop tightly to the lobby area and exclude any extra text, overlays, or unrelated content."
-private const val RESULT_SCREENSHOT_DESCRIPTION =
-    "Select all the screenshots showing the final match results. Crop tightly to the results area and exclude any extra text, overlays, or unrelated content."
+private fun lobbyScreenshotDescription(): String =
+    InstrumentationRegistry.getInstrumentation().targetContext.getString(
+        R.string.pointiq_match_review_lobby_description,
+    )
+
+private fun resultScreenshotDescription(): String =
+    InstrumentationRegistry.getInstrumentation().targetContext.getString(
+        R.string.pointiq_match_review_result_description,
+    )
 
 @RunWith(AndroidJUnit4::class)
 class MatchReviewScreenTest {
@@ -94,9 +100,9 @@ class MatchReviewScreenTest {
     fun selectedLobbyHidesLobbyDescriptionButKeepsResultDescription() {
         setScreenshotDescriptionContent(lobbyUiState = allLobbyReadyState())
 
-        composeTestRule.onAllNodesWithText(LOBBY_SCREENSHOT_DESCRIPTION)
+        composeTestRule.onAllNodesWithText(lobbyScreenshotDescription())
             .assertCountEquals(0)
-        composeTestRule.onAllNodesWithText(RESULT_SCREENSHOT_DESCRIPTION)
+        composeTestRule.onAllNodesWithText(resultScreenshotDescription())
             .assertCountEquals(1)
     }
 
@@ -4139,7 +4145,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         }
     }
     @Test
-    fun uploadFailureKeepsErrorVisibleWithoutRetryAction() {
+    fun uploadFailureDoesNotRenderObsoleteCloudError() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -4166,8 +4172,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("The screenshot upload could not reach cloud storage. Try again.")
-            .performScrollTo()
-            .assertIsDisplayed()
+            .assertDoesNotExist()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_SCREENSHOT_UPLOAD_RETRY_ACTION_TEST_TAG)
             .assertCountEquals(0)
         composeTestRule.onNodeWithText("Retry screenshot upload")
@@ -4175,7 +4180,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     }
 
     @Test
-    fun restoredUploadedAndMissingMetadataStatesAreVisible() {
+    fun restoredMissingMetadataStateRemainsVisibleWithoutUploadError() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -4205,8 +4210,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("The screenshot uploaded, but cloud metadata could not be saved.")
-            .performScrollTo()
-            .assertIsDisplayed()
+            .assertDoesNotExist()
     }
 
     @Test
@@ -4840,9 +4844,9 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     }
 
     private fun assertScreenshotDescriptions(lobbyVisible: Boolean, resultVisible: Boolean) {
-        composeTestRule.onAllNodesWithText(LOBBY_SCREENSHOT_DESCRIPTION)
+        composeTestRule.onAllNodesWithText(lobbyScreenshotDescription())
             .assertCountEquals(if (lobbyVisible) 1 else 0)
-        composeTestRule.onAllNodesWithText(RESULT_SCREENSHOT_DESCRIPTION)
+        composeTestRule.onAllNodesWithText(resultScreenshotDescription())
             .assertCountEquals(if (resultVisible) 1 else 0)
     }
 

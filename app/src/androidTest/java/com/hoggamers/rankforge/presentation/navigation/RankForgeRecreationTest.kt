@@ -21,6 +21,8 @@ import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.Match
@@ -242,6 +244,12 @@ private class RecreationFixture private constructor(
             validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
             createNextMatch = com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase(repository),
             syncDraftMatches = NoOpDraftMatchSync,
+             uploadTournament = TournamentCloudUploadAction {
+                 QueueAwareActionResult(
+                     primaryResult = TournamentCloudUploadResult.Success(1),
+                     queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                 )
+             },
         )
 
     fun createMatchReviewViewModel(tournamentId: String, matchId: String) =

@@ -27,7 +27,7 @@ class RecoverSyncQueueOnForegroundConnectivityUseCaseTest {
         assertEquals(1, recovery.calls)
     }
 
-    @Test fun signedInRecoveryRunsParentQueueBeforeScreenshotRecovery() = runTest {
+    @Test fun signedInRecoveryRunsOnlyParentQueue() = runTest {
         val events = mutableListOf<String>()
         val useCase = RecoverSyncQueueOnForegroundConnectivityUseCase(
             authRepository = FakeAuthRepository(signedInState()),
@@ -41,7 +41,7 @@ class RecoverSyncQueueOnForegroundConnectivityUseCaseTest {
 
         useCase.onConnectivityChanged(isNetworkAvailable = true)
 
-        assertEquals(listOf("parent", "screenshots"), events)
+        assertEquals(listOf("parent"), events)
     }
 
     @Test fun availableForegroundNetworkWhileSignedOutDoesNotRetry() = runTest {
@@ -72,15 +72,18 @@ class RecoverSyncQueueOnForegroundConnectivityUseCaseTest {
         assertEquals(0, screenshotRecovery.calls)
     }
 
-    @Test(expected = CancellationException::class)
-    fun screenshotRecoveryCancellationPropagates() = runTest {
+    @Test
+    fun screenshotRecoveryCancellationIsNotTriggered() = runTest {
+        val screenshotRecovery = RecordingScreenshotRecoveryAction(CancellationException("cancelled"))
         val useCase = RecoverSyncQueueOnForegroundConnectivityUseCase(
             authRepository = FakeAuthRepository(signedInState()),
             queueRecovery = RecordingRecoveryAction(),
-            screenshotRecovery = RecordingScreenshotRecoveryAction(CancellationException("cancelled")),
+            screenshotRecovery = screenshotRecovery,
         )
 
         useCase.onConnectivityChanged(isNetworkAvailable = true)
+
+        assertEquals(0, screenshotRecovery.calls)
     }
 
     @Test fun unavailableNetworkDoesNotRetryEvenWithSignedInSession() = runTest {
@@ -98,7 +101,7 @@ class RecoverSyncQueueOnForegroundConnectivityUseCaseTest {
         assertEquals(0, screenshotRecovery.calls)
     }
 
-    @Test fun internallyHandledParentFailureKeepsScreenshotRecoveryControlled() = runTest {
+    @Test fun internallyHandledParentFailureDoesNotStartScreenshotRecovery() = runTest {
         var parentAttempted = false
         var screenshotCalls = 0
         val useCase = RecoverSyncQueueOnForegroundConnectivityUseCase(
@@ -116,7 +119,7 @@ class RecoverSyncQueueOnForegroundConnectivityUseCaseTest {
         useCase.onConnectivityChanged(isNetworkAvailable = true)
 
         assertEquals(true, parentAttempted)
-        assertEquals(1, screenshotCalls)
+        assertEquals(0, screenshotCalls)
     }
 
     @Test fun retryFailureIsIsolatedFromForegroundConnectivitySignal() = runTest {

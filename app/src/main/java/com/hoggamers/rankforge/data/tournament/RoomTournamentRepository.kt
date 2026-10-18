@@ -86,6 +86,7 @@ import com.hoggamers.rankforge.domain.tournament.LegacyGroupRotationFinalizedRes
 import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidCloudRestorationLocalRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidCloudRestorationSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationUuidLocalRestoreResult
+import com.hoggamers.rankforge.domain.tournament.FinalizedMatchRestorationConflictException
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContext
 import com.hoggamers.rankforge.domain.tournament.MatchTeamIdentityContextReadResult
@@ -1156,13 +1157,15 @@ class RoomTournamentRepository @Inject constructor(
                     rosters = current.rosters
                         .filterKeys { it.tournamentId != tournamentId } + restoredRosters,
                     matches = current.matches + (tournamentId to restoredMatches),
+                    draftValues = current.draftValues.filterKeys { key ->
+                        key.tournamentId != tournamentId || restoredMatches.any { it.id == key.matchId }
+                    },
                     teamEntryDrafts = current.teamEntryDrafts - tournamentId,
                 )
 
                 // Remove UUID children before their identity parents. The
                 // match header cascade then safely removes its assignments/results.
                 database.groupRotationMatchIdentityHeaderDao().deleteByTournamentId(tournamentId)
-                database.matchDao().deleteByTournamentId(tournamentId)
                 database.groupRotationPairingTeamIdentityAssignmentDao()
                     .deleteByTournamentId(tournamentId)
                 database.groupRotationTeamIdentityDao().deleteByTournamentId(tournamentId)
@@ -1189,6 +1192,10 @@ class RoomTournamentRepository @Inject constructor(
                 database.groupRotationPairingLobbySlotDao().upsertAll(
                     snapshot.parent.pairingLobbySlots.map { it.toEntity() },
                 )
+                reconcileRestoredMatchRows(
+                    tournamentId = tournamentId,
+                    incoming = restoredMatches,
+                )
                 database.groupRotationTeamIdentityDao().upsertAll(
                     snapshot.identities.map { identity ->
                         com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity(
@@ -1210,18 +1217,6 @@ class RoomTournamentRepository @Inject constructor(
                         )
                     },
                 )
-                restoredMatches.forEach { match ->
-                    database.matchDao().upsert(match.toEntity())
-                    database.matchPlacementDao().upsertAll(
-                        match.placements.map { it.toEntity(match.id) },
-                    )
-                    database.matchKillDao().upsertAll(
-                        match.kills.map { it.toEntity(match.id) },
-                    )
-                    database.matchParticipantResultDao().upsertAll(
-                        match.participantResults.map { it.toEntity(match.id) },
-                    )
-                }
                 snapshot.uuidMatches.forEach { uuidMatch ->
                     database.groupRotationMatchIdentityHeaderDao().insert(
                         com.hoggamers.rankforge.data.local.GroupRotationMatchIdentityHeaderEntity(
@@ -1277,17 +1272,9 @@ class RoomTournamentRepository @Inject constructor(
         require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
         awaitState()
         writeMutex.withLock {
-            val next = state.value.copy(matches = state.value.matches + (snapshot.tournamentId to snapshot.matches))
+            val next = state.value.withRestoredMatches(snapshot.tournamentId, snapshot.matches)
             database.withTransaction {
-                database.matchDao().deleteByTournamentId(snapshot.tournamentId)
-                snapshot.matches.forEach { match ->
-                    database.matchDao().upsert(match.toEntity())
-                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
-                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
-                    database.matchParticipantResultDao().upsertAll(
-                        match.participantResults.map { it.toEntity(match.id) },
-                    )
-                }
+                reconcileRestoredMatchRows(snapshot.tournamentId, snapshot.matches)
                 snapshot.cloudRevision?.let { revision ->
                     database.syncRevisionDao().upsert(
                         com.hoggamers.rankforge.data.local.SyncRevisionEntity(
@@ -1340,7 +1327,7 @@ class RoomTournamentRepository @Inject constructor(
         require(snapshot.matches.map { it.matchNumber }.distinct().size == snapshot.matches.size)
         awaitState()
         writeMutex.withLock {
-            val next = state.value.copy(matches = state.value.matches + (tournamentId to snapshot.matches))
+            val next = state.value.withRestoredMatches(tournamentId, snapshot.matches)
             val result = database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
                     throw SecurityException("Tournament is not owned by the expected restoration owner.")
@@ -1364,15 +1351,7 @@ class RoomTournamentRepository @Inject constructor(
                     return@withTransaction MatchRestorationLocalWriteResult.GenerationMismatch
                 }
                 validateRestoredMatches(state.value, tournamentId, snapshot.matches, database)
-                database.matchDao().deleteByTournamentId(tournamentId)
-                snapshot.matches.forEach { match ->
-                    database.matchDao().upsert(match.toEntity())
-                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
-                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
-                    database.matchParticipantResultDao().upsertAll(
-                        match.participantResults.map { it.toEntity(match.id) },
-                    )
-                }
+                reconcileRestoredMatchRows(tournamentId, snapshot.matches)
                 snapshot.cloudRevision?.let { revision ->
                     database.syncRevisionDao().upsert(
                         com.hoggamers.rankforge.data.local.SyncRevisionEntity(
@@ -1399,18 +1378,17 @@ class RoomTournamentRepository @Inject constructor(
         writeMutex.withLock {
             val finalized = state.value.matches[snapshot.tournamentId].orEmpty()
                 .filter { it.status == MatchStatus.FINALIZED }
-            val next = state.value.copy(matches = state.value.matches + (snapshot.tournamentId to (finalized + snapshot.matches)))
+            val next = state.value.withRestoredMatches(
+                snapshot.tournamentId,
+                finalized + snapshot.matches,
+            )
             database.withTransaction {
                 validateRestoredMatches(state.value, snapshot.tournamentId, snapshot.matches, database)
-                database.matchDao().deleteDraftByTournamentId(snapshot.tournamentId)
-                snapshot.matches.forEach { match ->
-                    database.matchDao().upsert(match.toEntity())
-                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
-                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
-                    database.matchParticipantResultDao().upsertAll(
-                        match.participantResults.map { it.toEntity(match.id) },
-                    )
-                }
+                reconcileRestoredMatchRows(
+                    snapshot.tournamentId,
+                    finalized + snapshot.matches,
+                    draftOnly = true,
+                )
                 snapshot.cloudRevision?.let { revision ->
                     database.syncRevisionDao().upsert(
                         com.hoggamers.rankforge.data.local.SyncRevisionEntity(
@@ -1440,7 +1418,7 @@ class RoomTournamentRepository @Inject constructor(
         writeMutex.withLock {
             val finalized = state.value.matches[tournamentId].orEmpty()
                 .filter { it.status == MatchStatus.FINALIZED }
-            val next = state.value.copy(matches = state.value.matches + (tournamentId to (finalized + snapshot.matches)))
+            val next = state.value.withRestoredMatches(tournamentId, finalized + snapshot.matches)
             database.withTransaction {
                 if (!database.tournamentDao().existsByIdAndOwner(tournamentId, expectedOwnerUserId)) {
                     throw SecurityException("Tournament is not owned by the expected draft owner.")
@@ -1448,15 +1426,11 @@ class RoomTournamentRepository @Inject constructor(
                 if (database.deletionIntentDao().isLocalMutationBlocked(tournamentId, null, expectedOwnerUserId)) {
                     throw DeletionBlockedException(tournamentId)
                 }
-                database.matchDao().deleteDraftByTournamentId(tournamentId)
-                snapshot.matches.forEach { match ->
-                    database.matchDao().upsert(match.toEntity())
-                    database.matchPlacementDao().upsertAll(match.placements.map { it.toEntity(match.id) })
-                    database.matchKillDao().upsertAll(match.kills.map { it.toEntity(match.id) })
-                    database.matchParticipantResultDao().upsertAll(
-                        match.participantResults.map { it.toEntity(match.id) },
-                    )
-                }
+                reconcileRestoredMatchRows(
+                    tournamentId,
+                    finalized + snapshot.matches,
+                    draftOnly = true,
+                )
                 database.syncRevisionDao().upsert(
                     com.hoggamers.rankforge.data.local.SyncRevisionEntity(
                         tournamentId,
@@ -1469,6 +1443,97 @@ class RoomTournamentRepository @Inject constructor(
             state.value = next
         }
     }
+
+    /**
+     * Reconciles authoritative cloud match rows without replacing retained
+     * parent identities. Parent deletion is reserved for matches that are
+     * genuinely obsolete, so Room cannot cascade-delete match evidence for a
+     * retained match.
+     */
+    private suspend fun reconcileRestoredMatchRows(
+        tournamentId: String,
+        incoming: List<Match>,
+        draftOnly: Boolean = false,
+    ) {
+        require(incoming.all { it.tournamentId == tournamentId })
+        require(incoming.map { it.id }.distinct().size == incoming.size)
+        require(incoming.map { it.matchNumber }.distinct().size == incoming.size)
+        if (draftOnly) require(incoming.all { it.status == MatchStatus.DRAFT || it.status == MatchStatus.FINALIZED })
+
+        val matchDao = database.matchDao()
+        val existingEntities = matchDao.readForTournamentId(tournamentId)
+        val existingById = existingEntities.associateBy { it.id }
+        val incomingById = incoming.associateBy { it.id }
+
+        incoming.forEach { match ->
+            val existing = matchDao.readById(match.id)
+            if (existing != null && existing.tournamentId != tournamentId) {
+                throw IllegalArgumentException("Match identity belongs to another tournament.")
+            }
+        }
+
+        existingEntities.forEach { existing ->
+            val incomingMatch = incomingById[existing.id]
+            if (existing.status == MatchStatus.FINALIZED.name) {
+                if (incomingMatch == null) {
+                    if (!draftOnly) throw FinalizedMatchRestorationConflictException()
+                } else {
+                    val localMatch = readPersistedRestorationMatch(existing.id)
+                        ?: throw FinalizedMatchRestorationConflictException()
+                    if (!sameAuthoritativeFinalizedMatch(localMatch, incomingMatch)) {
+                        throw FinalizedMatchRestorationConflictException()
+                    }
+                }
+            } else if (incomingMatch?.status == MatchStatus.FINALIZED) {
+                // A draft parent may be retained by identity, but it may not
+                // be silently promoted over local history by this path.
+                throw FinalizedMatchRestorationConflictException()
+            }
+        }
+
+        val incomingIds = incomingById.keys
+        existingEntities
+            .filter { it.id !in incomingIds && (!draftOnly || it.status == MatchStatus.DRAFT.name) }
+            .forEach { obsolete -> matchDao.deleteById(obsolete.id) }
+
+        incoming.forEach { match ->
+            val existing = existingById[match.id]
+            if (existing?.status == MatchStatus.FINALIZED.name) {
+                // Exact finalized records remain untouched, including every
+                // local evidence/correction child.
+                return@forEach
+            }
+
+            if (existing != null) {
+                // Legacy restoration is authoritative for these UUID children.
+                // Deleting the header first also removes its NO_ACTION-linked
+                // assignment/result rows through the header cascade.
+                database.groupRotationMatchIdentityHeaderDao().deleteByMatchId(match.id)
+            }
+            matchDao.upsert(match.toEntity())
+            replaceMatchPlacements(match.id, match.placements)
+            replaceMatchKills(match.id, match.kills)
+            replaceMatchParticipantResults(match.id, match.participantResults)
+            if (existing == null && match.correctionHistory.isNotEmpty()) {
+                replaceMatchCorrections(match.id, match.correctionHistory)
+            }
+        }
+    }
+
+    private suspend fun readPersistedRestorationMatch(matchId: String): Match? {
+        val aggregate = database.matchDao().readResultAggregateById(matchId) ?: return null
+        return if (aggregate.match.status == MatchStatus.FINALIZED.name) {
+            readMatchWithUuidFallback(aggregate)
+        } else {
+            when (val mapped = aggregate.toDomainResult(json)) {
+                is MatchResultAggregateMapping.Complete -> mapped.match
+                else -> null
+            }
+        }
+    }
+
+    private fun sameAuthoritativeFinalizedMatch(local: Match, incoming: Match): Boolean =
+        local.copy(correctionHistory = emptyList()) == incoming.copy(correctionHistory = emptyList())
 
     override fun observeSlotsByTournamentId(tournamentId: String): Flow<List<TeamSlot>> = flow {
         ready.await()
@@ -4369,6 +4434,16 @@ private data class RepositoryState(
     val matches: Map<String, List<Match>> = emptyMap(),
     val draftValues: Map<DraftKey, Map<Int, MatchDraftFieldValues>> = emptyMap(),
     val teamEntryDrafts: Map<String, Map<Int, String>> = emptyMap(),
+)
+
+private fun RepositoryState.withRestoredMatches(
+    tournamentId: String,
+    restoredMatches: List<Match>,
+): RepositoryState = copy(
+    matches = matches + (tournamentId to restoredMatches),
+    draftValues = draftValues.filterKeys { key ->
+        key.tournamentId != tournamentId || restoredMatches.any { it.id == key.matchId }
+    },
 )
 
 private suspend fun eligibleSlotNumbersForMatch(

@@ -1,12 +1,12 @@
 package com.hoggamers.rankforge.presentation.screen
 
-import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentity
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchFailure
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
@@ -26,6 +26,7 @@ class CreateNextMatchWorkflow @Inject constructor(
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
     private val createNextMatch: CreateNextMatchUseCase,
     private val syncDraftMatches: DraftMatchCloudSyncAction,
+    private val uploadTournament: TournamentCloudUploadAction,
     private val applyLobbyTemplate: ApplyLobbyTemplateAction,
     private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction,
     private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
@@ -90,9 +91,19 @@ class CreateNextMatchWorkflow @Inject constructor(
         )
         if (validation.hasBlockingIssues) return false
 
-        return runCatching {
+        val saveResult = runCatching {
             saveTeamSlotNames(tournamentId, names)
-        }.getOrNull() == SaveTeamSlotNamesResult.Saved
+        }.getOrNull()
+        if (saveResult != SaveTeamSlotNamesResult.Saved) return false
+
+        try {
+            uploadTournament(tournamentId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            // Local default names remain authoritative when cloud upload is unavailable.
+        }
+        return true
     }
 
     suspend fun create(
@@ -102,12 +113,12 @@ class CreateNextMatchWorkflow @Inject constructor(
         val result = createNextMatch(tournamentId, groupPairing)
         if (result !is CreateNextMatchResult.Created) return result
 
-        val inheritedLobby = try {
-            applyLobbyTemplate(result.match.tournamentId, result.match.id) == ApplyLobbyTemplateResult.Applied
+        try {
+            applyLobbyTemplate(result.match.tournamentId, result.match.id)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            false
+            // Local match creation remains authoritative for navigation.
         }
         try {
             syncDraftMatches(result.match.tournamentId)
@@ -115,23 +126,6 @@ class CreateNextMatchWorkflow @Inject constructor(
             throw cancellation
         } catch (_: Throwable) {
             // Local match creation remains authoritative for navigation.
-        }
-        if (inheritedLobby) {
-            (1..3).forEach { index ->
-                try {
-                    lobbyUploadCheckpoint.run(
-                        MatchLobbyScreenshotIdentity(
-                            tournamentId = result.match.tournamentId,
-                            matchId = result.match.id,
-                            lobbyScreenshotIndex = index,
-                        ),
-                    )
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    // Local inheritance and navigation remain authoritative.
-                }
-            }
         }
         return result
     }

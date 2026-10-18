@@ -39,6 +39,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -75,7 +76,7 @@ class MatchLobbyScreenshotCropViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun validCropPersistsLobbyProfileAndCallsConfirmedOnce() = runTest {
+    fun validCropPersistsLobbyProfileWithoutUploadingAndCallsConfirmedOnce() = runTest {
         val root = Files.createTempDirectory("lobby-crop-valid").toFile()
         val preserver = preserver(root)
         val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
@@ -99,13 +100,13 @@ class MatchLobbyScreenshotCropViewModelTest {
             OcrNormalizedCropRect(it.cropLeft!!, it.cropTop!!, it.cropRight!!, it.cropBottom!!)
         })
         assertEquals("lobby", assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))?.cropProfileId)
-        assertEquals(1, uploader.calls.size)
-        assertEquals("cloud/lobby/1/original.png", assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))?.storageObjectPath)
+        assertEquals(0, uploader.calls.size)
+        assertNull(assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))?.storageObjectPath)
         assertNull(viewModel.uiState.value.error)
     }
 
     @Test
-    fun successfulCropUpsertsLatestCloudMetadataAndPreservesStorageFields() = runTest {
+    fun successfulCropPreservesExistingCloudFieldsWithoutCloudSync() = runTest {
         val root = Files.createTempDirectory("lobby-crop-cloud").toFile()
         val preserver = preserver(root)
         val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
@@ -128,13 +129,13 @@ class MatchLobbyScreenshotCropViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, confirmations)
-        assertEquals(1, cloud.upserts.size)
-        assertEquals("cloud/path.png", cloud.upserts.single().storageObjectPath)
-        assertEquals("lobby", cloud.upserts.single().cropProfileId)
+        assertEquals(0, cloud.upserts.size)
+        assertEquals("cloud/path.png", assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))?.storageObjectPath)
+        assertEquals(ScreenshotUploadStatus.UPLOADED.name, assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))?.uploadStatus)
     }
 
     @Test
-    fun cloudFailureDoesNotUndoLocalCropOrConfirmedCallback() = runTest {
+    fun confirmedCropDoesNotInvokeCloudUploadOrChangeLocalStatus() = runTest {
         val root = Files.createTempDirectory("lobby-crop-cloud-failure").toFile()
         val preserver = preserver(root)
         val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
@@ -157,14 +158,14 @@ class MatchLobbyScreenshotCropViewModelTest {
         assertEquals(1, confirmations)
         val saved = assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))
         assertEquals(crop.left, saved?.cropLeft)
-        assertEquals(com.hoggamers.rankforge.data.local.ScreenshotUploadStatus.FAILED.name, saved?.uploadStatus)
-        assertEquals(MatchLobbyScreenshotAssetCloudFailure.NETWORK.name, saved?.uploadFailureCode)
-        assertEquals("cloud/lobby/1/original.png", saved?.storageObjectPath)
-        assertEquals(1, uploader.calls.size)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, saved?.uploadStatus)
+        assertNull(saved?.uploadFailureCode)
+        assertNull(saved?.storageObjectPath)
+        assertEquals(0, uploader.calls.size)
     }
 
     @Test
-    fun cloudFailureMarksNewestAssetWithoutLosingConcurrentStorageState() = runTest {
+    fun confirmedCropDoesNotStartCloudReconciliation() = runTest {
         val root = Files.createTempDirectory("lobby-crop-cloud-race").toFile()
         val preserver = preserver(root)
         val file = preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png")
@@ -185,30 +186,14 @@ class MatchLobbyScreenshotCropViewModelTest {
         viewModel.confirmCrop { confirmations++ }
         advanceUntilIdle()
 
-        assertTrue(cloudStarted.isCompleted)
+        assertFalse(cloudStarted.isCompleted)
         assertEquals(1, confirmations)
-        val afterCrop = assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))!!
-        val uploaded = afterCrop.copy(
-            uploadStatus = ScreenshotUploadStatus.UPLOADED.name,
-            storageBucket = "ocr-screenshots",
-            storageObjectPath = "cloud/path.png",
-            uploadedAt = 99,
-            revision = afterCrop.revision + 4L,
-        )
-        assetRepository.saveOrReplace(uploaded)
-        cloudResult.complete(
-            MatchLobbyScreenshotAssetCloudResult.Failed(MatchLobbyScreenshotAssetCloudFailure.NETWORK),
-        )
-        advanceUntilIdle()
-
         val final = assetRepository.getByIdentity(MatchLobbyScreenshotIdentity(tournamentId, matchId, 1))!!
         assertEquals(1, confirmations)
-        assertEquals(ScreenshotUploadStatus.FAILED.name, final.uploadStatus)
-        assertEquals(MatchLobbyScreenshotAssetCloudFailure.NETWORK.name, final.uploadFailureCode)
-        assertEquals("ocr-screenshots", final.storageBucket)
-        assertEquals("cloud/path.png", final.storageObjectPath)
-        assertEquals(99L, final.uploadedAt)
-        assertEquals(uploaded.revision + 1L, final.revision)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, final.uploadStatus)
+        assertNull(final.uploadFailureCode)
+        assertNull(final.storageBucket)
+        assertNull(final.storageObjectPath)
         assertEquals(0.1, final.cropLeft)
         assertEquals(0.9, final.cropRight)
     }

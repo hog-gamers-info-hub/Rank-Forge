@@ -43,6 +43,8 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
@@ -540,6 +542,52 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(2, repository.observeMatchesByTournamentId(TOURNAMENT_ID).first().size)
+        assertNotNull(viewModel.uiState.value.nextMatchReviewRequest)
+    }
+
+    @Test
+    fun useDefaultsForNextMatchUploadsStandardRosterBeforeDraftSync() = runTest {
+        repository.saveTeamNames(
+            TOURNAMENT_ID,
+            TeamSlot.SLOT_NUMBERS.associate { slotNumber ->
+                slotNumber to if (slotNumber <= 8) "Team $slotNumber" else ""
+            },
+        )
+        val events = mutableListOf<String>()
+        val viewModel = reviewViewModel(
+            uploadTournament = TournamentCloudUploadAction {
+                events += "upload"
+                QueueAwareActionResult(
+                    primaryResult = TournamentCloudUploadResult.Success(2),
+                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                )
+            },
+            syncDraftMatches = DraftMatchCloudSyncAction {
+                events += "sync"
+                QueueAwareActionResult(
+                    primaryResult = DraftMatchCloudSyncResult.Success,
+                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                )
+            },
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestNextMatchCreation()
+        advanceUntilIdle()
+        assertNotNull(viewModel.uiState.value.pendingNextMatchTeamCountConfirmation)
+
+        viewModel.useDefaultsForNextMatch()
+        advanceUntilIdle()
+
+        assertEquals(listOf("upload", "sync"), events)
+        assertEquals(
+            (1..12).associateWith { slotNumber ->
+                if (slotNumber <= 8) "Team $slotNumber" else "Team ${slotNumber.toString().padStart(2, '0')}"
+            },
+            repository.observeSlotsByTournamentId(TOURNAMENT_ID).first()
+                .associate { slot -> slot.slotNumber to slot.teamName },
+        )
         assertNotNull(viewModel.uiState.value.nextMatchReviewRequest)
     }
 
@@ -2392,7 +2440,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun validPreservedScreenshotUploadsFromTheLocalFileAndReportsSuccess() = runTest {
+    fun validPreservedScreenshotRemainsLocalWithoutUploading() = runTest {
         val uri = "content://picker/upload"
         val bytes = byteArrayOf(10, 20, 30)
         val uploader = RecordingScreenshotStorageUploader(
@@ -2412,13 +2460,12 @@ class MatchReviewViewModelTest {
         viewModel.linkScreenshot()
         advanceUntilIdle()
 
-        assertEquals(1, uploader.calls.size)
-        assertEquals(bytes.toList(), uploader.calls.single().readBytes().toList())
-        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
-        assertEquals(
-            screenshotObjectPath("user-id", matchId, "png"),
-            viewModel.uiState.value.screenshotUploadObjectPath,
-        )
+        assertEquals(0, uploader.calls.size)
+        assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
+        assertFalse(viewModel.uiState.value.isScreenshotUploadInProgress)
+        assertFalse(viewModel.uiState.value.isScreenshotUploaded)
+        assertNull(viewModel.uiState.value.screenshotUploadObjectPath)
+        assertNull(viewModel.uiState.value.screenshotUploadError)
     }
 
     @Test
@@ -2497,7 +2544,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun metadataIsCreatedAfterSuccessfulPreservationAndUpdatedAfterStorageUpload() = runTest {
+    fun metadataIsCreatedAfterSuccessfulPreservationWithoutCloudUpload() = runTest {
         val uri = "content://picker/metadata"
         val bytes = byteArrayOf(1, 2, 3, 4)
         val metadataRepository = FakeScreenshotMetadataRepository()
@@ -2531,14 +2578,15 @@ class MatchReviewViewModelTest {
         assertEquals(1920, metadata.height)
         assertEquals(bytes.size.toLong(), metadata.byteSize)
         assertEquals(ScreenshotLocalStatus.PRESERVED.name, metadata.localStatus)
-        assertEquals(ScreenshotUploadStatus.UPLOADED.name, metadata.uploadStatus)
-        assertEquals(2, metadata.revision)
-        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
-        assertEquals(ScreenshotMetadataUploadUiStatus.UPLOADED, viewModel.uiState.value.screenshotMetadata!!.uploadStatus)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, metadata.uploadStatus)
+        assertEquals(1, metadata.revision)
+        assertFalse(viewModel.uiState.value.isScreenshotUploaded)
+        assertEquals(ScreenshotMetadataUploadUiStatus.PENDING, viewModel.uiState.value.screenshotMetadata!!.uploadStatus)
+        assertEquals(0, uploader.calls.size)
     }
 
     @Test
-    fun cloudMetadataFailureMarksLocalMetadataFailedWithControlledCode() = runTest {
+    fun cloudMetadataIsNotAttemptedAfterLocalPreservation() = runTest {
         val metadataRepository = FakeScreenshotMetadataRepository()
         val cloudDataSource = FakeScreenshotMetadataCloudDataSource(
             upsertResult = ScreenshotMetadataCloudResult.Failed(ScreenshotMetadataCloudFailure.AUTHORIZATION),
@@ -2561,9 +2609,10 @@ class MatchReviewViewModelTest {
         viewModel.linkScreenshot()
         advanceUntilIdle()
 
-        assertEquals(ScreenshotUploadStatus.FAILED.name, metadataRepository.metadata.value!!.uploadStatus)
-        assertEquals(ScreenshotMetadataFailureCode.RLS_DENIED.name, metadataRepository.metadata.value!!.uploadFailureCode)
-        assertEquals(ScreenshotUploadError.RLS_DENIED, viewModel.uiState.value.screenshotUploadError)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, metadataRepository.metadata.value!!.uploadStatus)
+        assertEquals(null, metadataRepository.metadata.value!!.uploadFailureCode)
+        assertEquals(null, viewModel.uiState.value.screenshotUploadError)
+        assertEquals(0, cloudDataSource.upserts.size)
     }
 
     @Test
@@ -2592,7 +2641,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun uploadFailureKeepsLocalPreservedFileAndShowsControlledError() = runTest {
+    fun localPreservationDoesNotShowAnUploadFailure() = runTest {
         val uri = "content://picker/upload-failure"
         val uploader = RecordingScreenshotStorageUploader(
             ScreenshotStorageUploadResult.Failed(
@@ -2610,11 +2659,13 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
-        assertEquals(ScreenshotUploadError.NETWORK, viewModel.uiState.value.screenshotUploadError)
+        assertEquals(0, uploader.calls.size)
+        assertEquals(null, viewModel.uiState.value.screenshotUploadError)
+        assertFalse(viewModel.uiState.value.isScreenshotUploadInProgress)
     }
 
     @Test
-    fun uploadFailureCanBeRetriedWithoutLosingTheLocalFile() = runTest {
+    fun screenshotUploadRetryIsANoop() = runTest {
         val uploader = RecordingScreenshotStorageUploader(
             ScreenshotStorageUploadResult.Failed(
                 com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadFailure.NETWORK,
@@ -2628,13 +2679,13 @@ class MatchReviewViewModelTest {
         viewModel.linkScreenshot()
         advanceUntilIdle()
 
-        uploader.result = ScreenshotStorageUploadResult.Uploaded("users/user/tournaments/t/matches/m/original.png")
         viewModel.retryScreenshotUpload()
         advanceUntilIdle()
 
-        assertEquals(2, uploader.calls.size)
+        assertEquals(0, uploader.calls.size)
         assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
-        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
+        assertFalse(viewModel.uiState.value.isScreenshotUploaded)
+        assertFalse(viewModel.uiState.value.isScreenshotUploadInProgress)
     }
 
     @Test
@@ -2740,6 +2791,30 @@ class MatchReviewViewModelTest {
             ScreenshotPreservationError.CLEANUP_FAILED,
             viewModel.uiState.value.screenshotPreservationError,
         )
+    }
+
+    @Test
+    fun unlinkSucceedsWhenHistoricalCloudMetadataCleanupFails() = runTest {
+        val cloudDataSource = FakeScreenshotMetadataCloudDataSource(
+            deleteResult = ScreenshotMetadataCloudResult.Failed(ScreenshotMetadataCloudFailure.NETWORK),
+        )
+        val viewModel = reviewViewModel(
+            screenshotMetadataCloudDataSource = cloudDataSource,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult("content://picker/cloud-cleanup-failure")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        viewModel.unlinkScreenshot()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isScreenshotLinked)
+        assertFalse(viewModel.uiState.value.isScreenshotLocallyPreserved)
+        assertNull(viewModel.uiState.value.screenshotMetadata)
+        assertNull(viewModel.uiState.value.screenshotUploadError)
     }
 
     @Test
@@ -3992,6 +4067,18 @@ class MatchReviewViewModelTest {
             ScreenshotReconciliationScheduler(),
         applyLobbyTemplate: ApplyLobbyTemplateAction =
             ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
+        uploadTournament: TournamentCloudUploadAction = TournamentCloudUploadAction {
+            QueueAwareActionResult(
+                primaryResult = TournamentCloudUploadResult.Success(1),
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        },
+        syncDraftMatches: DraftMatchCloudSyncAction = DraftMatchCloudSyncAction {
+            QueueAwareActionResult(
+                primaryResult = DraftMatchCloudSyncResult.Success,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        },
         createNextMatchWorkflow: CreateNextMatchWorkflow = CreateNextMatchWorkflow(
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             saveTeamSlotNames = SaveTeamSlotNamesUseCase(
@@ -4005,12 +4092,8 @@ class MatchReviewViewModelTest {
                 java.time.Clock.systemUTC(),
                 repository,
             ),
-            syncDraftMatches = DraftMatchCloudSyncAction {
-                QueueAwareActionResult(
-                    primaryResult = DraftMatchCloudSyncResult.Success,
-                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
-                )
-            },
+            syncDraftMatches = syncDraftMatches,
+            uploadTournament = uploadTournament,
             applyLobbyTemplate = applyLobbyTemplate,
             lobbyUploadCheckpoint = MatchLobbyScreenshotUploadCheckpointAction {
                 MatchLobbyScreenshotUploadCheckpointResult.Skipped

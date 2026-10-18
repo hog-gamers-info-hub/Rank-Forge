@@ -4971,15 +4971,6 @@ private fun ResultScreenshotPage(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (!slot.isPreviewPreparationInProgress && slot.isUploadInProgress) {
-            Text(text = stringResource(R.string.match_review_screenshot_uploading))
-        }
-        slot.uploadError?.let { error ->
-            Text(
-                text = stringResource(error.toMessageRes()),
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
         if (showSourceScreenshot && isEditable && previewImageUri == null && !slot.isPreviewPreparationInProgress) {
             ResultScreenshotActionRow(
                 role = role,

@@ -9,10 +9,10 @@ import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.sync.CloudRevision
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+import com.hoggamers.rankforge.domain.sync.RevisionConflict
 import com.hoggamers.rankforge.domain.sync.SyncQueueOperationType
 import com.hoggamers.rankforge.domain.sync.SyncQueueStatus
 import java.time.LocalDate
-import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
@@ -126,6 +126,27 @@ class RestoreMatchesUseCaseTest {
 
         assertEquals(MatchCloudRestorationResult.GenerationMismatch, result)
         assertEquals(0, local.ownerBoundReplacementCount)
+    }
+
+    @Test
+    fun finalizedHistoryConflictIsReturnedWithoutScreenshotRestoration() = runTest {
+        val local = RecordingLocalRepository().apply { throwFinalizedConflict = true }
+        val queue = RecordingTestQueueRepository()
+        val screenshots = RecordingScreenshotRestorationAction()
+        val result = RestoreMatchesUseCase(
+            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
+            FakeCloudRepository(MatchCloudRestorationRemoteResult.Success(snapshotWithMatch())),
+            local,
+            queue.recorder(),
+            screenshots,
+        )(TOURNAMENT_ID, OWNER_ID)
+
+        val conflict = result.primaryResult as MatchCloudRestorationResult.Conflict
+        assertEquals(RevisionConflict.FinalizedMatchHistory, conflict.conflict)
+        assertEquals(0, local.restoreCalledCount)
+        assertTrue(screenshots.matchIds.isEmpty())
+        assertEquals(QueueRecordingResult.RECORDED, result.queueRecordingResult)
+        assertEquals(SyncQueueStatus.FAILED_CONFLICT, queue.entries.single().status)
     }
 
     @Test
@@ -285,46 +306,30 @@ class RestoreMatchesUseCaseTest {
     }
 
     @Test
-    fun screenshotFailureRunsAfterParentAndLeavesParentPersisted() = runTest {
-        val events = mutableListOf<String>()
-        val local = RecordingLocalRepository(events)
-        val screenshotAction = RecordingScreenshotRestorationAction(
-            events = events,
-            result = MatchCloudRestorationResult.NetworkFailure,
-        )
-        val result = RestoreMatchesUseCase(
-            FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
-            FakeCloudRepository(MatchCloudRestorationRemoteResult.Success(snapshotWithMatch())),
-            local,
-            RecordingTestQueueRepository().recorder(),
-            screenshotAction,
-        )(TOURNAMENT_ID)
-
-        assertEquals(MatchCloudRestorationResult.NetworkFailure, result.primaryResult)
-        assertEquals(listOf("parent", "screenshots"), events)
-        assertTrue(local.restoreCalled)
-        assertEquals(listOf(MATCH_ID), screenshotAction.matchIds)
-    }
-
-    @Test
-    fun screenshotCancellationPropagatesAfterParentPersistence() = runTest {
-        val local = RecordingLocalRepository()
-        val cancellation = CancellationException("cancelled")
-        var propagated = false
-        try {
-            RestoreMatchesUseCase(
+    fun successfulMatchRestoreIgnoresScreenshotRestorationFailure() = runTest {
+        listOf<Any>(
+            MatchCloudRestorationResult.NetworkFailure,
+            IllegalStateException("legacy screenshot restoration must not run"),
+        ).forEach { screenshotOutcome ->
+            val events = mutableListOf<String>()
+            val local = RecordingLocalRepository(events)
+            val screenshotAction = RecordingScreenshotRestorationAction(
+                events = events,
+                result = screenshotOutcome,
+            )
+            val result = RestoreMatchesUseCase(
                 FakeAuthRepository(AuthState.SignedIn(AuthUser(OWNER_ID, null))),
                 FakeCloudRepository(MatchCloudRestorationRemoteResult.Success(snapshotWithMatch())),
                 local,
                 RecordingTestQueueRepository().recorder(),
-                RecordingScreenshotRestorationAction(result = cancellation),
-            ).executeForRetry(TOURNAMENT_ID)
-        } catch (error: CancellationException) {
-            propagated = error === cancellation
-        }
+                screenshotAction,
+            )(TOURNAMENT_ID)
 
-        assertTrue(propagated)
-        assertTrue(local.restoreCalled)
+            assertEquals(MatchCloudRestorationResult.Success, result.primaryResult)
+            assertEquals(listOf("parent"), events)
+            assertTrue(local.restoreCalled)
+            assertTrue(screenshotAction.matchIds.isEmpty())
+        }
     }
 
     private fun snapshotWithMatch() = MatchCloudRestorationSnapshot(
@@ -369,6 +374,7 @@ class RestoreMatchesUseCaseTest {
         var restoreCalled = false
         var restoreCalledCount = 0
         var ownerBoundReplacementCount = 0
+        var throwFinalizedConflict = false
         override suspend fun replaceMatches(snapshot: MatchCloudRestorationSnapshot) {
             events += "parent"
             restoreCalled = true
@@ -381,6 +387,7 @@ class RestoreMatchesUseCaseTest {
             snapshot: MatchCloudRestorationSnapshot,
         ) {
             ownerBoundReplacementCount += 1
+            if (throwFinalizedConflict) throw FinalizedMatchRestorationConflictException()
             replaceMatches(snapshot)
         }
 

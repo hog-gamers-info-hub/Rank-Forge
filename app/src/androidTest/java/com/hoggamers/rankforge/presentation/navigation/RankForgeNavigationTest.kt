@@ -2566,6 +2566,7 @@ fun logoutFromAccountStaysOnAuthAndShowsSignedOutLogin() {
                     validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
                     createNextMatch = CreateNextMatchUseCase(repository),
                     syncDraftMatches = draftMatchSyncAction,
+                     uploadTournament = uploadAction,
                 ).also {
                     it.load(tournamentId)
                 }

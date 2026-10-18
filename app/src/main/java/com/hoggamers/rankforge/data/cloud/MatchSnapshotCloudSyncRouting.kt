@@ -57,7 +57,7 @@ internal fun finalizedMatchCloudSyncExecutor(
                 )
             },
             writeDraftMatch = { match, matchResults, expectedRevision ->
-                rpcInvoker.invokeWrite(
+                rpcInvoker.invokeWriteFinalizedBootstrap(
                     MatchSnapshotWriteParameters(
                         tournamentId = tournamentId,
                         matches = listOf(match),
@@ -80,7 +80,7 @@ internal fun finalizedMatchCloudSyncExecutor(
                 )
             },
             writeDraftMatch = { match, matchResults, expectedRevision ->
-                rpcInvoker.invokeWriteGroupRotation(
+                rpcInvoker.invokeWriteFinalizedBootstrapGroupRotation(
                     MatchSnapshotWriteParameters(
                         tournamentId = tournamentId,
                         matches = listOf(match),

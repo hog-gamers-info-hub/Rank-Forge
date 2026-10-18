@@ -20,6 +20,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.InvalidPersistedMatchDataException
 import com.hoggamers.rankforge.domain.tournament.CloudDeletionFailureCategory
 import com.hoggamers.rankforge.domain.tournament.DeleteTournamentResult
@@ -64,6 +65,7 @@ class TournamentDetailsViewModel @Inject constructor(
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
     private val createNextMatch: CreateNextMatchUseCase,
     private val syncDraftMatches: DraftMatchCloudSyncAction,
+    private val uploadTournament: TournamentCloudUploadAction,
     private val applyLobbyTemplate: ApplyLobbyTemplateAction = ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
     private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction { MatchLobbyScreenshotUploadCheckpointResult.Skipped },
     private val deleteTournamentUseCase: DeleteTournamentUseCase? = null,
@@ -76,6 +78,7 @@ class TournamentDetailsViewModel @Inject constructor(
             validateTournamentRoster = validateTournamentRoster,
             createNextMatch = createNextMatch,
             syncDraftMatches = syncDraftMatches,
+            uploadTournament = uploadTournament,
             applyLobbyTemplate = applyLobbyTemplate,
             lobbyUploadCheckpoint = lobbyUploadCheckpoint,
         )

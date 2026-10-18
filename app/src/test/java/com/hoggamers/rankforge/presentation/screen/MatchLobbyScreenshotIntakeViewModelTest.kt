@@ -259,7 +259,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertEquals(byteArrayOf(2).sha256(), current.sha256)
         assertEquals(0.2, current.cropLeft!!, 0.0)
         assertNull(viewModel.uiState.value.pendingCropNavigationSlotIndex)
-        assertEquals(1, checkpointCalls.size)
+        assertEquals(0, checkpointCalls.size)
     }
 
     @Test
@@ -1008,7 +1008,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
     }
 
     @Test
-    fun sameIdentityRecoveryRetainsSuccessfulCloudState() = runTest {
+    fun sameIdentityRecoveryRetainsLocalIdentityAndCropStateWithoutCloudSync() = runTest {
         val root = Files.createTempDirectory("lobby-intake-cloud-recovery").toFile()
         val preserver = preserver(root)
         val fingerprint = byteArrayOf(1, 2, 3).sha256()
@@ -1036,11 +1036,8 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         advanceUntilIdle()
 
         assertTrue(preserver.lobbyPreservedFile(tournamentId, matchId, 1, "png").isFile)
-        assertTrue(cloudStarted.isCompleted)
-        assertFalse(cloudResult.isCompleted)
+        assertFalse(cloudStarted.isCompleted)
         assertEquals(1, viewModel.uiState.value.pendingCropNavigationSlotIndex)
-        cloudResult.complete(MatchLobbyScreenshotAssetCloudResult.Success)
-        advanceUntilIdle()
 
         val restored = lobbyRepository.readByMatchAndIndex(matchId, 1)
         assertEquals(ScreenshotUploadStatus.UPLOADED.name, restored?.uploadStatus)
@@ -1048,12 +1045,7 @@ class MatchLobbyScreenshotIntakeViewModelTest {
         assertEquals("lobby", restored?.cropProfileId)
         assertEquals(2L, restored?.revision)
         assertEquals(ScreenshotLocalStatus.PRESERVED.name, restored?.localStatus)
-        assertEquals(1, cloud.upserts.size)
-        assertEquals(restored, cloud.upserts.single())
-        assertEquals("ocr-screenshots", cloud.upserts.single().storageBucket)
-        assertEquals("cloud/path.png", cloud.upserts.single().storageObjectPath)
-        assertEquals(4L, cloud.upserts.single().uploadedAt)
-        assertEquals(0.1, cloud.upserts.single().cropLeft)
+        assertEquals(0, cloud.upserts.size)
     }
 
     @Test

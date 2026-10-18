@@ -877,9 +877,6 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
                     )
                     AutomaticLobbyCropOutcome.Stale -> return false
                 }
-                if (retainCloudState) {
-                    syncRetainedCloudMetadata(identity, fingerprint, ownerId)
-                }
                 true
             }
             MatchLobbyScreenshotAssetSaveResult.InvalidIdentity,
@@ -981,9 +978,6 @@ class MatchLobbyScreenshotIntakeViewModel @Inject constructor(
             } else {
                 AutomaticLobbyCropOutcome.Stale
             }
-        }
-        lobbyCropReconciliationScheduler.schedule(ownerUserId, screenshotOwnerProvider) {
-            lobbyUploadCheckpoint.run(identity, ownerUserId)
         }
         return AutomaticLobbyCropOutcome.Saved
     }

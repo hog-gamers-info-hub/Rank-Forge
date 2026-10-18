@@ -62,6 +62,10 @@ sealed interface MatchRestorationLocalWriteResult {
     data object GenerationMismatch : MatchRestorationLocalWriteResult
 }
 
+class FinalizedMatchRestorationConflictException : IllegalStateException(
+    "Authoritative cloud restoration conflicts with finalized local match history.",
+)
+
 sealed interface MatchCloudRestorationResult {
     data object Success : MatchCloudRestorationResult
     data object NoCloudMatches : MatchCloudRestorationResult

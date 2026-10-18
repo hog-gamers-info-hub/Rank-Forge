@@ -8,12 +8,32 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 interface MatchSnapshotRpcInvoker {
-    suspend fun <M, R> invokeWrite(
-        parameters: MatchSnapshotWriteParameters<M, R>,
+    suspend fun invokeWrite(
+        parameters: MatchSnapshotWriteParameters<
+            DraftMatchUploadPayload,
+            DraftMatchResultUploadPayload,
+            >,
     ): RevisionWriteResponse
 
-    suspend fun <M, R> invokeWriteGroupRotation(
-        parameters: MatchSnapshotWriteParameters<M, R>,
+    suspend fun invokeWriteGroupRotation(
+        parameters: MatchSnapshotWriteParameters<
+            DraftMatchUploadPayload,
+            DraftMatchResultUploadPayload,
+            >,
+    ): RevisionWriteResponse
+
+    suspend fun invokeWriteFinalizedBootstrap(
+        parameters: MatchSnapshotWriteParameters<
+            FinalizedMatchUploadPayload,
+            FinalizedMatchResultUploadPayload,
+            >,
+    ): RevisionWriteResponse
+
+    suspend fun invokeWriteFinalizedBootstrapGroupRotation(
+        parameters: MatchSnapshotWriteParameters<
+            FinalizedMatchUploadPayload,
+            FinalizedMatchResultUploadPayload,
+            >,
     ): RevisionWriteResponse
 
     suspend fun invokeFinalize(
@@ -35,15 +55,41 @@ interface MatchSnapshotRpcInvoker {
 class SupabaseMatchSnapshotRpcInvoker @Inject constructor(
     private val clientProvider: SupabaseClientProvider,
 ) : MatchSnapshotRpcInvoker {
-    override suspend fun <M, R> invokeWrite(
-        parameters: MatchSnapshotWriteParameters<M, R>,
+    override suspend fun invokeWrite(
+        parameters: MatchSnapshotWriteParameters<
+            DraftMatchUploadPayload,
+            DraftMatchResultUploadPayload,
+            >,
     ): RevisionWriteResponse = clientProvider.client.postgrest.rpc(
         "write_match_snapshot",
         parameters,
     ).decodeSingle()
 
-    override suspend fun <M, R> invokeWriteGroupRotation(
-        parameters: MatchSnapshotWriteParameters<M, R>,
+    override suspend fun invokeWriteGroupRotation(
+        parameters: MatchSnapshotWriteParameters<
+            DraftMatchUploadPayload,
+            DraftMatchResultUploadPayload,
+            >,
+    ): RevisionWriteResponse = clientProvider.client.postgrest.rpc(
+        "write_match_snapshot_v2",
+        parameters,
+    ).decodeSingle()
+
+    override suspend fun invokeWriteFinalizedBootstrap(
+        parameters: MatchSnapshotWriteParameters<
+            FinalizedMatchUploadPayload,
+            FinalizedMatchResultUploadPayload,
+            >,
+    ): RevisionWriteResponse = clientProvider.client.postgrest.rpc(
+        "write_match_snapshot",
+        parameters,
+    ).decodeSingle()
+
+    override suspend fun invokeWriteFinalizedBootstrapGroupRotation(
+        parameters: MatchSnapshotWriteParameters<
+            FinalizedMatchUploadPayload,
+            FinalizedMatchResultUploadPayload,
+            >,
     ): RevisionWriteResponse = clientProvider.client.postgrest.rpc(
         "write_match_snapshot_v2",
         parameters,

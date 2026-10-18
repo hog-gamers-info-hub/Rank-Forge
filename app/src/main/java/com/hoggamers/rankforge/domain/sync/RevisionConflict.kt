@@ -22,6 +22,7 @@ data class LocalRevisionState(
 
 sealed interface RevisionConflict {
     data object MissingRevision : RevisionConflict
+    data object FinalizedMatchHistory : RevisionConflict
     data class StaleWrite(
         val expectedRevision: CloudRevision,
         val currentCloudRevision: CloudRevision,
@@ -52,6 +53,7 @@ fun LocalRevisionState.expectedRevisionForWrite(): Int? = when {
 
 fun RevisionConflict.queueFailureCategory(): String = when (this) {
     RevisionConflict.MissingRevision -> "MISSING_REVISION"
+    RevisionConflict.FinalizedMatchHistory -> "FINALIZED_MATCH_HISTORY_CONFLICT"
     is RevisionConflict.StaleWrite -> "STALE_WRITE_CONFLICT"
     is RevisionConflict.LocalCloudDivergence -> "LOCAL_CLOUD_DIVERGENCE"
 }

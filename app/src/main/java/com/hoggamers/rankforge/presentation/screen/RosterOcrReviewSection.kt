@@ -617,6 +617,7 @@ private fun cloudResultMessage(result: TournamentRosterCloudReplacementResult): 
             R.string.roster_ocr_review_cloud_authorization_failure
         is TournamentRosterCloudReplacementResult.Conflict -> when (result.conflict) {
             RevisionConflict.MissingRevision -> R.string.roster_ocr_review_cloud_network_failure
+            RevisionConflict.FinalizedMatchHistory -> R.string.roster_ocr_review_cloud_conflict
             is RevisionConflict.StaleWrite,
             is RevisionConflict.LocalCloudDivergence,
             -> R.string.roster_ocr_review_cloud_conflict

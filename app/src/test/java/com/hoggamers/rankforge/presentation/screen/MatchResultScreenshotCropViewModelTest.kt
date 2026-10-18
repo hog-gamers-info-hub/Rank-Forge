@@ -50,6 +50,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -100,7 +101,7 @@ class MatchResultScreenshotCropViewModelTest {
     }
 
     @Test
-    fun confirmCropPersistsLocalCropAndDoesNotRollBackWhenCloudMetadataFails() = runTest {
+    fun confirmCropPersistsLocalCropWithoutCloudUpload() = runTest {
         val root = Files.createTempDirectory("rank-forge-crop").toFile()
         val preserver = LocalImagePreserver(
             appPrivateRoot = root,
@@ -120,6 +121,11 @@ class MatchResultScreenshotCropViewModelTest {
             asset(
                 role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
                 relativePath = preserver.relativePathFor(file)!!,
+            ).copy(
+                uploadStatus = ScreenshotUploadStatus.PENDING.name,
+                storageBucket = null,
+                storageObjectPath = null,
+                uploadedAt = null,
             ),
         )
         val viewModel = viewModel(
@@ -139,13 +145,14 @@ class MatchResultScreenshotCropViewModelTest {
         val saved = repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!
         assertEquals(crop.left, saved.cropLeft!!, 0.0)
         assertEquals(crop.right, saved.cropRight!!, 0.0)
-        assertEquals(ScreenshotUploadStatus.FAILED.name, saved.uploadStatus)
-        assertEquals(MatchResultScreenshotAssetCloudFailure.WRITE_FAILED.name, saved.uploadFailureCode)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, saved.uploadStatus)
+        assertNull(saved.uploadFailureCode)
+        assertNull(saved.storageObjectPath)
         assertTrue(viewModel.uiState.value.confirmedCrop == crop)
     }
 
     @Test
-    fun confirmCropPersistsBeforeUploadingOriginalAndUpsertsCombinedMetadata() = runTest {
+    fun confirmCropPreservesLocalAssetWithoutUploadingOriginal() = runTest {
         val root = Files.createTempDirectory("rank-forge-crop-upload").toFile()
         val preserver = LocalImagePreserver(
             appPrivateRoot = root,
@@ -189,13 +196,10 @@ class MatchResultScreenshotCropViewModelTest {
         viewModel.confirmCrop { confirmations++ }
         advanceUntilIdle()
 
-        assertEquals(1, uploader.calls.size)
-        assertEquals(file, uploader.calls.single().localFile)
-        assertEquals(crop.left, uploader.cropAtUpload!!.cropLeft!!, 0.0)
-        assertEquals(1, cloud.upserts.size)
-        assertEquals(crop.left, cloud.upserts.single().cropLeft!!, 0.0)
-        assertEquals("cloud/result/lower/original.png", cloud.upserts.single().storageObjectPath)
-        assertEquals(ScreenshotUploadStatus.UPLOADED.name, repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_LOWER))?.uploadStatus)
+        assertEquals(0, uploader.calls.size)
+        assertEquals(0, cloud.upserts.size)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_LOWER))?.uploadStatus)
+        assertNull(repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_LOWER))?.storageObjectPath)
         assertEquals(1, confirmations)
     }
 
@@ -310,7 +314,7 @@ class MatchResultScreenshotCropViewModelTest {
     }
 
     @Test
-    fun cloudMetadataCancellationIsNotConvertedToUploadFailure() = runTest {
+    fun confirmedCropDoesNotInvokeCancellableCloudMetadata() = runTest {
         val root = Files.createTempDirectory("rank-forge-crop-cancel").toFile()
         val preserver = LocalImagePreserver(
             appPrivateRoot = root,
@@ -356,11 +360,14 @@ class MatchResultScreenshotCropViewModelTest {
         assertEquals(crop.left, saved.cropLeft!!, 0.0)
         assertEquals(ScreenshotUploadStatus.UPLOADED.name, saved.uploadStatus)
         assertNull(saved.uploadFailureCode)
+        assertEquals("ocr-screenshots", saved.storageBucket)
+        assertEquals("object/path.png", saved.storageObjectPath)
+        assertEquals(1L, saved.uploadedAt)
         assertTrue(confirmedCallbackCalled)
     }
 
     @Test
-    fun confirmCropCallbackDoesNotWaitForSuspendedCloudMetadata() = runTest {
+    fun confirmCropCallbackDoesNotStartCloudMetadata() = runTest {
         val root = Files.createTempDirectory("rank-forge-crop-nonblocking").toFile()
         val preserver = LocalImagePreserver(
             appPrivateRoot = root,
@@ -397,15 +404,13 @@ class MatchResultScreenshotCropViewModelTest {
         viewModel.confirmCrop { confirmations++ }
         advanceUntilIdle()
 
-        assertTrue(cloudStarted.isCompleted)
+        assertFalse(cloudStarted.isCompleted)
         assertEquals(1, confirmations)
-        assertEquals(
-            ScreenshotUploadStatus.UPLOADED.name,
-            repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))?.uploadStatus,
-        )
-
-        cloudResult.complete(MatchResultScreenshotAssetCloudResult.Success)
-        advanceUntilIdle()
+        val saved = repository.getByIdentity(identity(MatchResultScreenshotRole.MATCH_RESULT_UPPER))!!
+        assertEquals(ScreenshotUploadStatus.UPLOADED.name, saved.uploadStatus)
+        assertEquals("ocr-screenshots", saved.storageBucket)
+        assertEquals("object/path.png", saved.storageObjectPath)
+        assertEquals(1L, saved.uploadedAt)
     }
 
     @Test
