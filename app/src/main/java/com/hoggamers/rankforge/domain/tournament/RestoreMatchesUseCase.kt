@@ -140,22 +140,21 @@ class RestoreMatchesUseCase @Inject constructor(
                     if (localWriteResult == MatchRestorationLocalWriteResult.GenerationMismatch) {
                         return MatchCloudRestorationResult.GenerationMismatch
                     }
-                    // Screenshot restoration is the separate 6C3 boundary; the match
-                    // replacement above is the only local restoration write secured here.
-                    when (
-                        val screenshotResult = matchScreenshotRestorationAction(
-                            tournamentId = tournamentId,
-                            restoredMatchIds = result.value.matches.map { it.id }.toSet(),
-                            expectedOwnerUserId = expectedOwnerUserId,
-                        )
-                    ) {
-                        MatchCloudRestorationResult.Success,
-                        MatchCloudRestorationResult.NoCloudMatches,
-                        -> MatchCloudRestorationResult.Success
-                        else -> screenshotResult
-                    }
+                    MatchCloudRestorationResult.Success
                 } catch (cancellation: CancellationException) {
                     throw cancellation
+                } catch (_: FinalizedMatchRestorationConflictException) {
+                    MatchCloudRestorationResult.Conflict(
+                        conflict = com.hoggamers.rankforge.domain.sync.RevisionConflict.FinalizedMatchHistory,
+                        context = ConflictResolutionContext(
+                            tournamentId = tournamentId,
+                            operation = ConflictOperation.MATCH_RESTORATION,
+                            conflict = com.hoggamers.rankforge.domain.sync.RevisionConflict.FinalizedMatchHistory,
+                            resolvability = ConflictResolvability.FINALIZED_OR_UNSUPPORTED,
+                            cloudDraftMatches = result.value.matches.filter { it.status == MatchStatus.DRAFT },
+                            currentCloudRevision = cloudRevision,
+                        ),
+                    )
                 } catch (_: SecurityException) {
                     MatchCloudRestorationResult.AuthorizationFailure
                 } catch (_: Throwable) {

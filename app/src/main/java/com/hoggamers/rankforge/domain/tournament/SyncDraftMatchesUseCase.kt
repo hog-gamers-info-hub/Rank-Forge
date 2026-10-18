@@ -190,6 +190,7 @@ private fun DraftMatchCloudSyncSnapshot.toConflictContext(
         is com.hoggamers.rankforge.domain.sync.RevisionConflict.StaleWrite -> conflict.currentCloudRevision
         is com.hoggamers.rankforge.domain.sync.RevisionConflict.LocalCloudDivergence -> conflict.cloudRevision
         com.hoggamers.rankforge.domain.sync.RevisionConflict.MissingRevision -> null
+        com.hoggamers.rankforge.domain.sync.RevisionConflict.FinalizedMatchHistory -> null
     }
     val draftsOnly = matches.isNotEmpty() && matches.all { it.status == MatchStatus.DRAFT }
     return ConflictResolutionContext(

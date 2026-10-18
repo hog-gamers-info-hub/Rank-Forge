@@ -124,6 +124,9 @@ interface GroupRotationMatchIdentityHeaderDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(header: GroupRotationMatchIdentityHeaderEntity)
 
+    @Query("DELETE FROM group_rotation_match_identity_headers WHERE match_id = :matchId")
+    suspend fun deleteByMatchId(matchId: String)
+
     @Query("DELETE FROM group_rotation_match_identity_headers WHERE tournament_id = :tournamentId")
     suspend fun deleteByTournamentId(tournamentId: String)
 }
