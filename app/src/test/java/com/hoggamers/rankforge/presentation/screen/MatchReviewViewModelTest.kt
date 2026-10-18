@@ -2746,6 +2746,30 @@ class MatchReviewViewModelTest {
     }
 
     @Test
+    fun unlinkSucceedsWhenHistoricalCloudMetadataCleanupFails() = runTest {
+        val cloudDataSource = FakeScreenshotMetadataCloudDataSource(
+            deleteResult = ScreenshotMetadataCloudResult.Failed(ScreenshotMetadataCloudFailure.NETWORK),
+        )
+        val viewModel = reviewViewModel(
+            screenshotMetadataCloudDataSource = cloudDataSource,
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+        viewModel.onPhotoPickerResult("content://picker/cloud-cleanup-failure")
+        advanceUntilIdle()
+        viewModel.linkScreenshot()
+        advanceUntilIdle()
+
+        viewModel.unlinkScreenshot()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isScreenshotLinked)
+        assertFalse(viewModel.uiState.value.isScreenshotLocallyPreserved)
+        assertNull(viewModel.uiState.value.screenshotMetadata)
+        assertNull(viewModel.uiState.value.screenshotUploadError)
+    }
+
+    @Test
     fun restoredMetadataShowsLinkedStateAndMissingLocalFileMarksMetadataMissing() = runTest {
         val metadataRepository = FakeScreenshotMetadataRepository(
             metadata = ScreenshotMetadataEntity(

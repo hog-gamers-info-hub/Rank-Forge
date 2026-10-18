@@ -3604,18 +3604,14 @@ class MatchReviewViewModel @Inject constructor(
                         tournamentId = tournamentId,
                         localMatchId = matchId,
                     )
-                    val cloudDeleteResult = if (cloudMatchId != null) {
+                    if (cloudMatchId != null) {
                         try {
                             screenshotMetadataCloudDataSource.deleteByMatchId(cloudMatchId)
                         } catch (cancellation: CancellationException) {
                             throw cancellation
                         } catch (_: Throwable) {
-                            ScreenshotMetadataCloudResult.Success
+                            Unit
                         }
-                    } else {
-                        ScreenshotMetadataCloudResult.Failed(
-                            ScreenshotMetadataCloudFailure.WRITE_FAILED,
-                        )
                     }
                     _uiState.update { latest ->
                         if (latest.tournamentId == tournamentId && latest.matchId == matchId) {
@@ -3631,11 +3627,7 @@ class MatchReviewViewModel @Inject constructor(
                                 screenshotPreservationError = null,
                                 isScreenshotUploaded = false,
                                 screenshotUploadObjectPath = null,
-                                screenshotUploadError = if (cloudDeleteResult is ScreenshotMetadataCloudResult.Failed) {
-                                    cloudDeleteResult.failure.toUiError()
-                                } else {
-                                    null
-                                },
+                                screenshotUploadError = null,
                             )
                         } else {
                             latest
