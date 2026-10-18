@@ -2392,7 +2392,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun validPreservedScreenshotUploadsFromTheLocalFileAndReportsSuccess() = runTest {
+    fun validPreservedScreenshotRemainsLocalWithoutUploading() = runTest {
         val uri = "content://picker/upload"
         val bytes = byteArrayOf(10, 20, 30)
         val uploader = RecordingScreenshotStorageUploader(
@@ -2412,13 +2412,12 @@ class MatchReviewViewModelTest {
         viewModel.linkScreenshot()
         advanceUntilIdle()
 
-        assertEquals(1, uploader.calls.size)
-        assertEquals(bytes.toList(), uploader.calls.single().readBytes().toList())
-        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
-        assertEquals(
-            screenshotObjectPath("user-id", matchId, "png"),
-            viewModel.uiState.value.screenshotUploadObjectPath,
-        )
+        assertEquals(0, uploader.calls.size)
+        assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
+        assertFalse(viewModel.uiState.value.isScreenshotUploadInProgress)
+        assertFalse(viewModel.uiState.value.isScreenshotUploaded)
+        assertNull(viewModel.uiState.value.screenshotUploadObjectPath)
+        assertNull(viewModel.uiState.value.screenshotUploadError)
     }
 
     @Test
@@ -2497,7 +2496,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun metadataIsCreatedAfterSuccessfulPreservationAndUpdatedAfterStorageUpload() = runTest {
+    fun metadataIsCreatedAfterSuccessfulPreservationWithoutCloudUpload() = runTest {
         val uri = "content://picker/metadata"
         val bytes = byteArrayOf(1, 2, 3, 4)
         val metadataRepository = FakeScreenshotMetadataRepository()
@@ -2531,14 +2530,15 @@ class MatchReviewViewModelTest {
         assertEquals(1920, metadata.height)
         assertEquals(bytes.size.toLong(), metadata.byteSize)
         assertEquals(ScreenshotLocalStatus.PRESERVED.name, metadata.localStatus)
-        assertEquals(ScreenshotUploadStatus.UPLOADED.name, metadata.uploadStatus)
-        assertEquals(2, metadata.revision)
-        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
-        assertEquals(ScreenshotMetadataUploadUiStatus.UPLOADED, viewModel.uiState.value.screenshotMetadata!!.uploadStatus)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, metadata.uploadStatus)
+        assertEquals(1, metadata.revision)
+        assertFalse(viewModel.uiState.value.isScreenshotUploaded)
+        assertEquals(ScreenshotMetadataUploadUiStatus.PENDING, viewModel.uiState.value.screenshotMetadata!!.uploadStatus)
+        assertEquals(0, uploader.calls.size)
     }
 
     @Test
-    fun cloudMetadataFailureMarksLocalMetadataFailedWithControlledCode() = runTest {
+    fun cloudMetadataIsNotAttemptedAfterLocalPreservation() = runTest {
         val metadataRepository = FakeScreenshotMetadataRepository()
         val cloudDataSource = FakeScreenshotMetadataCloudDataSource(
             upsertResult = ScreenshotMetadataCloudResult.Failed(ScreenshotMetadataCloudFailure.AUTHORIZATION),
@@ -2561,9 +2561,10 @@ class MatchReviewViewModelTest {
         viewModel.linkScreenshot()
         advanceUntilIdle()
 
-        assertEquals(ScreenshotUploadStatus.FAILED.name, metadataRepository.metadata.value!!.uploadStatus)
-        assertEquals(ScreenshotMetadataFailureCode.RLS_DENIED.name, metadataRepository.metadata.value!!.uploadFailureCode)
-        assertEquals(ScreenshotUploadError.RLS_DENIED, viewModel.uiState.value.screenshotUploadError)
+        assertEquals(ScreenshotUploadStatus.PENDING.name, metadataRepository.metadata.value!!.uploadStatus)
+        assertEquals(null, metadataRepository.metadata.value!!.uploadFailureCode)
+        assertEquals(null, viewModel.uiState.value.screenshotUploadError)
+        assertEquals(0, cloudDataSource.upserts.size)
     }
 
     @Test
@@ -2592,7 +2593,7 @@ class MatchReviewViewModelTest {
     }
 
     @Test
-    fun uploadFailureKeepsLocalPreservedFileAndShowsControlledError() = runTest {
+    fun localPreservationDoesNotShowAnUploadFailure() = runTest {
         val uri = "content://picker/upload-failure"
         val uploader = RecordingScreenshotStorageUploader(
             ScreenshotStorageUploadResult.Failed(
@@ -2610,11 +2611,13 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
-        assertEquals(ScreenshotUploadError.NETWORK, viewModel.uiState.value.screenshotUploadError)
+        assertEquals(0, uploader.calls.size)
+        assertEquals(null, viewModel.uiState.value.screenshotUploadError)
+        assertFalse(viewModel.uiState.value.isScreenshotUploadInProgress)
     }
 
     @Test
-    fun uploadFailureCanBeRetriedWithoutLosingTheLocalFile() = runTest {
+    fun screenshotUploadRetryIsANoop() = runTest {
         val uploader = RecordingScreenshotStorageUploader(
             ScreenshotStorageUploadResult.Failed(
                 com.hoggamers.rankforge.data.cloud.ScreenshotStorageUploadFailure.NETWORK,
@@ -2628,13 +2631,13 @@ class MatchReviewViewModelTest {
         viewModel.linkScreenshot()
         advanceUntilIdle()
 
-        uploader.result = ScreenshotStorageUploadResult.Uploaded("users/user/tournaments/t/matches/m/original.png")
         viewModel.retryScreenshotUpload()
         advanceUntilIdle()
 
-        assertEquals(2, uploader.calls.size)
+        assertEquals(0, uploader.calls.size)
         assertTrue(viewModel.uiState.value.isScreenshotLocallyPreserved)
-        assertTrue(viewModel.uiState.value.isScreenshotUploaded)
+        assertFalse(viewModel.uiState.value.isScreenshotUploaded)
+        assertFalse(viewModel.uiState.value.isScreenshotUploadInProgress)
     }
 
     @Test

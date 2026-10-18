@@ -2417,9 +2417,6 @@ class MatchReviewViewModel @Inject constructor(
                 AutomaticResultCropOutcome.Stale
             }
         }
-        resultCropReconciliationScheduler.schedule(ownerUserId, screenshotOwnerProvider) {
-            resultUploadCheckpoint.run(identity, ownerUserId)
-        }
         return AutomaticResultCropOutcome.Saved
     }
 
@@ -2837,29 +2834,7 @@ class MatchReviewViewModel @Inject constructor(
         }
     }
     fun retryResultScreenshotUpload(role: MatchResultScreenshotRole) {
-        val current = _uiState.value
-        val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
-        val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
-        val slot = current.resultScreenshots.slot(role)
-        val relativePath = slot.localRelativePath ?: return
-        val file = localImagePreserver.resolveRelativePath(relativePath) ?: return
-        if (!current.isEditable || slot.isUploadInProgress || !slot.hasLinkedAsset) return
-        resultScreenshotJobs.remove(role)?.cancel()
-        _uiState.updateSlot(role) {
-            it.copy(isUploadInProgress = true, uploadError = null)
-        }
-        val identity = MatchResultScreenshotIdentity(
-            tournamentId = tournamentId,
-            matchId = matchId,
-            role = role,
-        )
-        resultScreenshotJobs[role] = viewModelScope.launch {
-            uploadMatchResultScreenshot(
-                identity = identity,
-                selectedUri = slot.linkedScreenshotUri ?: slot.selectedScreenshotUri.orEmpty(),
-                preservedFile = file,
-            )
-        }
+        Unit
     }
 
     fun requestPhotoPicker() {
@@ -3153,26 +3128,12 @@ class MatchReviewViewModel @Inject constructor(
                             } else {
                                 null
                             },
-                            isScreenshotUploadInProgress = true,
+                            isScreenshotUploadInProgress = false,
                             isScreenshotUploaded = false,
                             screenshotUploadObjectPath = null,
                             screenshotUploadError = null,
                         )
                     }
-                }
-                val uploadIsStillCurrent = _uiState.value.let { latest ->
-                    latest.tournamentId == tournamentId &&
-                        latest.matchId == matchId &&
-                        latest.selectedScreenshotUri == selectedUri &&
-                        latest.isScreenshotLinked
-                }
-                if (uploadIsStillCurrent) {
-                    uploadPreservedScreenshot(
-                        tournamentId = tournamentId,
-                        matchId = matchId,
-                        selectedUri = selectedUri,
-                        preservedFile = preservedFile,
-                    )
                 }
             } else {
                 _uiState.update { latest ->
@@ -3569,33 +3530,7 @@ class MatchReviewViewModel @Inject constructor(
 
     private fun nowMillis(): Long = clock.millis()
 
-    fun retryScreenshotUpload() {
-        val current = _uiState.value
-        val tournamentId = current.tournamentId?.takeIf { it.isNotBlank() } ?: return
-        val matchId = current.matchId?.takeIf { it.isNotBlank() } ?: return
-        val selectedUri = current.linkedScreenshotUri ?: current.selectedScreenshotUri.orEmpty()
-        val preservedPath = current.preservedScreenshotRelativePath ?: return
-        if (
-            current.status == MatchStatus.FINALIZED ||
-            current.isScreenshotUploadInProgress ||
-            !current.isScreenshotLocallyPreserved
-        ) return
-        _uiState.update {
-            it.copy(
-                isScreenshotUploadInProgress = true,
-                screenshotUploadError = null,
-            )
-        }
-        uploadJob?.cancel()
-        uploadJob = viewModelScope.launch {
-            uploadPreservedScreenshot(
-                tournamentId = tournamentId,
-                matchId = matchId,
-                selectedUri = selectedUri,
-                preservedFile = localImagePreserver.resolveRelativePath(preservedPath),
-            )
-        }
-    }
+    fun retryScreenshotUpload() = Unit
 
     fun unlinkScreenshot() {
         val current = _uiState.value

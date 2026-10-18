@@ -292,9 +292,6 @@ class MatchResultScreenshotCropViewModel @Inject constructor(
                             error = null,
                         )
                     }
-                    reconciliationScheduler.schedule(expectedOwnerUserId, screenshotOwnerProvider) {
-                        uploadCheckpoint.run(identity, expectedOwnerUserId)
-                    }
                     draftEdited = false
                     onConfirmed()
                 }

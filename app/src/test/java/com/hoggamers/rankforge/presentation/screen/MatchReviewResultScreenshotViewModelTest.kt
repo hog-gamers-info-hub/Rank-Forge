@@ -324,7 +324,7 @@ class MatchReviewResultScreenshotViewModelTest {
         assertEquals(byteArrayOf(2).sha256(), current.sha256)
         assertEquals(0.2, current.cropLeft!!, 0.0)
         assertNull(viewModel.uiState.value.navigation)
-        assertEquals(1, checkpointCalls.size)
+        assertEquals(0, checkpointCalls.size)
     }
 
     @Test
@@ -439,7 +439,7 @@ class MatchReviewResultScreenshotViewModelTest {
 
 
     @Test
-    fun authorizationUploadIsDeferredUntilCropConfirmation() = runTest {
+    fun resultScreenshotUploadRetryIsANoopBeforeCropConfirmation() = runTest {
         val upperUri = "content://picker/upper-auth-denied"
         val assetRepository = FakeMatchResultScreenshotAssetRepository()
         val uploader = RecordingMatchResultScreenshotStorageUploader(
@@ -463,6 +463,9 @@ class MatchReviewResultScreenshotViewModelTest {
             .slot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
         assertTrue(upper.hasLinkedAsset)
         assertNull(upper.uploadError)
+        assertTrue(uploader.calls.isEmpty())
+        viewModel.retryResultScreenshotUpload(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        advanceUntilIdle()
         assertTrue(uploader.calls.isEmpty())
         assertEquals(
             MatchReviewNavigation.RESULT_SCREENSHOT_1_CROP,

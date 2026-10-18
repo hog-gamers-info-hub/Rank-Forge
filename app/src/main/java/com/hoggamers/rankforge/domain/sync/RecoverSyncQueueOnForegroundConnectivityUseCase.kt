@@ -21,7 +21,6 @@ class RecoverSyncQueueOnForegroundConnectivityUseCase @Inject constructor(
             val isSignedIn = authRepository.observeAuthState().first() is AuthState.SignedIn
             if (isSignedIn) {
                 queueRecovery.recoverAfterAuthenticatedSession()
-                screenshotRecovery.recoverAfterParentQueue()
             }
         } catch (cancellation: CancellationException) {
             throw cancellation

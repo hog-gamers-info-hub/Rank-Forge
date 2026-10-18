@@ -181,9 +181,6 @@ class MatchLobbyScreenshotCropViewModel @Inject constructor(
                             error = null,
                         )
                     }
-                    reconciliationScheduler.schedule(expectedOwnerUserId, screenshotOwnerProvider) {
-                        uploadCheckpoint.run(identity, expectedOwnerUserId)
-                    }
                     _uiState.update { it.copy(isSaving = false) }
                     onConfirmed()
                 }
