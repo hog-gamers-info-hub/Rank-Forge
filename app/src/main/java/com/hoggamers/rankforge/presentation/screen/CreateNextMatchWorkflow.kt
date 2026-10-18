@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesResult
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
@@ -25,6 +26,7 @@ class CreateNextMatchWorkflow @Inject constructor(
     private val validateTournamentRoster: ValidateTournamentRosterUseCase,
     private val createNextMatch: CreateNextMatchUseCase,
     private val syncDraftMatches: DraftMatchCloudSyncAction,
+    private val uploadTournament: TournamentCloudUploadAction,
     private val applyLobbyTemplate: ApplyLobbyTemplateAction,
     private val lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction,
     private val readMatchTeamIdentityContext: ReadMatchTeamIdentityContextUseCase =
@@ -89,9 +91,19 @@ class CreateNextMatchWorkflow @Inject constructor(
         )
         if (validation.hasBlockingIssues) return false
 
-        return runCatching {
+        val saveResult = runCatching {
             saveTeamSlotNames(tournamentId, names)
-        }.getOrNull() == SaveTeamSlotNamesResult.Saved
+        }.getOrNull()
+        if (saveResult != SaveTeamSlotNamesResult.Saved) return false
+
+        try {
+            uploadTournament(tournamentId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            // Local default names remain authoritative when cloud upload is unavailable.
+        }
+        return true
     }
 
     suspend fun create(

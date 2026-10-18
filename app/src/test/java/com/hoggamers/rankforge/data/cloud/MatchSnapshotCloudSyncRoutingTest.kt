@@ -247,16 +247,44 @@ class MatchSnapshotCloudSyncRoutingTest {
         val writeRevisions = mutableListOf<Int>()
         val finalizeRevisions = mutableListOf<Int>()
 
-        override suspend fun <M, R> invokeWrite(
-            parameters: MatchSnapshotWriteParameters<M, R>,
+        override suspend fun invokeWrite(
+            parameters: MatchSnapshotWriteParameters<
+                DraftMatchUploadPayload,
+                DraftMatchResultUploadPayload,
+                >,
         ): RevisionWriteResponse {
             calls += "write"
             writeRevisions += parameters.expectedRevision
             return writeResponse
         }
 
-        override suspend fun <M, R> invokeWriteGroupRotation(
-            parameters: MatchSnapshotWriteParameters<M, R>,
+        override suspend fun invokeWriteGroupRotation(
+            parameters: MatchSnapshotWriteParameters<
+                DraftMatchUploadPayload,
+                DraftMatchResultUploadPayload,
+                >,
+        ): RevisionWriteResponse {
+            calls += "write_v2"
+            writeRevisions += parameters.expectedRevision
+            return writeResponse
+        }
+
+        override suspend fun invokeWriteFinalizedBootstrap(
+            parameters: MatchSnapshotWriteParameters<
+                FinalizedMatchUploadPayload,
+                FinalizedMatchResultUploadPayload,
+                >,
+        ): RevisionWriteResponse {
+            calls += "write"
+            writeRevisions += parameters.expectedRevision
+            return writeResponse
+        }
+
+        override suspend fun invokeWriteFinalizedBootstrapGroupRotation(
+            parameters: MatchSnapshotWriteParameters<
+                FinalizedMatchUploadPayload,
+                FinalizedMatchResultUploadPayload,
+                >,
         ): RevisionWriteResponse {
             calls += "write_v2"
             writeRevisions += parameters.expectedRevision

@@ -164,7 +164,7 @@ class TournamentDetailsViewModelTest {
 
         assertEquals("stable-id", viewModel.uiState.value.matchReviewRequest?.tournamentId)
         assertTrue(events.first().startsWith("apply:"))
-        assertEquals(listOf("sync", "upload:1", "upload:2", "upload:3"), events.drop(1))
+        assertEquals(listOf("sync"), events.drop(1))
     }
 
     @Test
@@ -201,7 +201,17 @@ class TournamentDetailsViewModelTest {
     fun useDefaultsPersistsRemainingNamesAndRequestsMatch() = runTest {
         repository.create(tournament(id = "stable-id"))
         repository.saveTeamNames("stable-id", (1..8).associateWith { "Team $it" })
-        val viewModel = detailsViewModel()
+        val events = mutableListOf<String>()
+        val viewModel = detailsViewModel(
+            syncDraftMatches = RecordingDraftMatchCloudSyncAction(onInvoke = { events += "sync" }),
+            uploadTournament = TournamentCloudUploadAction {
+                events += "upload"
+                QueueAwareActionResult(
+                    primaryResult = TournamentCloudUploadResult.Success(2),
+                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                )
+            },
+        )
         viewModel.load("stable-id")
         advanceUntilIdle()
         viewModel.onCalculatePointsRequested()
@@ -211,6 +221,7 @@ class TournamentDetailsViewModelTest {
         advanceUntilIdle()
 
         assertEquals("stable-id", viewModel.uiState.value.matchReviewRequest?.tournamentId)
+        assertEquals(listOf("upload", "sync"), events)
         assertEquals(
             (1..8).map { "Team $it" } + (9..12).map { "Team ${it.toString().padStart(2, '0')}" },
             repository.observeSlotsByTournamentId("stable-id").first().map { it.teamName },
@@ -624,6 +635,12 @@ class TournamentDetailsViewModelTest {
         syncDraftMatches: DraftMatchCloudSyncAction = RecordingDraftMatchCloudSyncAction(),
         applyLobbyTemplate: ApplyLobbyTemplateAction = ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
         lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction = MatchLobbyScreenshotUploadCheckpointAction { MatchLobbyScreenshotUploadCheckpointResult.Skipped },
+        uploadTournament: TournamentCloudUploadAction = TournamentCloudUploadAction {
+            QueueAwareActionResult(
+                primaryResult = TournamentCloudUploadResult.Success(1),
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        },
     ) = TournamentDetailsViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
@@ -639,6 +656,7 @@ class TournamentDetailsViewModelTest {
             SignedInTournamentTestAuthRepository(),
         ),
         syncDraftMatches = syncDraftMatches,
+        uploadTournament = uploadTournament,
         applyLobbyTemplate = applyLobbyTemplate,
         lobbyUploadCheckpoint = lobbyUploadCheckpoint,
     )

@@ -43,6 +43,8 @@ import com.hoggamers.rankforge.domain.tournament.CreateMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
+import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
@@ -540,6 +542,52 @@ class MatchReviewViewModelTest {
         advanceUntilIdle()
 
         assertEquals(2, repository.observeMatchesByTournamentId(TOURNAMENT_ID).first().size)
+        assertNotNull(viewModel.uiState.value.nextMatchReviewRequest)
+    }
+
+    @Test
+    fun useDefaultsForNextMatchUploadsStandardRosterBeforeDraftSync() = runTest {
+        repository.saveTeamNames(
+            TOURNAMENT_ID,
+            TeamSlot.SLOT_NUMBERS.associate { slotNumber ->
+                slotNumber to if (slotNumber <= 8) "Team $slotNumber" else ""
+            },
+        )
+        val events = mutableListOf<String>()
+        val viewModel = reviewViewModel(
+            uploadTournament = TournamentCloudUploadAction {
+                events += "upload"
+                QueueAwareActionResult(
+                    primaryResult = TournamentCloudUploadResult.Success(2),
+                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                )
+            },
+            syncDraftMatches = DraftMatchCloudSyncAction {
+                events += "sync"
+                QueueAwareActionResult(
+                    primaryResult = DraftMatchCloudSyncResult.Success,
+                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                )
+            },
+        )
+        viewModel.load(TOURNAMENT_ID, matchId)
+        advanceUntilIdle()
+
+        viewModel.requestNextMatchCreation()
+        advanceUntilIdle()
+        assertNotNull(viewModel.uiState.value.pendingNextMatchTeamCountConfirmation)
+
+        viewModel.useDefaultsForNextMatch()
+        advanceUntilIdle()
+
+        assertEquals(listOf("upload", "sync"), events)
+        assertEquals(
+            (1..12).associateWith { slotNumber ->
+                if (slotNumber <= 8) "Team $slotNumber" else "Team ${slotNumber.toString().padStart(2, '0')}"
+            },
+            repository.observeSlotsByTournamentId(TOURNAMENT_ID).first()
+                .associate { slot -> slot.slotNumber to slot.teamName },
+        )
         assertNotNull(viewModel.uiState.value.nextMatchReviewRequest)
     }
 
@@ -4019,6 +4067,18 @@ class MatchReviewViewModelTest {
             ScreenshotReconciliationScheduler(),
         applyLobbyTemplate: ApplyLobbyTemplateAction =
             ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
+        uploadTournament: TournamentCloudUploadAction = TournamentCloudUploadAction {
+            QueueAwareActionResult(
+                primaryResult = TournamentCloudUploadResult.Success(1),
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        },
+        syncDraftMatches: DraftMatchCloudSyncAction = DraftMatchCloudSyncAction {
+            QueueAwareActionResult(
+                primaryResult = DraftMatchCloudSyncResult.Success,
+                queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+            )
+        },
         createNextMatchWorkflow: CreateNextMatchWorkflow = CreateNextMatchWorkflow(
             observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
             saveTeamSlotNames = SaveTeamSlotNamesUseCase(
@@ -4032,12 +4092,8 @@ class MatchReviewViewModelTest {
                 java.time.Clock.systemUTC(),
                 repository,
             ),
-            syncDraftMatches = DraftMatchCloudSyncAction {
-                QueueAwareActionResult(
-                    primaryResult = DraftMatchCloudSyncResult.Success,
-                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
-                )
-            },
+            syncDraftMatches = syncDraftMatches,
+            uploadTournament = uploadTournament,
             applyLobbyTemplate = applyLobbyTemplate,
             lobbyUploadCheckpoint = MatchLobbyScreenshotUploadCheckpointAction {
                 MatchLobbyScreenshotUploadCheckpointResult.Skipped
