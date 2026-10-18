@@ -27,6 +27,8 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchLobbyScreenshotIdentit
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -57,7 +59,7 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
         matchId: String,
         ownerUserId: String,
         evidence: MatchCalculatedEvidence,
-    ): RestoredMatchCalculatedEvidencePreviews? {
+    ): RestoredMatchCalculatedEvidencePreviews? = withContext(Dispatchers.Default) {
         val lobby = try {
             restoreLobby(tournamentId, matchId, ownerUserId, evidence).orEmpty()
         } catch (cancellation: CancellationException) {
@@ -72,7 +74,7 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
         } catch (_: Throwable) {
             emptyMap()
         }
-        return RestoredMatchCalculatedEvidencePreviews(
+        return@withContext RestoredMatchCalculatedEvidencePreviews(
             lobbyTeamCropPreviewsByScreenshotIndex = lobby,
             resultPositionCropPreviews = result,
             lobbyTeamNamesBySlot = evidence.lobby.teams.mapNotNull { team ->
