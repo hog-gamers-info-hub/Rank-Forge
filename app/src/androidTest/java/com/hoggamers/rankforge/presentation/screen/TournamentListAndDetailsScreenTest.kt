@@ -891,6 +891,187 @@ class TournamentListAndDetailsScreenTest {
     }
 
     @Test
+    fun standardFinalizedDetailsShowsRetryCloudBackupAndPreventsDuplicateTapWhileLoading() {
+        var retryTournamentId: String? = null
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            status = TournamentStatus.CONFIRMED,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    retryCloudBackupUiState = RetryCloudBackupUiState.Loading,
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    onRetryCloudBackup = { retryTournamentId = it },
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag(RETRY_CLOUD_BACKUP_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+        composeTestRule
+            .onNodeWithTag(RETRY_CLOUD_BACKUP_STATUS_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.retry_cloud_backup_loading))
+            .assertIsDisplayed()
+        composeTestRule.runOnIdle {
+            assertEquals(null, retryTournamentId)
+        }
+    }
+
+    @Test
+    fun standardFinalizedDetailsShowsSuccessfulCloudBackupFeedback() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            status = TournamentStatus.CONFIRMED,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    retryCloudBackupUiState = RetryCloudBackupUiState.Success,
+                    onBackToList = {},
+                    onEnterTeams = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.retry_cloud_backup_success))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun standardFinalizedDetailsShowsCloudBackupFailureFeedback() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            status = TournamentStatus.CONFIRMED,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    retryCloudBackupUiState = RetryCloudBackupUiState.NetworkFailure,
+                    onBackToList = {},
+                    onEnterTeams = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.retry_cloud_backup_network_failure))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun standardFinalizedDetailsRetryCloudBackupRequiresExplicitTap() {
+        var retryTournamentId: String? = null
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            status = TournamentStatus.CONFIRMED,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                    onRetryCloudBackup = { retryTournamentId = it },
+                )
+            }
+        }
+
+        composeTestRule.runOnIdle {
+            assertEquals(null, retryTournamentId)
+        }
+        composeTestRule.onNodeWithTag(RETRY_CLOUD_BACKUP_ACTION_TEST_TAG).performScrollTo().performClick()
+        composeTestRule.runOnIdle {
+            assertEquals("stable-id", retryTournamentId)
+        }
+    }
+
+    @Test
+    fun groupRotationDetailsDoNotShowRetryCloudBackup() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                TournamentDetailsScreen(
+                    uiState = TournamentDetailsUiState(
+                        isLoading = false,
+                        tournament = tournamentDetailsItem(
+                            format = TournamentFormat.GROUP_ROTATION,
+                            status = TournamentStatus.CONFIRMED,
+                            matches = listOf(
+                                MatchUiState(
+                                    id = "finalized-id",
+                                    matchNumber = 1,
+                                    date = LocalDate.of(2026, 7, 24),
+                                    mapName = "Bermuda",
+                                    status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+                                ),
+                            ),
+                        ),
+                    ),
+                    onBackToList = {},
+                    onEnterTeams = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(RETRY_CLOUD_BACKUP_ACTION_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(RETRY_CLOUD_BACKUP_STATUS_TEST_TAG).assertCountEquals(0)
+    }
+
+    @Test
     fun groupRotationDetailsHidesLegacyStandingsCsvAction() {
         composeTestRule.setContent {
             RankForgeTheme {
