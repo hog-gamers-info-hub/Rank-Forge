@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+import com.hoggamers.rankforge.domain.tournament.CreateNextMatchResult
 import com.hoggamers.rankforge.domain.tournament.CreateNextMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
@@ -98,24 +99,80 @@ class CreateNextMatchWorkflowTest {
         )
     }
 
+    @Test
+    fun successfulTemplateInheritanceDoesNotInvokeLobbyUploadCheckpoint() = runTest {
+        val repository = RecordingTournamentRepository()
+        val auth = SignedInTournamentTestAuthRepository()
+        val tournamentId = "next-match-template"
+        repository.create(
+            Tournament(
+                id = tournamentId,
+                name = "Template Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.DRAFT,
+                format = TournamentFormat.STANDARD,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+            ),
+        )
+        repository.saveTeamNames(tournamentId, mapOf(1 to "Team 1"))
+
+        val appliedMatches = mutableListOf<Pair<String, String>>()
+        var draftSyncCalls = 0
+        var lobbyUploadCheckpointCalls = 0
+        val workflow = workflow(
+            repository = repository,
+            auth = auth,
+            syncDraftMatches = DraftMatchCloudSyncAction {
+                draftSyncCalls += 1
+                QueueAwareActionResult(
+                    primaryResult = DraftMatchCloudSyncResult.Success,
+                    queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
+                )
+            },
+            applyLobbyTemplate = ApplyLobbyTemplateAction { appliedTournamentId, matchId ->
+                appliedMatches += appliedTournamentId to matchId
+                ApplyLobbyTemplateResult.Applied
+            },
+            lobbyUploadCheckpoint = MatchLobbyScreenshotUploadCheckpointAction {
+                lobbyUploadCheckpointCalls += 1
+                MatchLobbyScreenshotUploadCheckpointResult.Skipped
+            },
+        )
+
+        val result = workflow.create(tournamentId)
+
+        assertTrue(result is CreateNextMatchResult.Created)
+        val createdMatch = (result as CreateNextMatchResult.Created).match
+        assertEquals(listOf(tournamentId to createdMatch.id), appliedMatches)
+        assertEquals(1, draftSyncCalls)
+        assertEquals(0, lobbyUploadCheckpointCalls)
+    }
+
     private fun workflow(
         repository: RecordingTournamentRepository,
         auth: SignedInTournamentTestAuthRepository,
-    ): CreateNextMatchWorkflow = CreateNextMatchWorkflow(
-        observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
-        saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository, auth),
-        validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
-        createNextMatch = CreateNextMatchUseCase(repository, auth),
-        syncDraftMatches = DraftMatchCloudSyncAction {
+        syncDraftMatches: DraftMatchCloudSyncAction = DraftMatchCloudSyncAction {
             QueueAwareActionResult(
                 primaryResult = DraftMatchCloudSyncResult.Success,
                 queueRecordingResult = QueueRecordingResult.NOT_REQUIRED,
             )
         },
-        applyLobbyTemplate = ApplyLobbyTemplateAction { _, _ -> ApplyLobbyTemplateResult.Unavailable },
-        lobbyUploadCheckpoint = MatchLobbyScreenshotUploadCheckpointAction {
-            MatchLobbyScreenshotUploadCheckpointResult.Skipped
+        applyLobbyTemplate: ApplyLobbyTemplateAction = ApplyLobbyTemplateAction { _, _ ->
+            ApplyLobbyTemplateResult.Unavailable
         },
+        lobbyUploadCheckpoint: MatchLobbyScreenshotUploadCheckpointAction =
+            MatchLobbyScreenshotUploadCheckpointAction {
+                MatchLobbyScreenshotUploadCheckpointResult.Skipped
+            },
+    ): CreateNextMatchWorkflow = CreateNextMatchWorkflow(
+        observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+        saveTeamSlotNames = SaveTeamSlotNamesUseCase(repository, auth),
+        validateTournamentRoster = ValidateTournamentRosterUseCase(repository, RosterValidator()),
+        createNextMatch = CreateNextMatchUseCase(repository, auth),
+        syncDraftMatches = syncDraftMatches,
+        applyLobbyTemplate = applyLobbyTemplate,
+        lobbyUploadCheckpoint = lobbyUploadCheckpoint,
         readMatchTeamIdentityContext = ReadMatchTeamIdentityContextUseCase(repository, auth),
     )
 
