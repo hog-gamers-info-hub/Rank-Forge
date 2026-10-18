@@ -69,8 +69,6 @@ import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRetryAction
 import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.SyncDraftMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
-import com.hoggamers.rankforge.domain.tournament.RetryCloudBackupAction
-import com.hoggamers.rankforge.domain.tournament.RetryCloudBackupUseCase
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRetryAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncRepository
 import com.hoggamers.rankforge.domain.tournament.SyncFinalizedMatchesUseCase
@@ -392,12 +390,6 @@ abstract class CloudUploadDataBindingsModule {
     abstract fun bindFinalizedMatchCloudSyncRetryAction(
         useCase: GroupRotationDevFinalizedMatchCloudSyncAction,
     ): FinalizedMatchCloudSyncRetryAction
-
-    @Binds
-    @Singleton
-    abstract fun bindRetryCloudBackupAction(
-        useCase: RetryCloudBackupUseCase,
-    ): RetryCloudBackupAction
 
     @Binds
     @Singleton

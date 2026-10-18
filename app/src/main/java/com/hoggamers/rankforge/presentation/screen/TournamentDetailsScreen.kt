@@ -144,8 +144,6 @@ const val TOURNAMENT_SCORING_RULES_ACTION_TEST_TAG = "tournament_details_scoring
 const val EDIT_TEAMS_ACTION_TEST_TAG = "edit_teams_action"
 const val MATCH_PROCESSING_SECTION_TEST_TAG = "match_processing_section"
 const val MATCH_STATUS_TEST_TAG_PREFIX = "match_status_"
-const val RETRY_CLOUD_BACKUP_ACTION_TEST_TAG = "retry_cloud_backup_action"
-const val RETRY_CLOUD_BACKUP_STATUS_TEST_TAG = "retry_cloud_backup_status"
 private const val SHOW_LEGACY_TOURNAMENT_DETAILS_CONTROLS = false
 
 @Composable
@@ -167,7 +165,6 @@ fun TournamentDetailsRoute(
     draftMatchSyncViewModel: DraftMatchCloudSyncViewModel? = null,
     finalizedMatchSyncViewModel: FinalizedMatchCloudSyncViewModel? = null,
     matchCloudRestorationViewModel: MatchCloudRestorationViewModel? = null,
-    retryCloudBackupViewModel: RetryCloudBackupViewModel? = hiltViewModel(),
 ) {
     LaunchedEffect(tournamentId) {
         viewModel.load(tournamentId)
@@ -212,12 +209,6 @@ fun TournamentDetailsRoute(
     }
     val matchCloudRestorationUiState = if (matchCloudRestorationViewModel == null) MatchCloudRestorationUiState.Idle else {
         val state by matchCloudRestorationViewModel.uiState.collectAsStateWithLifecycle(); state
-    }
-    val retryCloudBackupUiState = if (retryCloudBackupViewModel == null) {
-        RetryCloudBackupUiState.Idle
-    } else {
-        val state by retryCloudBackupViewModel.uiState.collectAsStateWithLifecycle()
-        state
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -287,8 +278,6 @@ fun TournamentDetailsRoute(
             onSyncFinalizedMatches = { id -> finalizedMatchSyncViewModel?.sync(id) },
             matchCloudRestorationUiState = matchCloudRestorationUiState,
             onRestoreMatches = { id -> matchCloudRestorationViewModel?.restore(id) },
-            retryCloudBackupUiState = retryCloudBackupUiState,
-            onRetryCloudBackup = { id -> retryCloudBackupViewModel?.retry(id) },
         )
         SnackbarHost(
             hostState = snackbarHostState,
@@ -329,8 +318,6 @@ fun TournamentDetailsScreen(
     onSyncFinalizedMatches: (String) -> Unit = {},
     matchCloudRestorationUiState: MatchCloudRestorationUiState = MatchCloudRestorationUiState.Idle,
     onRestoreMatches: (String) -> Unit = {},
-    retryCloudBackupUiState: RetryCloudBackupUiState = RetryCloudBackupUiState.Idle,
-    onRetryCloudBackup: (String) -> Unit = {},
     showLegacyControls: Boolean = SHOW_LEGACY_TOURNAMENT_DETAILS_CONTROLS,
     onDeleteTournament: (String) -> Unit = {},
     isDeleting: Boolean = false,
@@ -377,8 +364,6 @@ fun TournamentDetailsScreen(
             onSyncFinalizedMatches = onSyncFinalizedMatches,
             matchCloudRestorationUiState = matchCloudRestorationUiState,
             onRestoreMatches = onRestoreMatches,
-            retryCloudBackupUiState = retryCloudBackupUiState,
-            onRetryCloudBackup = onRetryCloudBackup,
             showLegacyControls = showLegacyControls,
             onDeleteTournament = onDeleteTournament,
             isDeleting = isDeleting,
@@ -968,8 +953,6 @@ private fun TournamentDetailsContent(
     onSyncFinalizedMatches: (String) -> Unit,
     matchCloudRestorationUiState: MatchCloudRestorationUiState,
     onRestoreMatches: (String) -> Unit,
-    retryCloudBackupUiState: RetryCloudBackupUiState,
-    onRetryCloudBackup: (String) -> Unit,
     showLegacyControls: Boolean,
     onDeleteTournament: (String) -> Unit,
     isDeleting: Boolean,
@@ -1029,15 +1012,6 @@ private fun TournamentDetailsContent(
                     isCreatingMatch = isCreatingMatch || isDeleting,
                     onCreateMatch = { onCalculatePointsRequested(tournament.id) },
                 )
-                if (tournament.matches.any { it.status == MatchStatus.FINALIZED }) {
-                    Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-                    RetryCloudBackupSection(
-                        tournamentId = tournament.id,
-                        uiState = retryCloudBackupUiState,
-                        enabled = !isDeleting,
-                        onRetry = onRetryCloudBackup,
-                    )
-                }
             }
 
             if (calculatePointsMessage != null) {
@@ -1263,75 +1237,6 @@ private fun TournamentDeletionUiError.toMessageRes(): Int = when (this) {
     TournamentDeletionUiError.PREPARATION_FAILURE,
     TournamentDeletionUiError.UNKNOWN,
     -> R.string.tournament_delete_generic_error
-}
-
-@Composable
-private fun RetryCloudBackupSection(
-    tournamentId: String,
-    uiState: RetryCloudBackupUiState,
-    enabled: Boolean,
-    onRetry: (String) -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(RETRY_CLOUD_BACKUP_STATUS_TEST_TAG),
-        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
-    ) {
-        Button(
-            onClick = { onRetry(tournamentId) },
-            enabled = enabled && uiState !is RetryCloudBackupUiState.Loading,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(RETRY_CLOUD_BACKUP_ACTION_TEST_TAG),
-        ) {
-            Text(
-                text = stringResource(
-                    if (uiState is RetryCloudBackupUiState.Loading) {
-                        R.string.retry_cloud_backup_loading
-                    } else {
-                        R.string.retry_cloud_backup_action
-                    },
-                ),
-            )
-        }
-        Text(
-            text = when (uiState) {
-                RetryCloudBackupUiState.Idle -> stringResource(R.string.retry_cloud_backup_ready_message)
-                RetryCloudBackupUiState.Loading -> stringResource(R.string.retry_cloud_backup_loading)
-                RetryCloudBackupUiState.Success -> stringResource(R.string.retry_cloud_backup_success)
-                RetryCloudBackupUiState.AuthenticationRequired ->
-                    stringResource(R.string.retry_cloud_backup_authentication_required)
-                RetryCloudBackupUiState.AuthorizationFailure ->
-                    stringResource(R.string.retry_cloud_backup_authorization_failure)
-                RetryCloudBackupUiState.DeletionBlocked ->
-                    stringResource(R.string.retry_cloud_backup_deletion_blocked)
-                RetryCloudBackupUiState.LocalDataIncomplete ->
-                    stringResource(R.string.retry_cloud_backup_local_data_incomplete)
-                RetryCloudBackupUiState.RevisionConflict ->
-                    stringResource(R.string.retry_cloud_backup_revision_conflict)
-                RetryCloudBackupUiState.NetworkFailure ->
-                    stringResource(R.string.retry_cloud_backup_network_failure)
-                RetryCloudBackupUiState.ValidationFailure ->
-                    stringResource(R.string.retry_cloud_backup_validation_failure)
-                RetryCloudBackupUiState.QueuePersistenceFailure ->
-                    stringResource(R.string.retry_cloud_backup_queue_persistence_failed)
-                RetryCloudBackupUiState.PartialFailure ->
-                    stringResource(R.string.retry_cloud_backup_partial_failure)
-                RetryCloudBackupUiState.Failure ->
-                    stringResource(R.string.retry_cloud_backup_failed)
-            },
-            color = when (uiState) {
-                RetryCloudBackupUiState.Success -> PointIqDetailsCyan
-                RetryCloudBackupUiState.Idle,
-                RetryCloudBackupUiState.Loading,
-                -> PointIqDetailsSubtitle
-                else -> Color(0xFFFF9A9A)
-            },
-            fontWeight = if (uiState is RetryCloudBackupUiState.Idle) null else FontWeight.SemiBold,
-            modifier = Modifier.testTag(RETRY_CLOUD_BACKUP_STATUS_TEST_TAG),
-        )
-    }
 }
 
 @Composable
