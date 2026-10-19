@@ -357,12 +357,33 @@ class MatchReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG)
+        val nextMatchActions = composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG,
+        )
+        nextMatchActions.assertCountEquals(2)
+        val nextMatchNodes = nextMatchActions.fetchSemanticsNodes()
+        val pageActionIndex = nextMatchNodes.indexOfFirst { node ->
+            node.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Role) &&
+                node.config[androidx.compose.ui.semantics.SemanticsProperties.Role] ==
+                androidx.compose.ui.semantics.Role.Button
+        }
+        val menuActionIndex = nextMatchNodes.indexOfFirst { node ->
+            !node.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Role) ||
+                node.config[androidx.compose.ui.semantics.SemanticsProperties.Role] !=
+                androidx.compose.ui.semantics.Role.Button
+        }
+        assertTrue(pageActionIndex >= 0)
+        assertTrue(menuActionIndex >= 0)
+        nextMatchActions[pageActionIndex]
             .performScrollTo()
             .assertIsDisplayed()
             .assertIsEnabled()
-        composeTestRule.onNodeWithText("Create Match 6").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG).performClick()
+        nextMatchActions[menuActionIndex]
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        composeTestRule.onAllNodesWithText("Calculate Match 6").assertCountEquals(2)
+        nextMatchActions[menuActionIndex]
+            .performClick()
         composeTestRule.runOnIdle { assertEquals(1, createRequests) }
     }
 
@@ -430,7 +451,7 @@ class MatchReviewScreenTest {
         }
 
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG).assertIsDisplayed()
@@ -442,7 +463,9 @@ class MatchReviewScreenTest {
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_ROW_TEST_TAG_PREFIX + "1").assertCountEquals(0)
-        composeTestRule.onNodeWithText("Manual Calculate")
+        composeTestRule.onNodeWithText("Auto Calculate")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter Results Manually")
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_OCR_DETAILS_SECTION_TEST_TAG)
             .assertCountEquals(0)
@@ -473,7 +496,7 @@ class MatchReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESTORE_SKELETON_TEST_TAG)
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Review Match 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("Lobby screenshot slots").assertCountEquals(0)
     }
 
@@ -508,6 +531,8 @@ class MatchReviewScreenTest {
 
     @Test
     fun ocrPreflightIsShownWithZeroScreenshotsAndKeepsOcrReviewEnabled() {
+        var calculated = 0
+        var resultScreenshotPickerRequests = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -515,15 +540,41 @@ class MatchReviewScreenTest {
                     onEnterPlacements = {},
                     onEnterKills = {},
                     onBackToDetails = {},
+                    onCalculatePoints = { calculated++ },
+                    onSelectResultScreenshotBatch = { resultScreenshotPickerRequests++ },
                 )
             }
         }
 
-        composeTestRule.onNodeWithText("Manual Calculate")
+        composeTestRule.onNodeWithText("Auto Calculate")
             .assertIsDisplayed()
             .assertIsEnabled()
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+        composeTestRule.onNodeWithText("Enter Results Manually")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .performClick()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "No result screenshot is added. Add result screenshots for auto calculation.",
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CANCEL_ACTION_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG)
+            .assertTextContains("Add Result Screenshots")
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(0, calculated)
+            assertEquals(1, resultScreenshotPickerRequests)
+        }
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_PREFLIGHT_DIALOG_TEST_TAG)
             .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG)
+            .assertCountEquals(1)
     }
 
     @Test
@@ -1196,14 +1247,16 @@ class MatchReviewScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
             .assertIsNotDisplayed()
-        composeTestRule.onNodeWithText("Position - 2").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(2))
+            .assertTextContains("Not named")
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_OCR_ROWS_PAGER_TEST_TAG)
             .performTouchInput { swipeLeft() }
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0))
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Position - 1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextContains("Team 1")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(1))
             .assertIsNotDisplayed()
 
@@ -1955,6 +2008,81 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     }
 
     @Test
+    fun manualEntryHidesBlockerMessagesButKeepsFinalizeDisabledAndRestoresBlockersAfterBack() {
+        val baseOcrState = inlineOcrState()
+        val baseDraft = baseOcrState.correctionDraft ?: error("Expected correction draft")
+        val blockedDraft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+            baseDraft,
+            rowIndex = 0,
+            value = "",
+        )
+        val blockedOcrState = baseOcrState.copy(correctionDraft = blockedDraft)
+        var showInlineOcrDetails by mutableStateOf(false)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    onOpenManualReview = { showInlineOcrDetails = true },
+                    showInlineOcrDetails = showInlineOcrDetails,
+                    ocrUiState = blockedOcrState,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Enter Results Manually").performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithText("Fix before finalizing").assertCountEquals(0)
+
+        composeTestRule.onNodeWithText("Back").performClick()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithText("Fix before finalizing")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeTestRule.onNodeWithText("Fix before finalizing").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun inlineOcrResultsKeepFinalizeBlockerMessagesVisible() {
+        val baseOcrState = inlineOcrState()
+        val baseDraft = baseOcrState.correctionDraft ?: error("Expected correction draft")
+        val blockedDraft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+            baseDraft,
+            rowIndex = 0,
+            value = "",
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = baseOcrState.copy(correctionDraft = blockedDraft),
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Fix before finalizing")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .assertIsNotEnabled()
+    }
+
+    @Test
     fun resultPositionPagerKeepsTeamSlotControlsMappedToTheirCorrectionRows() {
         val ocrState = embeddedManualOcrState()
 
@@ -2598,9 +2726,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactPlacement(7))[0]
             .assertIsDisplayed()
-            .assertTextContains("Position - 7")
-        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactTeam(7))[0]
-            .assertTextContains("Team name - Not matched")
+            .assertTextContains("Not matched")
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.placementInput(6))[0]
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.killsInput(6))[0]
@@ -2627,7 +2753,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
 
         (1..4).forEach { slot ->
             composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, slot))
-                .assertTextContains("$slot. Not detected", substring = true)
+                .assertTextContains("$slot. [$slot]", substring = true)
         }
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactMenu(11))[0]
             .performClick()
@@ -2750,7 +2876,8 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         }
 
         composeTestRule.onNodeWithText("Position - 11").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Position - 12").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(12))
+            .assertTextContains("Team 1")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(11))
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 1))
@@ -4419,18 +4546,33 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
 
     @Test
     fun groupRotationWholeTournamentFormatDialogExposesOnlyPng() {
+        var showDownloadResult by mutableStateOf(false)
+        var download: Pair<DownloadResultSelection, DownloadResultDesignType>? = null
         composeTestRule.setContent {
             RankForgeTheme {
-                MatchReviewScreen(
-                    uiState = availableState().copy(
-                        status = MatchStatus.FINALIZED,
-                        finalizedParticipantSlotNumbers = (1..12).toSet(),
+                if (showDownloadResult) {
+                    DownloadResultScreen(
+                        matches = listOf(DownloadResultMatchOption("match-1", 1)),
                         tournamentFormat = TournamentFormat.GROUP_ROTATION,
-                    ),
-                    onEnterPlacements = {},
-                    onEnterKills = {},
-                    onBackToDetails = {},
-                )
+                        onBack = {},
+                        initialResult = DownloadResultSelection.Overall,
+                        initialDesign = DownloadResultDesignType.IMAGE,
+                        previewState = DownloadResultPreviewState.ResultImage(ByteArray(0)),
+                        onDownload = { selection, design -> download = selection to design },
+                    )
+                } else {
+                    MatchReviewScreen(
+                        uiState = availableState().copy(
+                            status = MatchStatus.FINALIZED,
+                            finalizedParticipantSlotNumbers = (1..12).toSet(),
+                            tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                        ),
+                        onEnterPlacements = {},
+                        onEnterKills = {},
+                        onBackToDetails = {},
+                        onOpenDownloadResult = { showDownloadResult = true },
+                    )
+                }
             }
         }
 
@@ -4438,16 +4580,26 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)[0]
             .performScrollTo()
             .performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_TOURNAMENT_TEST_TAG).performClick()
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_SCOPE_CONTINUE_TEST_TAG).performClick()
-
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PNG_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_PDF_TEST_TAG)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_SCREEN_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_OVERALL_OPTION_TEST_TAG)
+            .performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_IMAGE_OPTION_TEST_TAG)
+            .assertIsDisplayed()
+            .performClick()
+        composeTestRule.onAllNodesWithTag(DOWNLOAD_RESULT_DESIGN_FREE_OPTION_TEST_TAG)
             .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_CUSTOM_DESIGN_TEST_TAG)
-            .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_DOWNLOAD_FORMAT_MY_CUSTOM_DESIGN_TEST_TAG)
-            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(DOWNLOAD_RESULT_DESIGN_MY_OPTION_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("Download").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(
+                DownloadResultSelection.Overall to DownloadResultDesignType.IMAGE,
+                download,
+            )
+        }
     }
 
     @Test
@@ -4925,9 +5077,9 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     )
 
     private fun openAdjustTeamPointsDialog() {
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactMenu(1)).performClick()
         composeTestRule
-            .onNodeWithTag(MATCH_REVIEW_ADJUST_TEAM_POINTS_ACTION_TEST_TAG)
+            .onNodeWithTag(MatchOcrReviewTestTags.adjustTeamPoints(0))
             .assertIsDisplayed()
             .performClick()
         composeTestRule

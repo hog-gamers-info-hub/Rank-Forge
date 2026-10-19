@@ -3106,6 +3106,7 @@ private fun MatchReviewFinalizeAction(
     calculationOrigin: MatchCalculatedEvidenceOrigin,
     finalization: MatchOcrReviewFinalizationUiState,
     isUuidBackedGroupRotation: Boolean,
+    showBlockers: Boolean = true,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
     val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current
@@ -3117,7 +3118,7 @@ private fun MatchReviewFinalizeAction(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        if (blockers.hasBlockers) {
+        if (showBlockers && blockers.hasBlockers) {
             MatchReviewFinalizeBlockerContainer(
                 blockers = blockers,
                 calculationOrigin = calculationOrigin,
@@ -4473,6 +4474,7 @@ private fun MatchReviewResultOcrDetailsContent(
                         calculationOrigin = uiState.calculatedEvidenceOrigin,
                         finalization = uiState.finalization,
                         isUuidBackedGroupRotation = uiState.isUuidBackedGroupRotation,
+                        showBlockers = false,
                         onFinalizeOcrCorrection = onFinalizeOcrCorrection,
                     )
                 }
