@@ -2069,23 +2069,6 @@ private fun MatchReviewContent(
                                 modifier = Modifier.testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
                             )
                         }
-                        if (uiState.isEditable) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(stringResource(R.string.match_review_adjust_team_points_action))
-                                },
-                                onClick = {
-                                    showOverflowMenu = false
-                                    adjustmentTeamSlotNumber = null
-                                    showAdjustTeamPointsDialog = true
-                                },
-                                enabled = reviewInteractionsEnabled,
-                                colors = overflowItemColors,
-                                modifier = Modifier.testTag(
-                                    MATCH_REVIEW_ADJUST_TEAM_POINTS_ACTION_TEST_TAG,
-                                ),
-                            )
-                        }
                         DropdownMenuItem(
                             text = {
                                 Text(
