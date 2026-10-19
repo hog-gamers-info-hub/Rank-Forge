@@ -450,7 +450,7 @@
     <string name="match_ocr_preflight_crop_action_result">Crop Result Screenshot %1$d</string>
     <string name="match_ocr_review_lobby_players_title">Lobby Players</string>
     <string name="match_ocr_review_lobby_player">%1$d. %2$s</string>
-    <string name="match_ocr_review_lobby_team">Team Name - %2$s</string>
+    <string name="match_ocr_review_lobby_team">%2$s</string>
     <string name="match_ocr_review_loading">Loading OCR review</string>
     <string name="match_ocr_review_calculating_title">Calculating Results</string>
     <string name="match_ocr_review_calculating_message">Please wait. This will only take a few seconds.</string>

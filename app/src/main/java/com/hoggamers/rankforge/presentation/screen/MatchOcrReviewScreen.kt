@@ -802,7 +802,7 @@ internal fun MatchOcrReviewCompactRow(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
         MatchOcrReviewPositionHeader(
-            text = stringResource(R.string.match_ocr_review_compact_position, placement),
+            text = teamNameLabel,
             placementTestTag = MatchOcrReviewTestTags.compactPlacement(previewRow.position),
             compactMenuTestTag = MatchOcrReviewTestTags.compactMenu(previewRow.position),
             onCompactDelete = onCompactDelete,
@@ -817,21 +817,6 @@ internal fun MatchOcrReviewCompactRow(
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
-        )
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_compact_team,
-                slotLabel,
-                teamNameLabel,
-            ),
-            color = PointIqOcrReviewHeader,
-            fontSize = 16.sp,
-            lineHeight = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.testTag(MatchOcrReviewTestTags.compactTeam(previewRow.position)),
         )
         if (showPlayerRows) {
             CompactPlayerRow(
@@ -1484,7 +1469,7 @@ private fun MatchOcrReviewMissingPreviewRow(
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
         MatchOcrReviewPositionHeader(
-            text = stringResource(R.string.match_ocr_review_compact_position, position),
+            text = teamName,
             placementTestTag = MatchOcrReviewTestTags.compactPlacement(row.rowIndex + 1),
             compactMenuTestTag = MatchOcrReviewTestTags.compactMenu(row.rowIndex + 1),
             onCompactDelete = onCompactDelete,
@@ -1499,22 +1484,6 @@ private fun MatchOcrReviewMissingPreviewRow(
             onCompactReset = onCompactReset,
             compactResetEnabled = compactResetEnabled,
             compactResetTestTag = compactResetTestTag,
-        )
-        Text(
-            text = stringResource(
-                R.string.match_ocr_review_manual_team_name,
-                teamName,
-            ),
-            color = PointIqOcrReviewSubtitle,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(MatchOcrReviewTestTags.compactTeam(row.rowIndex + 1)),
         )
     }
 }
