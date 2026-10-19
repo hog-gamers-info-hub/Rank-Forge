@@ -59,8 +59,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +84,7 @@ private val PointIqOcrReviewBackground = Color(0xFF031225)
 private val PointIqOcrReviewAmbientBlue = Color(0xFF0B386F)
 private val PointIqOcrReviewHeader = Color(0xFFF6F8FF)
 private val PointIqOcrReviewSubtitle = Color(0xFF91AFE0)
+private val PointIqOcrReviewPlayerName = PointIqOcrReviewHeader.copy(alpha = 0.78f)
 private val PointIqOcrReviewCyan = Color(0xFF17C9F2)
 private val PointIqOcrReviewFieldBorder = Color(0xFF7D9DCE)
 
@@ -595,10 +599,10 @@ private fun LobbyPlayerNamePresentationRow(
                 modifier = Modifier
                     .weight(1f)
                     .then(playerTestTag?.invoke(playerNumber)?.let { Modifier.testTag(it) } ?: Modifier),
-                color = if (darkPointIqStyle) PointIqOcrReviewHeader else Color.Unspecified,
+                color = if (darkPointIqStyle) PointIqOcrReviewPlayerName else Color.Unspecified,
                 style = if (darkPointIqStyle) {
                     MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         lineHeight = 20.sp,
                     )
                 } else {
@@ -1004,8 +1008,25 @@ private fun CompactPlayerCell(
         } else {
             stringResource(R.string.match_ocr_review_compact_player, slot, playerName, kill)
         }
+        val killStart = text.lastIndexOf('[').takeIf { it >= 0 } ?: text.length
+        val styledText = buildAnnotatedString {
+            withStyle(
+                SpanStyle(
+                    color = PointIqOcrReviewPlayerName,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Normal,
+                ),
+            ) {
+                append(text.substring(0, killStart))
+            }
+            if (killStart < text.length) {
+                withStyle(SpanStyle(color = PointIqOcrReviewHeader)) {
+                    append(text.substring(killStart))
+                }
+            }
+        }
         Text(
-            text = text,
+            text = styledText,
             color = PointIqOcrReviewHeader,
             fontSize = 14.sp,
             lineHeight = 20.sp,
@@ -1028,6 +1049,11 @@ private fun CompactPlayerCell(
             color = PointIqOcrReviewHeader,
             fontSize = 14.sp,
             lineHeight = 20.sp,
+        )
+        val playerNameTextStyle = killTextStyle.copy(
+            color = PointIqOcrReviewPlayerName,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Normal,
         )
         val killInputHeight = with(LocalDensity.current) {
             killTextStyle.lineHeight.toDp()
@@ -1054,7 +1080,7 @@ private fun CompactPlayerCell(
         ) {
             Text(
                 text = playerPrefix,
-                style = killTextStyle,
+                style = playerNameTextStyle,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
