@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.data.export.ResultDownloadFailure
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
@@ -2050,6 +2051,75 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         composeTestRule.onNodeWithText("Fix before finalizing").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun manualEntryKeepsSelectedResultSourceVisibleBeforeDuringAndAfterBack() {
+        val upperPreviewUri = createReadableResultPreviewUri("manual-result-source")
+        var ocrUiState by mutableStateOf<MatchOcrReviewUiState>(
+            MatchOcrReviewUiState.Empty(
+                tournamentId = "tournament-id",
+                matchId = "match-id",
+            ),
+        )
+        var reviewUiState by mutableStateOf(
+            availableState(
+                resultScreenshots = listOf(
+                    resultSlot(
+                        role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+                        hasLinkedAsset = true,
+                        localPreviewUri = upperPreviewUri,
+                        originalWidth = 1920,
+                        originalHeight = 1080,
+                        confirmedCrop = OcrNormalizedCropRect(0.1, 0.1, 0.9, 0.9),
+                        cropProfileId = "match-result",
+                    ),
+                    resultSlot(MatchResultScreenshotRole.MATCH_RESULT_LOWER),
+                ),
+            ),
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = reviewUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    ocrUiState = ocrUiState,
+                    onOpenManualReview = {
+                        reviewUiState = reviewUiState.copy(
+                            resultPositionCropPreviews = combinedPositionCropPreviewStates(),
+                        )
+                        ocrUiState = inlineOcrState().copy(
+                            calculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.MANUAL,
+                        )
+                    },
+                )
+            }
+        }
+
+        awaitResultScreenshotPreview(1)
+        composeTestRule.onNodeWithText("Enter Results Manually").performClick()
+        awaitResultScreenshotPreview(1)
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1",
+        ).assertCountEquals(0)
+
+        composeTestRule.onNodeWithText("Back").performClick()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithTag(
+                    MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG,
+                    useUnmergedTree = true,
+                )
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        awaitResultScreenshotPreview(1)
+        composeTestRule.onAllNodesWithTag(
+            MATCH_REVIEW_RESULT_POSITION_CROP_TEST_TAG_PREFIX + "1",
+        ).assertCountEquals(0)
     }
 
     @Test

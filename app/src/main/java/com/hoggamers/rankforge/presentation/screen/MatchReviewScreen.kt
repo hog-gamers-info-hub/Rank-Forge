@@ -1756,7 +1756,11 @@ private fun MatchReviewContent(
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
     val hasDisplayableResultOcrData = shouldShowInlineOcrDetails &&
         ocrUiState.hasDisplayableResultOcrData()
-    val transientResultPositionCropPreviews = if (uiState.status == MatchStatus.FINALIZED) {
+    val isManualCalculatedEvidence = (ocrUiState as? MatchOcrReviewUiState.Ready)
+        ?.calculatedEvidenceOrigin == MatchCalculatedEvidenceOrigin.MANUAL
+    val transientResultPositionCropPreviews = if (
+        uiState.status == MatchStatus.FINALIZED || isManualCalculatedEvidence
+    ) {
         emptyMap()
     } else {
         uiState.resultPositionCropPreviews
@@ -2329,7 +2333,8 @@ private fun MatchReviewContent(
                             onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                             showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
                                 !hasDisplayableResultOcrData ||
-                                manualPanelInScrollablePage,
+                                manualPanelInScrollablePage ||
+                                (isManualCalculatedEvidence && hasResultScreenshotSelection),
                             showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                             ocrDetailsContent = resultOcrDetailsContent,
                             ocrPositionContent = resultOcrPositionContent,
@@ -2437,7 +2442,8 @@ private fun MatchReviewContent(
                             onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                             showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
                                 !hasDisplayableResultOcrData ||
-                                manualPanelInScrollablePage,
+                                manualPanelInScrollablePage ||
+                                (isManualCalculatedEvidence && hasResultScreenshotSelection),
                             showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                             ocrDetailsContent = resultOcrDetailsContent,
                             ocrPositionContent = resultOcrPositionContent,
