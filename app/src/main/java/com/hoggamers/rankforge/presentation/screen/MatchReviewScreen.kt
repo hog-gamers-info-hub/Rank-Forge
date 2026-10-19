@@ -104,9 +104,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
@@ -114,7 +116,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -1107,7 +1112,7 @@ private fun MatchReviewRestoreSkeleton(
         verticalArrangement = Arrangement.Top,
     ) {
         Text(
-            text = matchNumber?.let { "Review Match $it" } ?: "Review Match",
+            text = matchNumber?.let { "Match $it" } ?: "Match",
             color = PointIqMatchReviewNavy,
             fontSize = 28.sp,
             lineHeight = 32.sp,
@@ -1381,6 +1386,220 @@ private fun Modifier.matchReviewRestoreShimmer(
                 drawRect(shimmerBrush)
             }
         }
+
+private enum class MatchReviewInstructionSet {
+    SCREENSHOT_TIPS,
+    RESULT_TIPS,
+}
+
+private data class MatchReviewInstructionItem(
+    val title: String,
+    val body: String,
+)
+
+@Composable
+private fun PointIqMatchReviewInstructions(
+    instructionSet: MatchReviewInstructionSet,
+    modifier: Modifier = Modifier,
+    onVideoClick: () -> Unit = {},
+) {
+    val expandedTitleRes: Int
+    val items: List<MatchReviewInstructionItem>
+    when (instructionSet) {
+        MatchReviewInstructionSet.SCREENSHOT_TIPS -> {
+            expandedTitleRes = R.string.pointiq_match_review_screenshot_tips_title
+            items = listOf(
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_lobby_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_lobby_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_result_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_result_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_auto_crop_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_auto_crop_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_manage_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_manage_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_save_lobby_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_save_lobby_body),
+                ),
+            )
+        }
+        MatchReviewInstructionSet.RESULT_TIPS -> {
+            expandedTitleRes = R.string.pointiq_match_review_result_tips_title
+            items = listOf(
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_verify_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_verify_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_correct_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_correct_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_more_options_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_more_options_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_cant_finalize_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_cant_finalize_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_clear_result_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_clear_result_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_finalize_carefully_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_finalize_carefully_body),
+                ),
+            )
+        }
+    }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(PointIqMatchReviewAmbientBlue.copy(alpha = 0.28f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        onClickLabel = stringResource(
+                            R.string.pointiq_match_review_instructions_video_action,
+                        ),
+                        role = Role.Button,
+                        onClick = onVideoClick,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = stringResource(
+                            R.string.pointiq_match_review_instructions_video_action,
+                        ),
+                        tint = Color(0xFF17C9F2),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.pointiq_match_review_instructions_title),
+                    color = Color(0xFF17C9F2),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier.offset(x = (-10).dp),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        onClickLabel = stringResource(
+                            if (expanded) {
+                                R.string.pointiq_match_review_instructions_collapse_action
+                            } else {
+                                R.string.pointiq_match_review_instructions_expand_action
+                            },
+                        ),
+                        role = Role.Button,
+                        onClick = { expanded = !expanded },
+                    ),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Filled.KeyboardArrowUp
+                        } else {
+                            Icons.Filled.KeyboardArrowDown
+                        },
+                        contentDescription = stringResource(
+                            if (expanded) {
+                                R.string.pointiq_match_review_instructions_collapse_action
+                            } else {
+                                R.string.pointiq_match_review_instructions_expand_action
+                            },
+                        ),
+                        tint = Color(0xFF17C9F2),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = stringResource(expandedTitleRes),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                items.forEachIndexed { index, item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Text(
+                            text = "${index + 1}.",
+                            color = PointIqMatchReviewSubtitle,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.width(18.dp),
+                        )
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                text = item.title,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = item.body,
+                                color = PointIqMatchReviewSubtitle,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun MatchReviewContent(
@@ -1879,6 +2098,20 @@ private fun MatchReviewContent(
                     }
                 }
             }
+        }
+        if (!showLegacyManualReviewContent &&
+            !manualModeOpened &&
+            uiState.isEditable &&
+            uiState.status != MatchStatus.FINALIZED
+        ) {
+            PointIqMatchReviewInstructions(
+                instructionSet = if (hasDisplayableResultOcrData) {
+                    MatchReviewInstructionSet.RESULT_TIPS
+                } else {
+                    MatchReviewInstructionSet.SCREENSHOT_TIPS
+                },
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
         }
         if (showLegacyManualReviewContent) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
