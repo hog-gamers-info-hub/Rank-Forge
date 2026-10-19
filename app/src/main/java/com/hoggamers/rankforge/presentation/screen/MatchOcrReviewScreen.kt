@@ -78,6 +78,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -1462,6 +1464,7 @@ internal fun MatchOcrReviewRow(
     availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
     showPlayerRows: Boolean = true,
     showAggregateResultFields: Boolean = true,
+    killsFocusRequester: FocusRequester? = null,
 ) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val effectiveCorrectionEnabled = correctionEnabled && reviewInteractionsEnabled
@@ -1577,6 +1580,7 @@ internal fun MatchOcrReviewRow(
                 teamNamesBySlot = teamNamesBySlot,
                 lobbySlotByTeamSlot = lobbySlotByTeamSlot,
                 usesPairRelativeIdentity = usesPairRelativeIdentity,
+                killsFocusRequester = killsFocusRequester,
             )
         }
     }
@@ -1840,6 +1844,7 @@ private fun CompactOcrNumberField(
     modifier: Modifier,
     keyboardScrollTargetKey: String? = null,
     keyboardScrollFieldLabel: String? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors(
@@ -1872,7 +1877,9 @@ private fun CompactOcrNumberField(
         value = value,
         onValueChange = onValueChange,
         modifier = rememberKeyboardAwareInputModifier(
-            modifier = modifier.height(50.dp),
+            modifier = modifier
+                .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                .height(50.dp),
             enabled = enabled,
             readOnly = readOnly,
             keyboardScrollTargetKey = keyboardScrollTargetKey,
@@ -1927,6 +1934,7 @@ private fun MatchOcrReviewCorrectionFields(
     teamNamesBySlot: Map<Int, String> = emptyMap(),
     lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
     usesPairRelativeIdentity: Boolean = false,
+    killsFocusRequester: FocusRequester? = null,
 ) {
     val keyboardScrollCoordinator = LocalMatchKeyboardScrollCoordinator.current
     val keyboardScrollTargetKey = keyboardScrollCorrectionRowKey(correctionDraft.rowIndex)
@@ -1984,6 +1992,7 @@ private fun MatchOcrReviewCorrectionFields(
             modifier = modifier.testTag(MatchOcrReviewTestTags.killsInput(correctionDraft.rowIndex)),
             keyboardScrollTargetKey = keyboardScrollTargetKey,
             keyboardScrollFieldLabel = "Kills",
+            focusRequester = killsFocusRequester,
         )
     }
     val teamSlotField: @Composable (Modifier) -> Unit = { modifier ->

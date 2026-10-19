@@ -97,6 +97,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.boundsInWindow
@@ -1831,6 +1832,22 @@ private fun MatchReviewContent(
     val resultRowsPagerState = rememberPagerState(
         pageCount = { resultRowsPagerUiState?.resultRowsForPager().orEmpty().size },
     )
+    val manualKillsFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(manualModeOpened, resultRowsPagerState) {
+        if (!manualModeOpened) return@LaunchedEffect
+
+        var pagerWasScrolling = false
+        snapshotFlow {
+            resultRowsPagerState.isScrollInProgress to resultRowsPagerState.currentPage
+        }.collect { (isScrolling, _) ->
+            if (isScrolling) {
+                pagerWasScrolling = true
+            } else if (pagerWasScrolling) {
+                pagerWasScrolling = false
+                manualKillsFocusRequester.requestFocus()
+            }
+        }
+    }
     val resultOcrDetailsContent: @Composable () -> Unit = {
         CompositionLocalProvider(
             LocalMatchKeyboardScrollCoordinator provides matchKeyboardScrollCoordinator,
@@ -1855,6 +1872,7 @@ private fun MatchReviewContent(
                         compactAddTeamEnabled = false,
                         showPlayerRows = false,
                         pointAdjustmentsByTeamSlot = emptyMap(),
+                        killsFocusRequester = null,
                     )
                 }
             } else if (shouldShowInlineOcrDetails && !manualModeOpened) {
@@ -1875,6 +1893,7 @@ private fun MatchReviewContent(
                     compactAddTeamEnabled = compactAddTeamEnabled,
                     pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
                     pagerState = resultRowsPagerState,
+                    killsFocusRequester = null,
                 )
             }
         }
@@ -1985,6 +2004,7 @@ private fun MatchReviewContent(
                         onManualBack = requestManualBack,
                         pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
                         pagerState = resultRowsPagerState,
+                        killsFocusRequester = manualKillsFocusRequester,
                     )
                 }
                 if (!manualPanelInScrollablePage && WindowInsets.isImeVisible) {
@@ -4384,6 +4404,7 @@ private fun MatchReviewResultOcrDetailsContent(
     onManualBack: (() -> Unit)? = null,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
     pagerState: PagerState,
+    killsFocusRequester: FocusRequester? = null,
 ) {
     Column(
         modifier = Modifier
@@ -4438,11 +4459,24 @@ private fun MatchReviewResultOcrDetailsContent(
                     MatchCalculatedEvidenceOrigin.MANUAL,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
                 pagerState = pagerState,
+                killsFocusRequester = killsFocusRequester,
             )
         }
         onManualBack?.let { onBack ->
             val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
             val shape = RoundedCornerShape(8.dp)
+            if (uiState is MatchOcrReviewUiState.Ready) {
+                uiState.correctionDraft?.let { correctionDraft ->
+                    MatchReviewFinalizeAction(
+                        correctionDraft = correctionDraft,
+                        teamNamesBySlot = uiState.teamNamesBySlot,
+                        calculationOrigin = uiState.calculatedEvidenceOrigin,
+                        finalization = uiState.finalization,
+                        isUuidBackedGroupRotation = uiState.isUuidBackedGroupRotation,
+                        onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -4682,6 +4716,7 @@ private fun MatchReviewResultRowsPagerContent(
     compactAddTeamEnabled: Boolean,
     showPlayerRows: Boolean = true,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
+    killsFocusRequester: FocusRequester? = null,
 ) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val previewRowsByPosition = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
@@ -4767,6 +4802,11 @@ private fun MatchReviewResultRowsPagerContent(
                             showAggregateResultFields =
                                 uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(),
                             showPlayerRows = showPlayerRows,
+                            killsFocusRequester = if (page == pagerState.currentPage) {
+                                killsFocusRequester
+                            } else {
+                                null
+                            },
                         )
                         TemporaryTeamPointAdjustmentIndicator(
                             teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex]),
