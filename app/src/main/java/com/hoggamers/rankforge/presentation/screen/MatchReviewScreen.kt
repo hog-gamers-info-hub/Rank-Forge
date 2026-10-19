@@ -2051,7 +2051,11 @@ private fun MatchReviewContent(
                                 text = {
                                     Text(
                                         stringResource(
-                                            R.string.create_match_number_action,
+                                            if (uiState.status == MatchStatus.FINALIZED) {
+                                                R.string.calculate_match_number_action
+                                            } else {
+                                                R.string.create_match_number_action
+                                            },
                                             uiState.nextMatchNumber ?: 0,
                                         ),
                                     )
@@ -2646,6 +2650,18 @@ private fun MatchReviewContent(
                     modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
                 )
             }
+            if (!showLegacyManualReviewContent && uiState.shouldShowCreateNextMatch) {
+                Spacer(modifier = Modifier.height(12.dp))
+                ReviewMatchActionButton(
+                    label = stringResource(
+                        R.string.calculate_match_number_action,
+                        uiState.nextMatchNumber ?: 0,
+                    ),
+                    enabled = reviewInteractionsEnabled && uiState.canCreateNextMatch,
+                    onClick = onRequestNextMatchCreation,
+                    modifier = Modifier.testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
+                )
+            }
             when (val downloadState = uiState.resultDownloadUiState) {
                 is ResultDownloadUiState.Generating -> Text(
                     text = stringResource(R.string.match_review_download_generating),
@@ -2697,7 +2713,7 @@ private fun MatchReviewContent(
                 ) {
                     Text(
                         text = stringResource(
-                            R.string.create_match_number_action,
+                            R.string.calculate_match_number_action,
                             uiState.nextMatchNumber ?: 0,
                         ),
                         fontWeight = FontWeight.SemiBold,
