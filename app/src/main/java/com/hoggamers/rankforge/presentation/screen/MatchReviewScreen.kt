@@ -104,9 +104,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
@@ -114,7 +116,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -1107,50 +1112,52 @@ private fun MatchReviewRestoreSkeleton(
         verticalArrangement = Arrangement.Top,
     ) {
         Text(
-            text = matchNumber?.let { "Review Match $it" } ?: "Review Match",
+            text = matchNumber?.let { "Match $it" } ?: "Match",
             color = PointIqMatchReviewNavy,
             fontSize = 28.sp,
             lineHeight = 32.sp,
             fontWeight = FontWeight.Bold,
         )
         Spacer(modifier = Modifier.height(14.dp))
-        PointIqEmptyMatchReviewSection(emphasizedSurface = true) {
-            MatchReviewRestoreSkeletonSectionHeader(
-                step = 1,
-                title = "Lobby Details",
-            ) {
-                Text(
-                    text = "Save Lobby",
-                    color = PointIqMatchReviewSubtitle,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+        PointIqMatchReviewDetailsContainer {
+            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
+                MatchReviewRestoreSkeletonSectionHeader(
+                    step = 1,
+                    title = "Lobby Details",
+                ) {
+                    Text(
+                        text = "Save Lobby",
+                        color = PointIqMatchReviewSubtitle,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    MatchReviewRestoreSwitchPlaceholder(shimmerProgress)
+                }
+                MatchReviewRestorePlaceholder(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(142.dp),
+                    shimmerProgress = shimmerProgress,
+                    cornerRadius = 12.dp,
                 )
-                MatchReviewRestoreSwitchPlaceholder(shimmerProgress)
+                MatchReviewRestoreLobbySummaryPlaceholder(shimmerProgress)
             }
-            MatchReviewRestorePlaceholder(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(142.dp),
-                shimmerProgress = shimmerProgress,
-                cornerRadius = 12.dp,
-            )
-            MatchReviewRestoreLobbySummaryPlaceholder(shimmerProgress)
-        }
-        Spacer(modifier = Modifier.height(14.dp))
-        PointIqEmptyMatchReviewSection(emphasizedSurface = true) {
-            MatchReviewRestoreSkeletonSectionHeader(
-                step = 2,
-                title = "Result Details",
-            )
-            MatchReviewRestorePlaceholder(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shimmerProgress = shimmerProgress,
-                cornerRadius = 10.dp,
-            )
-            MatchReviewRestoreResultDetailsPlaceholder(shimmerProgress)
-            MatchReviewRestoreFieldPlaceholders(shimmerProgress)
+            PointIqMatchReviewDetailsDivider()
+            Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
+                MatchReviewRestoreSkeletonSectionHeader(
+                    step = 2,
+                    title = "Result Details",
+                )
+                MatchReviewRestorePlaceholder(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shimmerProgress = shimmerProgress,
+                    cornerRadius = 10.dp,
+                )
+                MatchReviewRestoreResultDetailsPlaceholder(shimmerProgress)
+                MatchReviewRestoreFieldPlaceholders(shimmerProgress)
+            }
         }
         Spacer(modifier = Modifier.height(12.dp))
         MatchReviewRestorePlaceholder(
@@ -1381,6 +1388,220 @@ private fun Modifier.matchReviewRestoreShimmer(
                 drawRect(shimmerBrush)
             }
         }
+
+private enum class MatchReviewInstructionSet {
+    SCREENSHOT_TIPS,
+    RESULT_TIPS,
+}
+
+private data class MatchReviewInstructionItem(
+    val title: String,
+    val body: String,
+)
+
+@Composable
+private fun PointIqMatchReviewInstructions(
+    instructionSet: MatchReviewInstructionSet,
+    modifier: Modifier = Modifier,
+    onVideoClick: () -> Unit = {},
+) {
+    val expandedTitleRes: Int
+    val items: List<MatchReviewInstructionItem>
+    when (instructionSet) {
+        MatchReviewInstructionSet.SCREENSHOT_TIPS -> {
+            expandedTitleRes = R.string.pointiq_match_review_screenshot_tips_title
+            items = listOf(
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_lobby_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_lobby_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_result_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_result_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_auto_crop_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_auto_crop_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_manage_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_manage_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_screenshot_tip_save_lobby_title),
+                    body = stringResource(R.string.pointiq_match_review_screenshot_tip_save_lobby_body),
+                ),
+            )
+        }
+        MatchReviewInstructionSet.RESULT_TIPS -> {
+            expandedTitleRes = R.string.pointiq_match_review_result_tips_title
+            items = listOf(
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_verify_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_verify_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_correct_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_correct_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_more_options_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_more_options_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_cant_finalize_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_cant_finalize_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_clear_result_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_clear_result_body),
+                ),
+                MatchReviewInstructionItem(
+                    title = stringResource(R.string.pointiq_match_review_result_tip_finalize_carefully_title),
+                    body = stringResource(R.string.pointiq_match_review_result_tip_finalize_carefully_body),
+                ),
+            )
+        }
+    }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(PointIqMatchReviewAmbientBlue.copy(alpha = 0.28f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        onClickLabel = stringResource(
+                            R.string.pointiq_match_review_instructions_video_action,
+                        ),
+                        role = Role.Button,
+                        onClick = onVideoClick,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = stringResource(
+                            R.string.pointiq_match_review_instructions_video_action,
+                        ),
+                        tint = Color(0xFF17C9F2),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.pointiq_match_review_instructions_title),
+                    color = Color(0xFF17C9F2),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier.offset(x = (-10).dp),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        onClickLabel = stringResource(
+                            if (expanded) {
+                                R.string.pointiq_match_review_instructions_collapse_action
+                            } else {
+                                R.string.pointiq_match_review_instructions_expand_action
+                            },
+                        ),
+                        role = Role.Button,
+                        onClick = { expanded = !expanded },
+                    ),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Filled.KeyboardArrowUp
+                        } else {
+                            Icons.Filled.KeyboardArrowDown
+                        },
+                        contentDescription = stringResource(
+                            if (expanded) {
+                                R.string.pointiq_match_review_instructions_collapse_action
+                            } else {
+                                R.string.pointiq_match_review_instructions_expand_action
+                            },
+                        ),
+                        tint = Color(0xFF17C9F2),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = stringResource(expandedTitleRes),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                items.forEachIndexed { index, item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Text(
+                            text = "${index + 1}.",
+                            color = PointIqMatchReviewSubtitle,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.width(18.dp),
+                        )
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                text = item.title,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = item.body,
+                                color = PointIqMatchReviewSubtitle,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun MatchReviewContent(
@@ -1830,7 +2051,11 @@ private fun MatchReviewContent(
                                 text = {
                                     Text(
                                         stringResource(
-                                            R.string.create_match_number_action,
+                                            if (uiState.status == MatchStatus.FINALIZED) {
+                                                R.string.calculate_match_number_action
+                                            } else {
+                                                R.string.create_match_number_action
+                                            },
                                             uiState.nextMatchNumber ?: 0,
                                         ),
                                     )
@@ -1879,6 +2104,20 @@ private fun MatchReviewContent(
                     }
                 }
             }
+        }
+        if (!showLegacyManualReviewContent &&
+            !manualModeOpened &&
+            uiState.isEditable &&
+            uiState.status != MatchStatus.FINALIZED
+        ) {
+            PointIqMatchReviewInstructions(
+                instructionSet = if (hasDisplayableResultOcrData) {
+                    MatchReviewInstructionSet.RESULT_TIPS
+                } else {
+                    MatchReviewInstructionSet.SCREENSHOT_TIPS
+                },
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
         }
         if (showLegacyManualReviewContent) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
@@ -1950,21 +2189,75 @@ private fun MatchReviewContent(
             }
         } else if (isEmptyScreenshotUi) {
             Spacer(modifier = Modifier.height(14.dp))
-            PointIqEmptyMatchReviewSection(
+            PointIqMatchReviewDetailsContainer(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
-                emphasizedSurface = true,
             ) {
-                CompositionLocalProvider(
-                    LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
-                    LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
-                    LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
-                    LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
-                ) {
-                    matchLobbyScreenshotIntake()
+                Column(verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small)) {
+                    CompositionLocalProvider(
+                        LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
+                        LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
+                        LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
+                        LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
+                    ) {
+                        matchLobbyScreenshotIntake()
+                    }
+                }
+                if (!manualModeOpened) {
+                    PointIqMatchReviewDetailsDivider()
+                    Column(
+                        modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
+                        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+                    ) {
+                        Row(
+                            modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG),
+                            horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ReviewStepBadge(
+                                number = 2,
+                                backgroundColor = PointIqMatchReviewBadgeFill,
+                                borderColor = PointIqMatchReviewBadgeBorder,
+                                numberColor = PointIqMatchReviewHeader,
+                                modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
+                            )
+                            Text(
+                                text = stringResource(R.string.match_review_result_screenshots_title),
+                                color = PointIqMatchReviewHeader,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                        if (!hasResultScreenshotSelection) {
+                            Text(
+                                text = stringResource(R.string.pointiq_match_review_result_description),
+                                color = PointIqMatchReviewSubtitle,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                            )
+                        }
+                        ResultScreenshotSelector(
+                            resultScreenshots = uiState.resultScreenshots,
+                            resultPositionCropPreviews = transientResultPositionCropPreviews,
+                            explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
+                            manuallyRevealedResultPositions = manuallyRevealedResultPositions,
+                            isEditable = uiState.isEditable,
+                            onSelectScreenshot = onSelectResultScreenshot,
+                            onSelectBatch = onSelectResultScreenshotBatch,
+                            onOpenCrop = onOpenResultScreenshotCrop,
+                            onRemoveScreenshot = onRemoveResultScreenshot,
+                            onPreviewPreparationFinished = onResultPreviewPreparationFinished,
+                            onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
+                            showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
+                                !hasDisplayableResultOcrData,
+                            showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
+                            ocrDetailsContent = resultOcrDetailsContent,
+                            ocrPositionContent = resultOcrPositionContent,
+                            screenshotActionExpansion = screenshotActionExpansion,
+                        )
+                    }
                 }
             }
-            Spacer(modifier = Modifier.height(14.dp))
             if (manualModeOpened) {
+                Spacer(modifier = Modifier.height(14.dp))
                 AnimatedVisibility(
                     visible = manualPanelAnimationVisible,
                     modifier = Modifier
@@ -1988,80 +2281,88 @@ private fun MatchReviewContent(
                     manualOcrPanel(Modifier.fillMaxSize())
                 }
             } else {
-            PointIqEmptyMatchReviewSection(
-                modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
-                emphasizedSurface = true,
-            ) {
-                Row(
-                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ReviewStepBadge(
-                        number = 2,
-                        backgroundColor = PointIqMatchReviewBadgeFill,
-                        borderColor = PointIqMatchReviewBadgeBorder,
-                        numberColor = PointIqMatchReviewHeader,
-                        modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
-                    )
-                    Text(
-                        text = stringResource(R.string.match_review_result_screenshots_title),
-                        color = PointIqMatchReviewHeader,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-                if (!hasResultScreenshotSelection) {
-                    Text(
-                        text = stringResource(R.string.pointiq_match_review_result_description),
-                        color = PointIqMatchReviewSubtitle,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                    )
-                }
-                ResultScreenshotSelector(
-                    resultScreenshots = uiState.resultScreenshots,
-                    resultPositionCropPreviews = transientResultPositionCropPreviews,
-                    explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
-                    manuallyRevealedResultPositions = manuallyRevealedResultPositions,
-                    isEditable = uiState.isEditable,
-                    onSelectScreenshot = onSelectResultScreenshot,
-                    onSelectBatch = onSelectResultScreenshotBatch,
-                    onOpenCrop = onOpenResultScreenshotCrop,
-                    onRemoveScreenshot = onRemoveResultScreenshot,
-                    onPreviewPreparationFinished = onResultPreviewPreparationFinished,
-                    onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-                    showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
-                        !hasDisplayableResultOcrData,
-                    showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
-                    ocrDetailsContent = resultOcrDetailsContent,
-                    ocrPositionContent = resultOcrPositionContent,
-                    screenshotActionExpansion = screenshotActionExpansion,
-                )
-            }
-            if (!manualModeOpened) {
                 Spacer(modifier = Modifier.height(12.dp))
-            }
             }
         } else {
             Spacer(modifier = Modifier.height(14.dp))
-            PointIqEmptyMatchReviewSection(
+            PointIqMatchReviewDetailsContainer(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
-                contentSpacing = 4.dp,
             ) {
-                CompositionLocalProvider(
-                    LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
-                    LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
-                    LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
-                    LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
-                ) {
-                    matchLobbyScreenshotIntake()
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CompositionLocalProvider(
+                        LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
+                        LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
+                        LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
+                        LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
+                    ) {
+                        matchLobbyScreenshotIntake()
+                    }
+                    if (hasLobbyPlayerOcrEvidence) {
+                        MatchReviewLobbyPlayerDetailsContent(ocrUiState)
+                    }
                 }
-                if (hasLobbyPlayerOcrEvidence) {
-                    MatchReviewLobbyPlayerDetailsContent(ocrUiState)
+                if (!manualModeOpened) {
+                    PointIqMatchReviewDetailsDivider()
+                    Column(
+                        modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
+                        verticalArrangement = Arrangement.spacedBy(
+                            if (uiState.resultScreenshots.any { it.hasSelection() }) {
+                                4.dp
+                            } else {
+                                RankForgeSpacing.Small
+                            },
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG),
+                            horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ReviewStepBadge(
+                                number = 2,
+                                backgroundColor = PointIqMatchReviewBadgeFill,
+                                borderColor = PointIqMatchReviewBadgeBorder,
+                                numberColor = PointIqMatchReviewHeader,
+                                modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
+                            )
+                            Text(
+                                text = stringResource(R.string.match_review_result_screenshots_title),
+                                color = PointIqMatchReviewHeader,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                        if (!hasResultScreenshotSelection) {
+                            Text(
+                                text = stringResource(R.string.pointiq_match_review_result_description),
+                                color = PointIqMatchReviewSubtitle,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                            )
+                        }
+                        ResultScreenshotSelector(
+                            resultScreenshots = uiState.resultScreenshots,
+                            resultPositionCropPreviews = transientResultPositionCropPreviews,
+                            explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
+                            manuallyRevealedResultPositions = manuallyRevealedResultPositions,
+                            isEditable = uiState.isEditable,
+                            onSelectScreenshot = onSelectResultScreenshot,
+                            onSelectBatch = onSelectResultScreenshotBatch,
+                            onOpenCrop = onOpenResultScreenshotCrop,
+                            onRemoveScreenshot = onRemoveResultScreenshot,
+                            onPreviewPreparationFinished = onResultPreviewPreparationFinished,
+                            onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
+                            showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
+                                !hasDisplayableResultOcrData,
+                            showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
+                            ocrDetailsContent = resultOcrDetailsContent,
+                            ocrPositionContent = resultOcrPositionContent,
+                            screenshotActionExpansion = screenshotActionExpansion,
+                        )
+                    }
                 }
             }
-            Spacer(modifier = Modifier.height(14.dp))
             if (manualModeOpened) {
+                Spacer(modifier = Modifier.height(14.dp))
                 AnimatedVisibility(
                     visible = manualPanelAnimationVisible,
                     modifier = Modifier
@@ -2085,65 +2386,9 @@ private fun MatchReviewContent(
                     manualOcrPanel(Modifier.fillMaxSize())
                 }
             } else {
-            PointIqEmptyMatchReviewSection(
-                modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
-                contentSpacing = if (uiState.resultScreenshots.any { it.hasSelection() }) {
-                    4.dp
-                } else {
-                    RankForgeSpacing.Small
-                },
-            ) {
-                Row(
-                    modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_HEADER_TEST_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ReviewStepBadge(
-                        number = 2,
-                        backgroundColor = PointIqMatchReviewBadgeFill,
-                        borderColor = PointIqMatchReviewBadgeBorder,
-                        numberColor = PointIqMatchReviewHeader,
-                        modifier = Modifier.testTag(MATCH_REVIEW_RESULT_DETAILS_STEP_TEST_TAG),
-                    )
-                    Text(
-                        text = stringResource(R.string.match_review_result_screenshots_title),
-                        color = PointIqMatchReviewHeader,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-                if (!hasResultScreenshotSelection) {
-                    Text(
-                        text = stringResource(R.string.pointiq_match_review_result_description),
-                        color = PointIqMatchReviewSubtitle,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                    )
-                }
-                ResultScreenshotSelector(
-                    resultScreenshots = uiState.resultScreenshots,
-                    resultPositionCropPreviews = transientResultPositionCropPreviews,
-                    explicitlyExcludedResultPositions = explicitlyExcludedResultPositions,
-                    manuallyRevealedResultPositions = manuallyRevealedResultPositions,
-                    isEditable = uiState.isEditable,
-                    onSelectScreenshot = onSelectResultScreenshot,
-                    onSelectBatch = onSelectResultScreenshotBatch,
-                    onOpenCrop = onOpenResultScreenshotCrop,
-                    onRemoveScreenshot = onRemoveResultScreenshot,
-                    onPreviewPreparationFinished = onResultPreviewPreparationFinished,
-                    onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
-                    showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
-                        !hasDisplayableResultOcrData,
-                    showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
-                    ocrDetailsContent = resultOcrDetailsContent,
-                    ocrPositionContent = resultOcrPositionContent,
-                    screenshotActionExpansion = screenshotActionExpansion,
-                )
-            }
-            if (!manualModeOpened) {
                 Spacer(modifier = Modifier.height(12.dp))
             }
         }
-    }
         if (!manualModeOpened) {
         if (showLegacyManualReviewContent) {
             ResultScreenshotSelector(
@@ -2405,6 +2650,18 @@ private fun MatchReviewContent(
                     modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
                 )
             }
+            if (!showLegacyManualReviewContent && uiState.shouldShowCreateNextMatch) {
+                Spacer(modifier = Modifier.height(12.dp))
+                ReviewMatchActionButton(
+                    label = stringResource(
+                        R.string.calculate_match_number_action,
+                        uiState.nextMatchNumber ?: 0,
+                    ),
+                    enabled = reviewInteractionsEnabled && uiState.canCreateNextMatch,
+                    onClick = onRequestNextMatchCreation,
+                    modifier = Modifier.testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
+                )
+            }
             when (val downloadState = uiState.resultDownloadUiState) {
                 is ResultDownloadUiState.Generating -> Text(
                     text = stringResource(R.string.match_review_download_generating),
@@ -2456,7 +2713,7 @@ private fun MatchReviewContent(
                 ) {
                     Text(
                         text = stringResource(
-                            R.string.create_match_number_action,
+                            R.string.calculate_match_number_action,
                             uiState.nextMatchNumber ?: 0,
                         ),
                         fontWeight = FontWeight.SemiBold,
@@ -3030,12 +3287,11 @@ internal fun MatchReviewScreenshotUploadButton(
         enabled = enabled,
         shape = shape,
         colors = ButtonDefaults.buttonColors(
-            containerColor = PointIqMatchReviewSectionSurface,
-            disabledContainerColor = PointIqMatchReviewSectionSurface.copy(alpha = 0.22f),
+            containerColor = PointIqMatchReviewNavy,
+            disabledContainerColor = PointIqMatchReviewNavy.copy(alpha = 0.55f),
             contentColor = PointIqMatchReviewHeader,
             disabledContentColor = PointIqMatchReviewHeader.copy(alpha = 0.55f),
         ),
-        border = BorderStroke(1.5.dp, PointIqMatchReviewBlue.copy(alpha = 0.95f)),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         contentPadding = PaddingValues(horizontal = 12.dp),
         modifier = modifier
@@ -3045,17 +3301,15 @@ internal fun MatchReviewScreenshotUploadButton(
         Text(
             text = label,
             color = if (enabled) PointIqMatchReviewHeader else PointIqMatchReviewHeader.copy(alpha = 0.55f),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
         )
     }
 }
 
 @Composable
-private fun PointIqEmptyMatchReviewSection(
+private fun PointIqMatchReviewDetailsContainer(
     modifier: Modifier = Modifier,
-    contentSpacing: Dp = RankForgeSpacing.Small,
-    emphasizedSurface: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -3063,14 +3317,7 @@ private fun PointIqEmptyMatchReviewSection(
         shape = RoundedCornerShape(18.dp),
         color = PointIqMatchReviewSectionSurface,
         contentColor = PointIqMatchReviewHeader,
-        border = BorderStroke(
-            1.dp,
-            if (emphasizedSurface) {
-                PointIqMatchReviewSectionBorder
-            } else {
-                PointIqMatchReviewSectionBorder.copy(alpha = 0.35f)
-            },
-        ),
+        border = BorderStroke(1.dp, PointIqMatchReviewSectionBorder),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
@@ -3078,11 +3325,22 @@ private fun PointIqEmptyMatchReviewSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(contentSpacing),
         ) {
             content()
         }
     }
+}
+
+@Composable
+private fun PointIqMatchReviewDetailsDivider() {
+    Spacer(modifier = Modifier.height(12.dp))
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(2.dp)
+            .background(PointIqMatchReviewBlue.copy(alpha = 0.28f)),
+    )
+    Spacer(modifier = Modifier.height(12.dp))
 }
 
 @Composable

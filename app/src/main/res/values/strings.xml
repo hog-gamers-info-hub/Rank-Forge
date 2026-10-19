@@ -357,6 +357,7 @@
     <string name="match_map_label">Map</string>
     <string name="create_match_action">Create match</string>
     <string name="create_match_number_action">Create Match %1$d</string>
+    <string name="calculate_match_number_action">Calculate Match %1$d</string>
     <string name="match_creation_error">Match could not be created. Try again.</string>
     <string name="match_number_invalid_error">Enter a whole number from 1 to 18.</string>
     <string name="duplicate_match_number_error">That match number already exists in this tournament.</string>
@@ -450,7 +451,7 @@
     <string name="match_ocr_preflight_crop_action_result">Crop Result Screenshot %1$d</string>
     <string name="match_ocr_review_lobby_players_title">Lobby Players</string>
     <string name="match_ocr_review_lobby_player">%1$d. %2$s</string>
-    <string name="match_ocr_review_lobby_team">Team Name - %2$s</string>
+    <string name="match_ocr_review_lobby_team">%2$s</string>
     <string name="match_ocr_review_loading">Loading OCR review</string>
     <string name="match_ocr_review_calculating_title">Calculating Results</string>
     <string name="match_ocr_review_calculating_message">Please wait. This will only take a few seconds.</string>
@@ -559,7 +560,7 @@
     <string name="match_ocr_review_finalization_already_finalized">This match is already finalized.</string>
     <string name="match_ocr_review_finalization_failed">The corrected match could not be finalized.</string>
     <string name="match_review_title">Review match %1$d</string>
-    <string name="match_review_simplified_title">Review Match %1$d</string>
+    <string name="match_review_simplified_title">Match %1$d</string>
     <string name="match_review_simplified_back_action">Back to Tournament Details</string>
     <string name="match_review_delete_action">Delete Match</string>
     <string name="match_review_delete_title">Delete Match?</string>
