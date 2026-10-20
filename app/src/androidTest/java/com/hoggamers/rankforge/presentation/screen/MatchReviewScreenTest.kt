@@ -2054,6 +2054,76 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     }
 
     @Test
+    fun finalizedManualEntryUsesCompactAggregateFieldsWithoutPlayerRows() {
+        var reviewUiState by mutableStateOf(
+            availableState().copy(finalizedParticipantSlotNumbers = (1..12).toSet()),
+        )
+        var ocrUiState by mutableStateOf<MatchOcrReviewUiState>(
+            MatchOcrReviewUiState.Empty(
+                tournamentId = "tournament-id",
+                matchId = "match-id",
+            ),
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = reviewUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    onOpenManualReview = {
+                        ocrUiState = inlineOcrState().copy(
+                            calculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.MANUAL,
+                        )
+                    },
+                    onOcrFinalize = {
+                        val ready = ocrUiState as MatchOcrReviewUiState.Ready
+                        reviewUiState = reviewUiState.copy(status = MatchStatus.FINALIZED)
+                        ocrUiState = ready.copy(
+                            calculatedEvidenceOrigin = MatchCalculatedEvidenceOrigin.AUTOMATIC,
+                            finalization = MatchOcrReviewFinalizationUiState(isFinalized = true),
+                        )
+                    },
+                    ocrUiState = ocrUiState,
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Enter Results Manually").performClick()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
+
+        composeTestRule.onNodeWithText("Team 2").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("1. Player One - [8]", substring = true)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactRow(1))
+            .assertCountEquals(1)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.placementInput(0))
+            .assertCountEquals(1)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
+            .assertTextContains("1")
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.killsInput(0))
+            .assertCountEquals(1)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.killsInput(0))
+            .assertTextContains("0")
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .assertCountEquals(1)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
+            .assertTextContains("2")
+    }
+
+    @Test
     fun manualEntryKeepsSelectedResultSourceVisibleBeforeDuringAndAfterBack() {
         val upperPreviewUri = createReadableResultPreviewUri("manual-result-source")
         var ocrUiState by mutableStateOf<MatchOcrReviewUiState>(

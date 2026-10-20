@@ -955,6 +955,11 @@ fun MatchReviewScreen(
         manualModeOpened = false
         ocrReviewOpened = false
     }
+    LaunchedEffect(uiState.status, manualModeOpened) {
+        if (manualModeOpened && uiState.status == MatchStatus.FINALIZED) {
+            closeManualMode()
+        }
+    }
     LaunchedEffect(clearResultRequested, isClearResultInProgress, showClearResult) {
         if (clearResultRequested && !isClearResultInProgress && !showClearResult) {
             clearResultRequested = false
@@ -4463,7 +4468,8 @@ private fun MatchReviewResultOcrDetailsContent(
                 onCompactAddTeam = onCompactAddTeam,
                 compactAddTeamEnabled = compactAddTeamEnabled,
                 showPlayerRows = uiState.calculatedEvidenceOrigin !=
-                    MatchCalculatedEvidenceOrigin.MANUAL,
+                    MatchCalculatedEvidenceOrigin.MANUAL &&
+                    !uiState.finalization.isFinalized,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
                 pagerState = pagerState,
                 killsFocusRequester = killsFocusRequester,
@@ -4537,8 +4543,9 @@ private fun MatchOcrReviewRowUiState.temporaryTeamSlotNumber(
         .toIntOrNull()
         ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
 
-internal fun MatchCalculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(): Boolean =
-    this != MatchCalculatedEvidenceOrigin.MANUAL
+internal fun MatchCalculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(
+    isFinalized: Boolean = false,
+): Boolean = isFinalized || this != MatchCalculatedEvidenceOrigin.MANUAL
 
 @Composable
 private fun TemporaryTeamPointAdjustmentIndicator(
@@ -4633,9 +4640,12 @@ private fun MatchReviewResultOcrPositionContent(
                     showBlockerDetails = false,
                     compactResetAction = true,
                     showAggregateResultFields =
-                        uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(),
+                        uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(
+                            isFinalized = uiState.finalization.isFinalized,
+                        ),
                     showPlayerRows = uiState.calculatedEvidenceOrigin !=
-                        MatchCalculatedEvidenceOrigin.MANUAL,
+                        MatchCalculatedEvidenceOrigin.MANUAL &&
+                        !uiState.finalization.isFinalized,
                 )
                 TemporaryTeamPointAdjustmentIndicator(
                     teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex]),
@@ -4808,7 +4818,9 @@ private fun MatchReviewResultRowsPagerContent(
                             showBlockerDetails = false,
                             compactResetAction = true,
                             showAggregateResultFields =
-                                uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(),
+                                uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(
+                                    isFinalized = uiState.finalization.isFinalized,
+                                ),
                             showPlayerRows = showPlayerRows,
                             killsFocusRequester = if (page == pagerState.currentPage) {
                                 killsFocusRequester
