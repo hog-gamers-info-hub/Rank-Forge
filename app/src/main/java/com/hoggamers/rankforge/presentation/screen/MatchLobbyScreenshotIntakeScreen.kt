@@ -245,13 +245,11 @@ fun MatchLobbyScreenshotIntakeScreen(
         }
         if (uiState.isLoading) Text(text = stringResource(R.string.match_lobby_screenshot_loading))
         uiState.intakeError?.let { Text(text = stringResource(it.toStringRes()), color = MaterialTheme.colorScheme.error) }
-        if (uiState.isFinalized) {
-            Text(text = stringResource(R.string.match_lobby_screenshot_finalized_read_only), color = MaterialTheme.colorScheme.error)
-        }
         if (uiState.slots.isNotEmpty()) {
             var activeSlotIndex by rememberSaveable { mutableStateOf<Int?>(null) }
             val selectedSlots = uiState.slots.filter { slot ->
-                slot.hasScreenshotSelection()
+                slot.hasScreenshotSelection() &&
+                    (!uiState.isFinalized || slot.hasUsableLocalPreview())
             }
             val globallyOrderedTeamCropPreviews = teamCropPreviewsByScreenshotIndex.values
                 .asSequence()
@@ -359,32 +357,32 @@ fun MatchLobbyScreenshotIntakeScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                if (sourceSectionVisible && !compactSelectors) {
-                    uiState.slots.forEach { slot ->
-                        val hasSelection = slot.hasScreenshotSelection()
-                        val targetPage = selectedSlotIndices.indexOf(slot.index)
-                        val onClick: () -> Unit = {
-                            if (hasSelection && targetPage >= 0) {
-                                activeSlotIndex = slot.index
-                                scope.launch { pagerState.animateScrollToPage(targetPage) }
-                            } else if (!hasSelection) {
-                                (onSelectBatch ?: { onSelect(slot.index) })()
+                    if (sourceSectionVisible && !compactSelectors && !uiState.isFinalized) {
+                        uiState.slots.forEach { slot ->
+                            val hasSelection = slot.hasScreenshotSelection()
+                            val targetPage = selectedSlotIndices.indexOf(slot.index)
+                            val onClick: () -> Unit = {
+                                if (hasSelection && targetPage >= 0) {
+                                    activeSlotIndex = slot.index
+                                    scope.launch { pagerState.animateScrollToPage(targetPage) }
+                                } else if (!hasSelection) {
+                                    (onSelectBatch ?: { onSelect(slot.index) })()
+                                }
+                                Unit
                             }
-                            Unit
+                            LobbyScreenshotSelectorButton(
+                                slot = slot,
+                                hasSelection = hasSelection,
+                                isActive = hasSelection && activeSlotIndex == slot.index,
+                                enabled = reviewInteractionsEnabled && (
+                                    hasSelection ||
+                                        (uiState.isAvailable && !uiState.isFinalized && !slot.isMutationBusy)
+                                    ),
+                                compactSelectors = compactSelectors,
+                                onClick = onClick,
+                            )
                         }
-                        LobbyScreenshotSelectorButton(
-                            slot = slot,
-                            hasSelection = hasSelection,
-                            isActive = hasSelection && activeSlotIndex == slot.index,
-                            enabled = reviewInteractionsEnabled && (
-                                hasSelection ||
-                                    (uiState.isAvailable && !uiState.isFinalized && !slot.isMutationBusy)
-                                ),
-                            compactSelectors = compactSelectors,
-                            onClick = onClick,
-                        )
                     }
-                }
                     if (compactActions && showTitle) {
                         Spacer(modifier = Modifier.weight(1f))
                         LobbyTemplateToggle(
@@ -449,7 +447,7 @@ fun MatchLobbyScreenshotIntakeScreen(
                 }
             }
 
-            if (sourceSectionVisible && compactSelectors) {
+            if (sourceSectionVisible && compactSelectors && !uiState.isFinalized) {
                 uiState.slots
                     .filterNot { it.hasScreenshotSelection() }
                     .minByOrNull { it.index }
@@ -511,6 +509,7 @@ private fun LobbyTemplateToggle(
     interactionsEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    if (uiState.isFinalized) return
     val isSaved = uiState.isLobbySavedForNextMatches
     val enabled = interactionsEnabled && if (isSaved) {
         uiState.canUnsaveLobbyForNextMatches
@@ -576,6 +575,12 @@ private fun MatchLobbyScreenshotSlotUiState.hasScreenshotSelection(): Boolean =
     hasLinkedAsset ||
         !selectedScreenshotUri.isNullOrBlank() ||
         isPreviewPreparationInProgress
+
+internal fun MatchLobbyScreenshotSlotUiState.hasUsableLocalPreview(): Boolean =
+    hasLinkedAsset &&
+        !isLocalFileMissing &&
+        !selectedScreenshotUri.isNullOrBlank() &&
+        hasConfirmedCrop
 
 @Composable
 private fun RowScope.LobbyScreenshotSelectorButton(

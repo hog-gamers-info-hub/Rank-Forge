@@ -4551,8 +4551,8 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         }
 
         composeTestRule.onNodeWithTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG).performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Status: FINALIZED").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Finalized matches are read-only.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Finalized Result · Read-only").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Finalized matches are read-only.").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_PLACEMENTS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_KILLS_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
@@ -4589,6 +4589,114 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_REVIEW_CORRECTION_ACTION_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedReviewShowsBothAvailableScreenshotCategoriesWithoutEditingControls() {
+        val lobbyUri = createReadableResultPreviewUri("finalized-lobby-both")
+        val upperUri = createReadableResultPreviewUri("finalized-result-upper-both")
+        val lowerUri = createReadableResultPreviewUri("finalized-result-lower-both")
+        setFinalizedScreenshotContent(
+            lobbyUiState = finalizedLobbyState(setOf(1), lobbyUri),
+            resultScreenshots = finalizedResultSlots(upperUri, lowerUri),
+        )
+
+        awaitLobbyScreenshotPreview(1)
+        awaitResultScreenshotPreview(1)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_REPLACE_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedReviewShowsOnlyAvailableLobbyScreenshotsWithoutUnavailableNotice() {
+        val lobbyUri = createReadableResultPreviewUri("finalized-lobby-only")
+        setFinalizedScreenshotContent(
+            lobbyUiState = finalizedLobbyState(setOf(1), lobbyUri),
+            resultScreenshots = finalizedResultSlots(),
+        )
+
+        awaitLobbyScreenshotPreview(1)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + "1")
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Result screenshots unavailable.")
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedReviewShowsOnlyAvailableResultScreenshotsWithoutUnavailableNotice() {
+        val upperUri = createReadableResultPreviewUri("finalized-result-only")
+        setFinalizedScreenshotContent(
+            lobbyUiState = finalizedLobbyState(),
+            resultScreenshots = finalizedResultSlots(upperUri, null),
+        )
+
+        awaitResultScreenshotPreview(1)
+        composeTestRule.onAllNodesWithText("Lobby screenshots unavailable.")
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_1_PREVIEW_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedReviewWithNoUsableScreenshotsKeepsResultsWithoutScreenshotNotice() {
+        setFinalizedScreenshotContent(
+            lobbyUiState = finalizedLobbyState(),
+            resultScreenshots = defaultMatchResultScreenshotSlots(),
+        )
+
+        composeTestRule.onAllNodesWithText("Screenshots unavailable").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedReviewWithMissingLocalFilesKeepsResultsWithoutScreenshotNotice() {
+        setFinalizedScreenshotContent(
+            lobbyUiState = finalizedLobbyStateWithMissingMetadata(),
+            resultScreenshots = finalizedResultSlots(),
+        )
+
+        composeTestRule.onAllNodesWithText("Screenshots unavailable").assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.row(0)).assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun finalizedReviewUsesStaticAggregateFieldsAndKeepsPlayerRowsHidden() {
+        setFinalizedScreenshotContent(
+            lobbyUiState = finalizedLobbyState(),
+            resultScreenshots = defaultMatchResultScreenshotSlots(),
+        )
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Team 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Position").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Total Kills").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Slot").assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1))
             .assertCountEquals(0)
     }
 
@@ -5104,6 +5212,108 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         }
     }
 
+    private fun setFinalizedScreenshotContent(
+        lobbyUiState: MatchLobbyScreenshotIntakeUiState,
+        resultScreenshots: List<MatchResultScreenshotSlotUiState>,
+    ) {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState(resultScreenshots = resultScreenshots).copy(
+                        status = MatchStatus.FINALIZED,
+                        finalizedParticipantSlotNumbers = (1..12).toSet(),
+                    ),
+                    lobbyUiState = lobbyUiState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    matchLobbyScreenshotIntake = {
+                        MatchLobbyScreenshotIntakeScreen(
+                            uiState = lobbyUiState,
+                            onSelect = {},
+                            onCrop = {},
+                            onRemove = {},
+                            showTitle = false,
+                            compactSelectors = true,
+                            compactActions = true,
+                        )
+                    },
+                    showLegacyManualReviewContent = false,
+                )
+            }
+        }
+    }
+
+    private fun finalizedLobbyState(
+        availableIndexes: Set<Int> = emptySet(),
+        previewUri: String? = null,
+        missingMetadata: Boolean = false,
+    ) = MatchLobbyScreenshotIntakeUiState(
+        isLoading = false,
+        isAvailable = true,
+        tournamentId = "tournament-id",
+        matchId = "match-id",
+        status = MatchStatus.FINALIZED,
+        slots = (1..3).map { index ->
+            if (index in availableIndexes) {
+                MatchLobbyScreenshotSlotUiState(
+                    index = index,
+                    selectedScreenshotUri = previewUri,
+                    selectedScreenshotWidth = 192,
+                    selectedScreenshotHeight = 108,
+                    hasLinkedAsset = true,
+                    confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 1.0, 1.0),
+                    cropProfileId = "lobby",
+                )
+            } else if (missingMetadata) {
+                MatchLobbyScreenshotSlotUiState(
+                    index = index,
+                    hasLinkedAsset = true,
+                    isLocalFileMissing = true,
+                    confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 1.0, 1.0),
+                    cropProfileId = "lobby",
+                )
+            } else {
+                MatchLobbyScreenshotSlotUiState(
+                    index = index,
+                )
+            }
+        },
+    )
+
+    private fun finalizedLobbyStateWithMissingMetadata() = finalizedLobbyState(
+        availableIndexes = emptySet(),
+        missingMetadata = true,
+    )
+
+    private fun finalizedResultSlots(
+        upperPreviewUri: String? = null,
+        lowerPreviewUri: String? = null,
+    ) = listOf(
+        finalizedResultSlot(
+            role = MatchResultScreenshotRole.MATCH_RESULT_UPPER,
+            previewUri = upperPreviewUri,
+        ),
+        finalizedResultSlot(
+            role = MatchResultScreenshotRole.MATCH_RESULT_LOWER,
+            previewUri = lowerPreviewUri,
+        ),
+    )
+
+    private fun finalizedResultSlot(
+        role: MatchResultScreenshotRole,
+        previewUri: String?,
+    ) = resultSlot(
+        role = role,
+        localPreviewUri = previewUri,
+        originalWidth = 192,
+        originalHeight = 108,
+        hasLinkedAsset = true,
+        isLocalFileMissing = previewUri == null,
+        confirmedCrop = OcrNormalizedCropRect(0.0, 0.0, 1.0, 1.0),
+        cropProfileId = "match-result",
+    )
+
     private fun setResultFormatAvailabilityContent(
         status: CustomDesignFormatAvailabilityStatus,
     ) {
@@ -5176,6 +5386,18 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             composeTestRule
                 .onAllNodesWithContentDescription(
                     previewDescription,
+                    useUnmergedTree = true,
+                )
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+    }
+
+    private fun awaitLobbyScreenshotPreview(index: Int) {
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithTag(
+                    MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + index,
                     useUnmergedTree = true,
                 )
                 .fetchSemanticsNodes()

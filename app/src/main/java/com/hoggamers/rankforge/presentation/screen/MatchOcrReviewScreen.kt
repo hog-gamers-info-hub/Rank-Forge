@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1063,7 +1064,7 @@ private fun MatchOcrReviewFinalizedResultFields(
                 .testTag(placementTestTag),
         )
         MatchOcrReviewFinalizedResultField(
-            label = stringResource(R.string.match_ocr_review_correction_kills_short_label),
+            label = stringResource(R.string.match_review_finalized_total_kills_label),
             value = kills,
             modifier = Modifier
                 .weight(1f)
@@ -1085,21 +1086,37 @@ private fun MatchOcrReviewFinalizedResultField(
     value: String,
     modifier: Modifier,
 ) {
-    CompactOcrNumberField(
-        value = value,
-        onValueChange = {},
-        enabled = true,
-        readOnly = true,
-        label = {
-            Text(
-                text = label,
-                color = PointIqOcrReviewSubtitle,
+    Column(
+        modifier = modifier
+            .height(50.dp)
+            .background(
+                color = PointIqOcrReviewBackground,
+                shape = RoundedCornerShape(8.dp),
             )
-        },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        isError = false,
-        modifier = modifier,
-    )
+            .border(
+                width = 1.dp,
+                color = PointIqOcrReviewFieldBorder.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = label,
+            color = PointIqOcrReviewSubtitle,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+        )
+        Text(
+            text = value,
+            color = PointIqOcrReviewHeader,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 private fun MatchOcrReviewRowUiState.toCompactPreviewRow(): MatchResultOcrPreviewRowUiState =
