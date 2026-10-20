@@ -144,7 +144,7 @@
     <string name="scoring_rules_tie_break_title">Tie-break Rules</string>
     <string name="scoring_rules_tie_break_first">More 1st-place finishes</string>
     <string name="scoring_rules_tie_break_kills">More Total Kills</string>
-    <string name="scoring_rules_tie_break_latest_placement">Better placement in the latest match</string>
+    <string name="scoring_rules_tie_break_position_points">More Total Position Points</string>
     <string name="scoring_rules_tie_break_item">%1$d. %2$s</string>
     <string name="scoring_rules_complete_tie">Complete tie if all criteria are equal.</string>
     <string-array name="scoring_rules_placement_labels">

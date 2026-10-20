@@ -61,7 +61,7 @@ class TieBreakRulesTest {
     }
 
     @Test
-    fun equalEarlierCriteriaAreResolvedByBetterLatestMatchPlacement() {
+    fun equalEarlierCriteriaAreResolvedByHigherTotalPositionPoints() {
         val result = tieBreakRules(
             listOf(
                 standing(
@@ -69,14 +69,16 @@ class TieBreakRulesTest {
                     totalPoints = 100,
                     firstPlaceFinishes = 1,
                     totalKillPoints = 8,
-                    latestMatchPlacement = 2,
+                    totalPositionPoints = 20,
+                    latestMatchPlacement = 12,
                 ),
                 standing(
                     teamSlotNumber = 2,
                     totalPoints = 100,
                     firstPlaceFinishes = 1,
                     totalKillPoints = 8,
-                    latestMatchPlacement = 5,
+                    totalPositionPoints = 10,
+                    latestMatchPlacement = 1,
                 ),
             ),
         )
@@ -85,15 +87,30 @@ class TieBreakRulesTest {
     }
 
     @Test
-    fun missingLatestPlacementRanksAfterActualPlacementBeforeTeamSlotFallback() {
+    fun latestMatchPlacementDoesNotAffectRanking() {
         val result = tieBreakRules(
             listOf(
-                standing(teamSlotNumber = 1, latestMatchPlacement = null),
-                standing(teamSlotNumber = 2, latestMatchPlacement = 12),
+                standing(
+                    teamSlotNumber = 2,
+                    totalPoints = 100,
+                    firstPlaceFinishes = 1,
+                    totalKillPoints = 8,
+                    totalPositionPoints = 20,
+                    latestMatchPlacement = 1,
+                ),
+                standing(
+                    teamSlotNumber = 1,
+                    totalPoints = 100,
+                    firstPlaceFinishes = 1,
+                    totalKillPoints = 8,
+                    totalPositionPoints = 20,
+                    latestMatchPlacement = null,
+                ),
             ),
         )
 
-        assertEquals(listOf(2, 1), teamSlots(result))
+        assertEquals(listOf(1, 2), teamSlots(result))
+        assertTrue(result.all { it.isCompleteTie })
     }
 
     @Test
@@ -181,6 +198,34 @@ class TieBreakRulesTest {
 
         assertEquals(listOf(7, 10), teamSlots(result))
         assertTrue(result.all { it.isCompleteTie })
+    }
+
+    @Test
+    fun adjustedTotalPointsRemainFirstCriterionWithoutChangingUnderlyingTotals() {
+        val adjusted = standing(
+            teamSlotNumber = 1,
+            totalPoints = 105,
+            totalPositionPoints = 60,
+            totalKillPoints = 40,
+            firstPlaceFinishes = 1,
+        )
+        val penalized = standing(
+            teamSlotNumber = 2,
+            totalPoints = 95,
+            totalPositionPoints = 60,
+            totalKillPoints = 40,
+            firstPlaceFinishes = 1,
+        )
+
+        val result = tieBreakRules(listOf(adjusted, penalized))
+
+        assertEquals(listOf(1, 2), teamSlots(result))
+        assertEquals(60, adjusted.totalPositionPoints)
+        assertEquals(40, adjusted.totalKillPoints)
+        assertEquals(105, adjusted.totalPoints)
+        assertEquals(60, penalized.totalPositionPoints)
+        assertEquals(40, penalized.totalKillPoints)
+        assertEquals(95, penalized.totalPoints)
     }
 
     @Test

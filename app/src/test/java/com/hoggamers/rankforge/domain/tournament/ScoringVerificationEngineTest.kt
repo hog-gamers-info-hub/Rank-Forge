@@ -91,7 +91,7 @@ class ScoringVerificationEngineTest {
     }
 
     @Test
-    fun approvedTieBreakOrderingUsesExistingRules() {
+    fun equalApprovedCriteriaRemainCompleteTieDespiteDifferentLatestPlacements() {
         val result = verification(
             listOf(
                 match(
@@ -108,8 +108,8 @@ class ScoringVerificationEngineTest {
         )
 
         assertTrue(result.tieBreakOrderingVerified)
-        assertEquals(listOf(2, 1), result.tieBreakStandings.take(2).map { it.standing.teamSlotNumber })
-        assertFalse(result.tieBreakStandings.take(2).any { it.isCompleteTie })
+        assertEquals(listOf(1, 2), result.tieBreakStandings.take(2).map { it.standing.teamSlotNumber })
+        assertTrue(result.tieBreakStandings.take(2).all { it.isCompleteTie })
     }
 
     @Test

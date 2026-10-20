@@ -334,7 +334,7 @@ Tie-break tests must verify the approved order exactly:
 1. Total points
 2. Number of first-place finishes
 3. Total kills
-4. Placement in the latest match
+4. Total position points
 
 Complete equality across all approved tie-break criteria must remain unresolved unless later approval defines further handling.
 

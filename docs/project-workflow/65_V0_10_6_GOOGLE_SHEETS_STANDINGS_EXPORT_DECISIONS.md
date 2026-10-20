@@ -371,7 +371,7 @@ Decisions:
 - no more than 10 finalized matches may be included
 - client `exported_match_count` must equal the official finalized-match count
 - finalized matches are ordered by `match_number` ascending and then `id` ascending
-- the final match in that order supplies `latestMatchPlacement` for tie-breaking
+- the final match in that order supplies `latestMatchPlacement` as an informational standings statistic
 - duplicate official match IDs must fail safely
 - duplicate official match numbers must fail safely because tournament match numbers are expected to be unique
 - a finalized match with invalid official data must block the entire standings export
@@ -474,7 +474,7 @@ For each team slot:
 - `total_points` = total position points plus total kill points
 - `best_placement` = lowest numeric official placement
 - `first_place_count` = number of official placement-1 finishes
-- `latest_match_placement` = placement in the latest included match under the approved match order
+- `latest_match_placement` = placement in the latest included match under the approved match order (informational)
 
 The Edge Function must not use a different scoring table or alternate calculation path.
 
@@ -485,7 +485,7 @@ The server must reconstruct the official standings order using these criteria:
 1. total points descending
 2. first-place count descending
 3. total kills descending
-4. latest-match placement ascending
+4. total position points descending
 5. team slot ascending for deterministic display order
 
 `standings_rank` is the one-based row position in this order.
@@ -506,7 +506,7 @@ For each row:
   - total points
   - first-place count
   - total kills
-  - latest-match placement
+  - total position points
 - otherwise `tie_break_applied` when more than one team has the same total points and the existing secondary criteria establish the official order
 - otherwise `unique_order`
 
@@ -931,7 +931,7 @@ Required coverage includes:
 57. exact official cumulative totals
 58. exact official best placement
 59. exact official first-place count
-60. exact latest-match placement tie-break input
+60. exact total-position-points tie-break input
 61. exact standings ordering
 62. unique-order tie status
 63. tie-break-applied status
