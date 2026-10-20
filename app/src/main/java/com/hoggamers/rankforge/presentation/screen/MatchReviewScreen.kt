@@ -29,7 +29,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -94,9 +97,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -944,9 +950,23 @@ fun MatchReviewScreen(
 
     var ocrReviewOpened by rememberSaveable { mutableStateOf(false) }
     var manualModeOpened by rememberSaveable { mutableStateOf(false) }
+    var clearResultRequested by rememberSaveable { mutableStateOf(false) }
     val closeManualMode = {
         manualModeOpened = false
         ocrReviewOpened = false
+    }
+    LaunchedEffect(uiState.status, manualModeOpened) {
+        if (manualModeOpened && uiState.status == MatchStatus.FINALIZED) {
+            closeManualMode()
+        }
+    }
+    LaunchedEffect(clearResultRequested, isClearResultInProgress, showClearResult) {
+        if (clearResultRequested && !isClearResultInProgress && !showClearResult) {
+            clearResultRequested = false
+            if (manualModeOpened) {
+                closeManualMode()
+            }
+        }
     }
 
     BackHandler(enabled = reviewInteractionsLocked || !uiState.isDeleting) {
@@ -973,7 +993,12 @@ fun MatchReviewScreen(
             onOpenManualReview = onOpenManualReview,
             showClearResult = showClearResult,
             isClearResultInProgress = isClearResultInProgress,
-            onClearResult = onClearResult,
+            onClearResult = {
+                if (showClearResult) {
+                    clearResultRequested = true
+                }
+                onClearResult()
+            },
             onStartCorrection = onStartCorrection,
             onRequestNextMatchCreation = onRequestNextMatchCreation,
             onCancelNextMatchTeamCountConfirmation = onCancelNextMatchTeamCountConfirmation,
@@ -1603,6 +1628,7 @@ private fun PointIqMatchReviewInstructions(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MatchReviewContent(
     uiState: MatchReviewUiState,
@@ -1735,7 +1761,11 @@ private fun MatchReviewContent(
         (uiState.status == MatchStatus.FINALIZED && ocrUiState.hasPreservedResultOcrEvidence())
     val hasDisplayableResultOcrData = shouldShowInlineOcrDetails &&
         ocrUiState.hasDisplayableResultOcrData()
-    val transientResultPositionCropPreviews = if (uiState.status == MatchStatus.FINALIZED) {
+    val isManualCalculatedEvidence = (ocrUiState as? MatchOcrReviewUiState.Ready)
+        ?.calculatedEvidenceOrigin == MatchCalculatedEvidenceOrigin.MANUAL
+    val transientResultPositionCropPreviews = if (
+        uiState.status == MatchStatus.FINALIZED || isManualCalculatedEvidence
+    ) {
         emptyMap()
     } else {
         uiState.resultPositionCropPreviews
@@ -1762,6 +1792,21 @@ private fun MatchReviewContent(
         slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
     }
     val hasResultScreenshotSelection = uiState.resultScreenshots.any { it.hasSelection() }
+    val manualPanelInScrollablePage = manualModeOpened && hasResultScreenshotSelection
+    val matchReviewScrollState = rememberScrollState()
+    val manualPanelScrollState = rememberScrollState()
+    val matchKeyboardScrollCoordinator = remember(matchReviewScrollState) {
+        KeyboardScrollCoordinator(matchReviewScrollState)
+    }
+    val manualKeyboardScrollCoordinator = remember(manualPanelScrollState) {
+        KeyboardScrollCoordinator(manualPanelScrollState)
+    }
+    val activeKeyboardScrollCoordinator = if (manualModeOpened && !hasResultScreenshotSelection) {
+        manualKeyboardScrollCoordinator
+    } else {
+        matchKeyboardScrollCoordinator
+    }
+    KeyboardScrollCoordinatorEffect(activeKeyboardScrollCoordinator)
     val explicitlyExcludedResultPositions = (ocrUiState as? MatchOcrReviewUiState.Ready)
         ?.correctionDraft
         ?.rows
@@ -1796,12 +1841,52 @@ private fun MatchReviewContent(
     val resultRowsPagerState = rememberPagerState(
         pageCount = { resultRowsPagerUiState?.resultRowsForPager().orEmpty().size },
     )
+    val manualKillsFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(manualModeOpened, resultRowsPagerState) {
+        if (!manualModeOpened) return@LaunchedEffect
+
+        var pagerWasScrolling = false
+        snapshotFlow {
+            resultRowsPagerState.isScrollInProgress to resultRowsPagerState.currentPage
+        }.collect { (isScrolling, _) ->
+            if (isScrolling) {
+                pagerWasScrolling = true
+            } else if (pagerWasScrolling) {
+                pagerWasScrolling = false
+                manualKillsFocusRequester.requestFocus()
+            }
+        }
+    }
     val resultOcrDetailsContent: @Composable () -> Unit = {
-        if (uiState.status == MatchStatus.FINALIZED) {
-            uiState.toFinalizedResultOcrUiState()?.let { finalizedUiState ->
-                MatchReviewResultRowsPagerContent(
-                    uiState = finalizedUiState,
-                    pagerState = resultRowsPagerState,
+        CompositionLocalProvider(
+            LocalMatchKeyboardScrollCoordinator provides matchKeyboardScrollCoordinator,
+        ) {
+            if (uiState.status == MatchStatus.FINALIZED) {
+                uiState.toFinalizedResultOcrUiState()?.let { finalizedUiState ->
+                    MatchReviewResultRowsPagerContent(
+                        uiState = finalizedUiState,
+                        pagerState = resultRowsPagerState,
+                        onPlacementChanged = onOcrPlacementChanged,
+                        onKillsChanged = onOcrKillsChanged,
+                        onPlayerKillsChanged = onOcrPlayerKillsChanged,
+                        onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                        onExcludeOcrRow = onExcludeOcrRow,
+                        onResetRowCorrection = onOcrResetRowCorrection,
+                        onResetAllCorrections = onOcrResetAllCorrections,
+                        onFinalizeOcrCorrection = onOcrFinalize,
+                        onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                        onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                        onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                        onCompactAddTeam = {},
+                        compactAddTeamEnabled = false,
+                        showPlayerRows = false,
+                        pointAdjustmentsByTeamSlot = emptyMap(),
+                        killsFocusRequester = null,
+                    )
+                }
+            } else if (shouldShowInlineOcrDetails && !manualModeOpened) {
+                MatchReviewResultOcrDetailsContent(
+                    uiState = ocrUiState,
                     onPlacementChanged = onOcrPlacementChanged,
                     onKillsChanged = onOcrKillsChanged,
                     onPlayerKillsChanged = onOcrPlayerKillsChanged,
@@ -1813,53 +1898,38 @@ private fun MatchReviewContent(
                     onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
                     onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
                     onAdjustTeamPoints = openAdjustTeamPointsDialog,
-                    onCompactAddTeam = {},
-                    compactAddTeamEnabled = false,
-                    showPlayerRows = false,
-                    pointAdjustmentsByTeamSlot = emptyMap(),
+                    onCompactAddTeam = onCompactAddTeam,
+                    compactAddTeamEnabled = compactAddTeamEnabled,
+                    pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
+                    pagerState = resultRowsPagerState,
+                    killsFocusRequester = null,
                 )
             }
-        } else if (shouldShowInlineOcrDetails && !manualModeOpened) {
-            MatchReviewResultOcrDetailsContent(
-                uiState = ocrUiState,
-                onPlacementChanged = onOcrPlacementChanged,
-                onKillsChanged = onOcrKillsChanged,
-                onPlayerKillsChanged = onOcrPlayerKillsChanged,
-                onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
-                onExcludeOcrRow = onExcludeOcrRow,
-                onResetRowCorrection = onOcrResetRowCorrection,
-                onResetAllCorrections = onOcrResetAllCorrections,
-                onFinalizeOcrCorrection = onOcrFinalize,
-                onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
-                onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
-                onAdjustTeamPoints = openAdjustTeamPointsDialog,
-                onCompactAddTeam = onCompactAddTeam,
-                compactAddTeamEnabled = compactAddTeamEnabled,
-                pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
-                pagerState = resultRowsPagerState,
-            )
         }
     }
     val resultOcrPositionContent: @Composable (Int) -> Unit = { position ->
         if (shouldShowInlineOcrDetails) {
-            MatchReviewResultOcrPositionContent(
-                uiState = ocrUiState,
-                position = position,
-                onPlacementChanged = onOcrPlacementChanged,
-                onKillsChanged = onOcrKillsChanged,
-                onPlayerKillsChanged = onOcrPlayerKillsChanged,
-                onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
-                onExcludeOcrRow = onExcludeOcrRow,
-                onResetRowCorrection = onOcrResetRowCorrection,
-                onAdjustTeamPoints = openAdjustTeamPointsDialog,
-                onCompactAddTeam = onCompactAddTeam,
-                compactAddTeamEnabled = compactAddTeamEnabled,
-                pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
-            )
+            CompositionLocalProvider(
+                LocalMatchKeyboardScrollCoordinator provides matchKeyboardScrollCoordinator,
+            ) {
+                MatchReviewResultOcrPositionContent(
+                    uiState = ocrUiState,
+                    position = position,
+                    onPlacementChanged = onOcrPlacementChanged,
+                    onKillsChanged = onOcrKillsChanged,
+                    onPlayerKillsChanged = onOcrPlayerKillsChanged,
+                    onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                    onExcludeOcrRow = onExcludeOcrRow,
+                    onResetRowCorrection = onOcrResetRowCorrection,
+                    onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                    onCompactAddTeam = onCompactAddTeam,
+                    compactAddTeamEnabled = compactAddTeamEnabled,
+                    pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
+                )
+            }
         }
     }
     val showManualPanel = manualModeOpened &&
-        !hasResultScreenshotSelection &&
         ocrUiState is MatchOcrReviewUiState.Ready &&
         hasDisplayableResultOcrData
     val manualPanelAnimationVisible = showManualPanel && !manualPanelExitRequested
@@ -1905,31 +1975,50 @@ private fun MatchReviewContent(
             color = Color(0xFF06182E),
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(RankForgeSpacing.Large),
+                modifier = if (manualPanelInScrollablePage) {
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(RankForgeSpacing.Large)
+                } else {
+                    Modifier
+                        .fillMaxSize()
+                        .imePadding()
+                        .verticalScroll(manualPanelScrollState)
+                        .onGloballyPositioned { coordinates ->
+                            manualKeyboardScrollCoordinator.onScrollContainerPositioned(
+                                coordinates.boundsInWindow().top,
+                            )
+                        }
+                        .padding(RankForgeSpacing.Large)
+                },
             ) {
-                MatchReviewResultOcrDetailsContent(
-                    uiState = ocrUiState,
-                    onPlacementChanged = onOcrPlacementChanged,
-                    onKillsChanged = onOcrKillsChanged,
-                    onPlayerKillsChanged = onOcrPlayerKillsChanged,
-                    onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
-                    onExcludeOcrRow = onExcludeOcrRow,
-                    onResetRowCorrection = onOcrResetRowCorrection,
-                    onResetAllCorrections = onOcrResetAllCorrections,
-                    onFinalizeOcrCorrection = onOcrFinalize,
-                    onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
-                    onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
-                    onAdjustTeamPoints = openAdjustTeamPointsDialog,
-                    onCompactAddTeam = onCompactAddTeam,
-                    compactAddTeamEnabled = compactAddTeamEnabled,
-                    onManualBack = requestManualBack,
-                    pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
-                    pagerState = resultRowsPagerState,
-                )
+                CompositionLocalProvider(
+                    LocalMatchKeyboardScrollCoordinator provides activeKeyboardScrollCoordinator,
+                ) {
+                    MatchReviewResultOcrDetailsContent(
+                        uiState = ocrUiState,
+                        onPlacementChanged = onOcrPlacementChanged,
+                        onKillsChanged = onOcrKillsChanged,
+                        onPlayerKillsChanged = onOcrPlayerKillsChanged,
+                        onAssignedTeamSlotChanged = onOcrAssignedTeamSlotChanged,
+                        onExcludeOcrRow = onExcludeOcrRow,
+                        onResetRowCorrection = onOcrResetRowCorrection,
+                        onResetAllCorrections = onOcrResetAllCorrections,
+                        onFinalizeOcrCorrection = onOcrFinalize,
+                        onConfirmFinalizeWarnings = onOcrConfirmFinalizeWarnings,
+                        onDismissFinalizeWarnings = onOcrDismissFinalizeWarnings,
+                        onAdjustTeamPoints = openAdjustTeamPointsDialog,
+                        onCompactAddTeam = onCompactAddTeam,
+                        compactAddTeamEnabled = compactAddTeamEnabled,
+                        onManualBack = requestManualBack,
+                        pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
+                        pagerState = resultRowsPagerState,
+                        killsFocusRequester = manualKillsFocusRequester,
+                    )
+                }
+                if (!manualPanelInScrollablePage && WindowInsets.isImeVisible) {
+                    Spacer(modifier = Modifier.height(80.dp))
+                }
             }
         }
     }
@@ -1940,7 +2029,20 @@ private fun MatchReviewContent(
             .pointIqMatchReviewBackground()
             .testTag(MATCH_REVIEW_SCREEN_TEST_TAG)
             .then(
-                if (manualModeOpened) {
+                if (manualPanelInScrollablePage) {
+                    Modifier
+                        .imePadding()
+                        .verticalScroll(
+                            matchReviewScrollState,
+                            enabled = reviewInteractionsEnabled,
+                        )
+                        .onGloballyPositioned { coordinates ->
+                            matchKeyboardScrollCoordinator.onScrollContainerPositioned(
+                                coordinates.boundsInWindow().top,
+                            )
+                        }
+                        .padding(horizontal = 16.dp, vertical = RankForgeSpacing.Large)
+                } else if (manualModeOpened) {
                     Modifier.padding(
                         start = RankForgeSpacing.Large,
                         top = RankForgeSpacing.Large,
@@ -1950,9 +2052,14 @@ private fun MatchReviewContent(
                     Modifier
                         .imePadding()
                         .verticalScroll(
-                            rememberScrollState(),
+                            matchReviewScrollState,
                             enabled = reviewInteractionsEnabled,
                         )
+                        .onGloballyPositioned { coordinates ->
+                            matchKeyboardScrollCoordinator.onScrollContainerPositioned(
+                                coordinates.boundsInWindow().top,
+                            )
+                        }
                         .padding(horizontal = 16.dp, vertical = RankForgeSpacing.Large)
                 },
             ),
@@ -2185,7 +2292,7 @@ private fun MatchReviewContent(
                         matchLobbyScreenshotIntake()
                     }
                 }
-                if (!manualModeOpened) {
+                if (!manualModeOpened || hasResultScreenshotSelection) {
                     PointIqMatchReviewDetailsDivider()
                     Column(
                         modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
@@ -2230,7 +2337,9 @@ private fun MatchReviewContent(
                             onPreviewPreparationFinished = onResultPreviewPreparationFinished,
                             onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                             showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
-                                !hasDisplayableResultOcrData,
+                                !hasDisplayableResultOcrData ||
+                                manualPanelInScrollablePage ||
+                                (isManualCalculatedEvidence && hasResultScreenshotSelection),
                             showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                             ocrDetailsContent = resultOcrDetailsContent,
                             ocrPositionContent = resultOcrPositionContent,
@@ -2245,7 +2354,7 @@ private fun MatchReviewContent(
                     visible = manualPanelAnimationVisible,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .then(if (manualPanelInScrollablePage) Modifier else Modifier.weight(1f)),
                     enter = slideInVertically(
                         animationSpec = tween(
                             durationMillis = 280,
@@ -2261,7 +2370,9 @@ private fun MatchReviewContent(
                         targetOffsetY = { height -> height },
                     ),
                 ) {
-                    manualOcrPanel(Modifier.fillMaxSize())
+                    manualOcrPanel(
+                        if (manualPanelInScrollablePage) Modifier.fillMaxWidth() else Modifier.fillMaxSize(),
+                    )
                 }
             } else {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2284,7 +2395,7 @@ private fun MatchReviewContent(
                         MatchReviewLobbyPlayerDetailsContent(ocrUiState)
                     }
                 }
-                if (!manualModeOpened) {
+                if (!manualModeOpened || hasResultScreenshotSelection) {
                     PointIqMatchReviewDetailsDivider()
                     Column(
                         modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
@@ -2335,7 +2446,9 @@ private fun MatchReviewContent(
                             onPreviewPreparationFinished = onResultPreviewPreparationFinished,
                             onPositionCropPreviewsDisposed = onResultPositionCropPreviewsDisposed,
                             showSourceScreenshot = uiState.status == MatchStatus.FINALIZED ||
-                                !hasDisplayableResultOcrData,
+                                !hasDisplayableResultOcrData ||
+                                manualPanelInScrollablePage ||
+                                (isManualCalculatedEvidence && hasResultScreenshotSelection),
                             showOcrDetailsOutsideScreenshotPager = uiState.status == MatchStatus.FINALIZED,
                             ocrDetailsContent = resultOcrDetailsContent,
                             ocrPositionContent = resultOcrPositionContent,
@@ -2350,7 +2463,7 @@ private fun MatchReviewContent(
                     visible = manualPanelAnimationVisible,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .then(if (manualPanelInScrollablePage) Modifier else Modifier.weight(1f)),
                     enter = slideInVertically(
                         animationSpec = tween(
                             durationMillis = 280,
@@ -2366,7 +2479,9 @@ private fun MatchReviewContent(
                         targetOffsetY = { height -> height },
                     ),
                 ) {
-                    manualOcrPanel(Modifier.fillMaxSize())
+                    manualOcrPanel(
+                        if (manualPanelInScrollablePage) Modifier.fillMaxWidth() else Modifier.fillMaxSize(),
+                    )
                 }
             } else {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2417,6 +2532,13 @@ private fun MatchReviewContent(
                     showOcrPreflight = false
                     onOcrReviewOpenedChange(false)
                     onOpenResultScreenshotCrop(role)
+                },
+                zeroResultScreenshotWarning = !hasResultScreenshotSelection,
+                onAddResultScreenshots = {
+                    showOcrPreflight = false
+                    onOcrReviewOpenedChange(false)
+                    onSelectResultScreenshotBatch?.invoke()
+                        ?: onSelectResultScreenshot(MatchResultScreenshotRole.MATCH_RESULT_UPPER)
                 },
             )
         }
@@ -2476,26 +2598,16 @@ private fun MatchReviewContent(
         if (uiState.isEditable &&
             (showLegacyManualReviewContent || !hasDisplayableResultOcrData)
         ) {
-            if (!showLegacyManualReviewContent && !hasResultScreenshotSelection) {
+            if (!showLegacyManualReviewContent) {
                 Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
-                ReviewMatchCalculationButton(
-                    label = stringResource(R.string.manual_calculate_action),
-                    iconRes = R.drawable.ic_manual_calculate,
-                    iconSize = 24.dp,
-                    onClick = {
-                        onManualModeOpenedChange(true)
-                        onOcrReviewOpenedChange(true)
-                        onOpenManualReview()
-                    },
-                    enabled = reviewInteractionsEnabled && uiState.isEditable,
-                )
-            } else if (!showLegacyManualReviewContent) {
                 ReviewMatchCalculationButton(
                     label = stringResource(R.string.auto_calculate_action),
                     iconRes = R.drawable.ic_match_processing,
                     iconSize = 26.dp,
                     onClick = {
-                        if (ocrPreflightItems.isEmpty()) {
+                        if (!hasResultScreenshotSelection) {
+                            showOcrPreflight = true
+                        } else if (ocrPreflightItems.isEmpty()) {
                             onOcrReviewOpenedChange(true)
                             onCalculatePoints()
                         } else {
@@ -2505,6 +2617,36 @@ private fun MatchReviewContent(
                     enabled = reviewInteractionsEnabled && uiState.isEditable,
                     modifier = Modifier.testTag(MATCH_REVIEW_OCR_REVIEW_ACTION_TEST_TAG),
                 )
+                Spacer(modifier = Modifier.height(35.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.match_review_manual_entry_or),
+                        color = PointIqMatchReviewSubtitle,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = stringResource(R.string.match_review_manual_entry_action),
+                        color = PointIqMatchReviewCtaTopBlue,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable(
+                            enabled = reviewInteractionsEnabled && uiState.isEditable,
+                            role = Role.Button,
+                            onClick = {
+                                onManualModeOpenedChange(true)
+                                onOcrReviewOpenedChange(true)
+                                onOpenManualReview()
+                            },
+                        ),
+                    )
+                }
             } else {
                 Button(
                     onClick = {
@@ -2773,6 +2915,9 @@ private fun MatchReviewContent(
                     Text(stringResource(R.string.back_to_match_details_action))
             }
         }
+        if (WindowInsets.isImeVisible && (manualPanelInScrollablePage || !manualModeOpened)) {
+            Spacer(modifier = Modifier.height(80.dp))
+        }
         }
     }
 
@@ -2972,6 +3117,7 @@ private fun MatchReviewFinalizeAction(
     calculationOrigin: MatchCalculatedEvidenceOrigin,
     finalization: MatchOcrReviewFinalizationUiState,
     isUuidBackedGroupRotation: Boolean,
+    showBlockers: Boolean = true,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
     val interactionsEnabled = LocalMatchReviewInteractionsEnabled.current
@@ -2983,7 +3129,7 @@ private fun MatchReviewFinalizeAction(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
     ) {
-        if (blockers.hasBlockers) {
+        if (showBlockers && blockers.hasBlockers) {
             MatchReviewFinalizeBlockerContainer(
                 blockers = blockers,
                 calculationOrigin = calculationOrigin,
@@ -3737,6 +3883,8 @@ private fun MatchOcrScreenshotPreflightDialog(
     onOpenLobbyScreenshotCrop: (Int) -> Unit,
     onSelectResultScreenshot: (MatchResultScreenshotRole) -> Unit,
     onOpenResultScreenshotCrop: (MatchResultScreenshotRole) -> Unit,
+    zeroResultScreenshotWarning: Boolean = false,
+    onAddResultScreenshots: (() -> Unit)? = null,
 ) {
     val hasProcessing = items.any { it.issue == OcrScreenshotPreflightIssue.PROCESSING }
     val dialogShape = RoundedCornerShape(12.dp)
@@ -3763,86 +3911,95 @@ private fun MatchOcrScreenshotPreflightDialog(
             )
         },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
-            ) {
+            if (zeroResultScreenshotWarning) {
                 Text(
-                    text = stringResource(R.string.match_ocr_preflight_intro),
+                    text = stringResource(R.string.match_ocr_preflight_no_result_screenshot_message),
                     color = PointIqMatchReviewSubtitle,
                     fontSize = 15.sp,
                     lineHeight = 22.sp,
                 )
-                items.forEach { item ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(matchReviewOcrPreflightItemTestTag(item.identity)),
-                        verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
-                    ) {
-                        Text(
-                            text = item.issue.message(item.identity),
-                            color = PointIqMatchReviewHeader,
-                            fontSize = 15.sp,
-                            lineHeight = 21.sp,
-                        )
-                        item.actionLabel()?.let { action ->
-                            OutlinedButton(
-                                onClick = {
-                                    when (val identity = item.identity) {
-                                        is OcrScreenshotPreflightIdentity.Lobby -> when (item.issue) {
-                                            OcrScreenshotPreflightIssue.CROP_REQUIRED ->
-                                                onOpenLobbyScreenshotCrop(identity.index)
-                                            OcrScreenshotPreflightIssue.MISSING,
-                                            OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING,
-                                            OcrScreenshotPreflightIssue.PROCESSING,
-                                            -> onSelectLobbyScreenshot(identity.index)
+            } else {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.Small),
+                ) {
+                    Text(
+                        text = stringResource(R.string.match_ocr_preflight_intro),
+                        color = PointIqMatchReviewSubtitle,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                    )
+                    items.forEach { item ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(matchReviewOcrPreflightItemTestTag(item.identity)),
+                            verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                        ) {
+                            Text(
+                                text = item.issue.message(item.identity),
+                                color = PointIqMatchReviewHeader,
+                                fontSize = 15.sp,
+                                lineHeight = 21.sp,
+                            )
+                            item.actionLabel()?.let { action ->
+                                OutlinedButton(
+                                    onClick = {
+                                        when (val identity = item.identity) {
+                                            is OcrScreenshotPreflightIdentity.Lobby -> when (item.issue) {
+                                                OcrScreenshotPreflightIssue.CROP_REQUIRED ->
+                                                    onOpenLobbyScreenshotCrop(identity.index)
+                                                OcrScreenshotPreflightIssue.MISSING,
+                                                OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING,
+                                                OcrScreenshotPreflightIssue.PROCESSING,
+                                                -> onSelectLobbyScreenshot(identity.index)
+                                            }
+                                            is OcrScreenshotPreflightIdentity.Result -> when (item.issue) {
+                                                OcrScreenshotPreflightIssue.CROP_REQUIRED ->
+                                                    onOpenResultScreenshotCrop(identity.role)
+                                                OcrScreenshotPreflightIssue.MISSING,
+                                                OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING,
+                                                OcrScreenshotPreflightIssue.PROCESSING,
+                                                -> onSelectResultScreenshot(identity.role)
+                                            }
                                         }
-                                        is OcrScreenshotPreflightIdentity.Result -> when (item.issue) {
-                                            OcrScreenshotPreflightIssue.CROP_REQUIRED ->
-                                                onOpenResultScreenshotCrop(identity.role)
-                                            OcrScreenshotPreflightIssue.MISSING,
-                                            OcrScreenshotPreflightIssue.LOCAL_FILE_MISSING,
-                                            OcrScreenshotPreflightIssue.PROCESSING,
-                                            -> onSelectResultScreenshot(identity.role)
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.testTag(
-                                    matchReviewOcrPreflightActionTestTag(item.identity, item.issue),
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, PointIqMatchReviewBlue),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = Color.Transparent,
-                                    contentColor = PointIqMatchReviewCtaTopBlue,
-                                    disabledContainerColor = Color.Transparent,
-                                    disabledContentColor = PointIqMatchReviewInactive,
-                                ),
-                            ) {
-                                Text(
-                                    text = action,
-                                    color = PointIqMatchReviewCtaTopBlue,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
+                                    },
+                                    modifier = Modifier.testTag(
+                                        matchReviewOcrPreflightActionTestTag(item.identity, item.issue),
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, PointIqMatchReviewBlue),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = Color.Transparent,
+                                        contentColor = PointIqMatchReviewCtaTopBlue,
+                                        disabledContainerColor = Color.Transparent,
+                                        disabledContentColor = PointIqMatchReviewInactive,
+                                    ),
+                                ) {
+                                    Text(
+                                        text = action,
+                                        color = PointIqMatchReviewCtaTopBlue,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                if (hasProcessing) {
-                    Text(
-                        text = stringResource(R.string.match_ocr_preflight_processing_message),
-                        color = PointIqMatchReviewBlockerIcon,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                    )
-                } else {
-                    Text(
-                        text = stringResource(R.string.match_ocr_preflight_incomplete_message),
-                        color = PointIqMatchReviewSubtitle,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                    )
+                    if (hasProcessing) {
+                        Text(
+                            text = stringResource(R.string.match_ocr_preflight_processing_message),
+                            color = PointIqMatchReviewBlockerIcon,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.match_ocr_preflight_incomplete_message),
+                            color = PointIqMatchReviewSubtitle,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                        )
+                    }
                 }
             }
         },
@@ -3861,8 +4018,16 @@ private fun MatchOcrScreenshotPreflightDialog(
         },
         confirmButton = {
             Button(
-                onClick = onCalculatePoints,
-                enabled = !hasProcessing,
+                onClick = if (zeroResultScreenshotWarning) {
+                    onAddResultScreenshots ?: onCancel
+                } else {
+                    onCalculatePoints
+                },
+                enabled = if (zeroResultScreenshotWarning) {
+                    onAddResultScreenshots != null
+                } else {
+                    !hasProcessing
+                },
                 modifier = Modifier.testTag(MATCH_REVIEW_OCR_PREFLIGHT_CALCULATE_ACTION_TEST_TAG),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -3874,7 +4039,13 @@ private fun MatchOcrScreenshotPreflightDialog(
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.calculate_points_action),
+                    text = stringResource(
+                        if (zeroResultScreenshotWarning) {
+                            R.string.match_ocr_preflight_add_result_screenshots_action
+                        } else {
+                            R.string.calculate_points_action
+                        },
+                    ),
                     color = PointIqMatchReviewHeader,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -4245,6 +4416,7 @@ private fun MatchReviewResultOcrDetailsContent(
     onManualBack: (() -> Unit)? = null,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
     pagerState: PagerState,
+    killsFocusRequester: FocusRequester? = null,
 ) {
     Column(
         modifier = Modifier
@@ -4296,14 +4468,29 @@ private fun MatchReviewResultOcrDetailsContent(
                 onCompactAddTeam = onCompactAddTeam,
                 compactAddTeamEnabled = compactAddTeamEnabled,
                 showPlayerRows = uiState.calculatedEvidenceOrigin !=
-                    MatchCalculatedEvidenceOrigin.MANUAL,
+                    MatchCalculatedEvidenceOrigin.MANUAL &&
+                    !uiState.finalization.isFinalized,
                 pointAdjustmentsByTeamSlot = pointAdjustmentsByTeamSlot,
                 pagerState = pagerState,
+                killsFocusRequester = killsFocusRequester,
             )
         }
         onManualBack?.let { onBack ->
             val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
             val shape = RoundedCornerShape(8.dp)
+            if (uiState is MatchOcrReviewUiState.Ready) {
+                uiState.correctionDraft?.let { correctionDraft ->
+                    MatchReviewFinalizeAction(
+                        correctionDraft = correctionDraft,
+                        teamNamesBySlot = uiState.teamNamesBySlot,
+                        calculationOrigin = uiState.calculatedEvidenceOrigin,
+                        finalization = uiState.finalization,
+                        isUuidBackedGroupRotation = uiState.isUuidBackedGroupRotation,
+                        showBlockers = false,
+                        onFinalizeOcrCorrection = onFinalizeOcrCorrection,
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -4356,8 +4543,9 @@ private fun MatchOcrReviewRowUiState.temporaryTeamSlotNumber(
         .toIntOrNull()
         ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
 
-internal fun MatchCalculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(): Boolean =
-    this != MatchCalculatedEvidenceOrigin.MANUAL
+internal fun MatchCalculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(
+    isFinalized: Boolean = false,
+): Boolean = isFinalized || this != MatchCalculatedEvidenceOrigin.MANUAL
 
 @Composable
 private fun TemporaryTeamPointAdjustmentIndicator(
@@ -4452,9 +4640,12 @@ private fun MatchReviewResultOcrPositionContent(
                     showBlockerDetails = false,
                     compactResetAction = true,
                     showAggregateResultFields =
-                        uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(),
+                        uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(
+                            isFinalized = uiState.finalization.isFinalized,
+                        ),
                     showPlayerRows = uiState.calculatedEvidenceOrigin !=
-                        MatchCalculatedEvidenceOrigin.MANUAL,
+                        MatchCalculatedEvidenceOrigin.MANUAL &&
+                        !uiState.finalization.isFinalized,
                 )
                 TemporaryTeamPointAdjustmentIndicator(
                     teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex]),
@@ -4543,6 +4734,7 @@ private fun MatchReviewResultRowsPagerContent(
     compactAddTeamEnabled: Boolean,
     showPlayerRows: Boolean = true,
     pointAdjustmentsByTeamSlot: Map<Int, Int> = emptyMap(),
+    killsFocusRequester: FocusRequester? = null,
 ) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val previewRowsByPosition = (uiState.matchResultOcrPreview as? MatchResultOcrPreviewUiState.Ready)
@@ -4626,8 +4818,15 @@ private fun MatchReviewResultRowsPagerContent(
                             showBlockerDetails = false,
                             compactResetAction = true,
                             showAggregateResultFields =
-                                uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(),
+                                uiState.calculatedEvidenceOrigin.shouldShowCompactAggregateResultFields(
+                                    isFinalized = uiState.finalization.isFinalized,
+                                ),
                             showPlayerRows = showPlayerRows,
+                            killsFocusRequester = if (page == pagerState.currentPage) {
+                                killsFocusRequester
+                            } else {
+                                null
+                            },
                         )
                         TemporaryTeamPointAdjustmentIndicator(
                             teamSlotNumber = row.temporaryTeamSlotNumber(correctionRowsByIndex[row.rowIndex]),

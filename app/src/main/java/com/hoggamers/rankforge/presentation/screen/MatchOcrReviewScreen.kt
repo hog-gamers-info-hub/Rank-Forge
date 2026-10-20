@@ -7,15 +7,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,13 +49,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -67,6 +77,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -76,10 +89,10 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
+import kotlin.math.roundToInt
 
 private const val SHOW_RESULT_LOBBY_DIAGNOSTIC_DETAILS = false
 private const val SHOW_EXTRA_INFORMATION_STATUS_TEXT = false
-
 private val PointIqOcrReviewBackground = Color(0xFF031225)
 private val PointIqOcrReviewAmbientBlue = Color(0xFF0B386F)
 private val PointIqOcrReviewHeader = Color(0xFFF6F8FF)
@@ -87,6 +100,184 @@ private val PointIqOcrReviewSubtitle = Color(0xFF91AFE0)
 private val PointIqOcrReviewPlayerName = PointIqOcrReviewHeader.copy(alpha = 0.78f)
 private val PointIqOcrReviewCyan = Color(0xFF17C9F2)
 private val PointIqOcrReviewFieldBorder = Color(0xFF7D9DCE)
+
+internal val LocalMatchKeyboardScrollCoordinator =
+    androidx.compose.runtime.staticCompositionLocalOf<KeyboardScrollCoordinator?> { null }
+
+internal class KeyboardScrollCoordinator(
+    val scrollState: ScrollState,
+) {
+    var focusedTargetKey by mutableStateOf<String?>(null)
+        private set
+    var focusedFieldLabel by mutableStateOf<String?>(null)
+        private set
+    var focusedTargetBounds by mutableStateOf<Rect?>(null)
+        private set
+    var scrollContainerTopPx by mutableStateOf<Float?>(null)
+        private set
+
+    private val targetBoundsByKey = mutableMapOf<String, Rect>()
+    private var lastAppliedTargetKey by mutableStateOf<String?>(null)
+    private var stableViewHeightPx: Int? = null
+    private var stableViewportBottomPx: Float? = null
+    private var stableVisibleFrameBottomPx: Float? = null
+    private var resizeImeActive = false
+
+    fun targetModifier(key: String): Modifier = Modifier.onGloballyPositioned { coordinates ->
+        val bounds = coordinates.boundsInWindow()
+        targetBoundsByKey[key] = bounds
+        if (focusedTargetKey == key) {
+            focusedTargetBounds = bounds
+        }
+    }
+
+    fun onScrollContainerPositioned(topPx: Float) {
+        scrollContainerTopPx = topPx
+    }
+
+    fun onFocused(key: String, fieldLabel: String) {
+        focusedTargetKey = key
+        focusedFieldLabel = fieldLabel
+        focusedTargetBounds = targetBoundsByKey[key]
+        lastAppliedTargetKey = null
+    }
+
+    fun onFocusLost(key: String) {
+        if (focusedTargetKey == key) {
+            focusedTargetKey = null
+            focusedFieldLabel = null
+            focusedTargetBounds = null
+        }
+    }
+
+    fun hasApplied(key: String): Boolean = lastAppliedTargetKey == key
+
+    fun markApplied(key: String) {
+        lastAppliedTargetKey = key
+    }
+
+    fun resetApplied() {
+        lastAppliedTargetKey = null
+    }
+
+    fun detectResizeIme(
+        hasFocusedTarget: Boolean,
+        insetImeVisible: Boolean,
+        viewHeightPx: Int,
+        viewportBottomPx: Float?,
+        visibleFrameBottomPx: Float,
+        contractionThresholdPx: Float,
+    ): Boolean {
+        if (insetImeVisible || viewportBottomPx == null) {
+            resizeImeActive = false
+            return false
+        }
+
+        val baselineViewHeight = stableViewHeightPx
+        val baselineViewportBottom = stableViewportBottomPx
+        val baselineVisibleFrameBottom = stableVisibleFrameBottomPx
+        if (baselineViewHeight == null ||
+            baselineViewportBottom == null ||
+            baselineVisibleFrameBottom == null
+        ) {
+            stableViewHeightPx = viewHeightPx
+            stableViewportBottomPx = viewportBottomPx
+            stableVisibleFrameBottomPx = visibleFrameBottomPx
+            return false
+        }
+
+        val viewportContracted =
+            viewHeightPx <= baselineViewHeight - contractionThresholdPx.roundToInt() &&
+                viewportBottomPx <= baselineViewportBottom - contractionThresholdPx &&
+                visibleFrameBottomPx <= baselineVisibleFrameBottom - contractionThresholdPx
+
+        if (resizeImeActive && !viewportContracted) {
+            stableViewHeightPx = viewHeightPx
+            stableViewportBottomPx = viewportBottomPx
+            stableVisibleFrameBottomPx = visibleFrameBottomPx
+            resizeImeActive = false
+        } else if (!resizeImeActive && hasFocusedTarget && viewportContracted) {
+            resizeImeActive = true
+        } else if (!resizeImeActive && !hasFocusedTarget) {
+            stableViewHeightPx = viewHeightPx
+            stableViewportBottomPx = viewportBottomPx
+            stableVisibleFrameBottomPx = visibleFrameBottomPx
+        }
+        return resizeImeActive
+    }
+}
+
+internal fun keyboardScrollCorrectionRowKey(rowIndex: Int): String =
+    "correction-row-$rowIndex"
+
+internal fun keyboardScrollPlayerKillRowKey(position: Int, playerSlot: Int): String =
+    "player-kill-row-$position-$playerSlot"
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun KeyboardScrollCoordinatorEffect(
+    coordinator: KeyboardScrollCoordinator,
+    clearance: androidx.compose.ui.unit.Dp = 120.dp,
+) {
+    val density = LocalDensity.current
+    val view = LocalView.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val imeVisible = WindowInsets.isImeVisible || imeBottom > 0
+    val focusedTargetKey = coordinator.focusedTargetKey
+    val scrollContainerTopPx = coordinator.scrollContainerTopPx
+    val viewportSize = coordinator.scrollState.viewportSize
+    val clearancePx = with(density) { clearance.toPx() }
+    val visibleFrame = remember(view) { android.graphics.Rect() }
+
+    view.getWindowVisibleDisplayFrame(visibleFrame)
+    val viewportBottomPx = scrollContainerTopPx?.plus(viewportSize)
+    val resizeImeVisible = coordinator.detectResizeIme(
+        hasFocusedTarget = focusedTargetKey != null,
+        insetImeVisible = imeVisible,
+        viewHeightPx = view.height,
+        viewportBottomPx = viewportBottomPx,
+        visibleFrameBottomPx = visibleFrame.bottom.toFloat(),
+        contractionThresholdPx = with(density) { 48.dp.toPx() },
+    )
+    val keyboardVisible = imeVisible || resizeImeVisible
+
+    LaunchedEffect(keyboardVisible) {
+        if (!keyboardVisible) {
+            coordinator.resetApplied()
+        }
+    }
+
+    LaunchedEffect(
+        focusedTargetKey,
+        keyboardVisible,
+        resizeImeVisible,
+        scrollContainerTopPx,
+        viewportSize,
+    ) {
+        val targetKey = focusedTargetKey ?: return@LaunchedEffect
+        if (!keyboardVisible || coordinator.hasApplied(targetKey)) return@LaunchedEffect
+
+        withFrameNanos { }
+        withFrameNanos { }
+
+        val rowBottom = coordinator.focusedTargetBounds?.bottom ?: return@LaunchedEffect
+        val containerTop = coordinator.scrollContainerTopPx ?: return@LaunchedEffect
+        val currentViewportSize = coordinator.scrollState.viewportSize
+        if (currentViewportSize <= 0) return@LaunchedEffect
+
+        // imePadding resizes this active scroll viewport when resize-based IME detection is used.
+        val desiredRowBottom = containerTop + currentViewportSize - clearancePx
+        val scrollDelta = rowBottom - desiredRowBottom
+        val currentScroll = coordinator.scrollState.value
+        val targetScroll = (currentScroll + scrollDelta)
+            .roundToInt()
+            .coerceIn(0, coordinator.scrollState.maxValue)
+        if (targetScroll != currentScroll) {
+            coordinator.scrollState.scrollTo(targetScroll)
+        }
+        coordinator.markApplied(targetKey)
+    }
+}
 
 object MatchOcrReviewTestTags {
     const val SCREEN = "match_ocr_review_screen"
@@ -976,6 +1167,8 @@ private fun CompactPlayerCell(
     correctionEnabled: Boolean,
     onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
 ) {
+    val keyboardScrollCoordinator = LocalMatchKeyboardScrollCoordinator.current
+    val keyboardScrollTargetKey = keyboardScrollPlayerKillRowKey(previewRow.position, slot)
     val player = previewRow.slots.firstOrNull { it.slot == slot }
     val rawPlayerName = player?.playerText?.trim().orEmpty()
     val isMissingPlayer =
@@ -1060,6 +1253,10 @@ private fun CompactPlayerCell(
         }
         Row(
             modifier = modifier
+                .then(
+                    keyboardScrollCoordinator?.targetModifier(keyboardScrollTargetKey)
+                        ?: Modifier,
+                )
                 .testTag(MatchOcrReviewTestTags.compactPlayer(previewRow.position, slot)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1090,13 +1287,18 @@ private fun CompactPlayerCell(
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 cursorBrush = SolidColor(PointIqOcrReviewCyan),
-                modifier = Modifier
-                    .width(killInputWidth)
-                    .height(killInputHeight)
-                    .background(
-                        color = emptyKillBackground,
-                    )
-                    .testTag(MatchOcrReviewTestTags.compactPlayerKillInput(previewRow.position, slot)),
+                modifier = rememberKeyboardAwareInputModifier(
+                    modifier = Modifier
+                        .width(killInputWidth)
+                        .height(killInputHeight)
+                        .background(
+                            color = emptyKillBackground,
+                        )
+                        .testTag(MatchOcrReviewTestTags.compactPlayerKillInput(previewRow.position, slot)),
+                    enabled = correctionEnabled,
+                    keyboardScrollTargetKey = keyboardScrollTargetKey,
+                    keyboardScrollFieldLabel = "PlayerKill[$slot]",
+                ),
             )
             Text(
                 text = "]",
@@ -1262,6 +1464,7 @@ internal fun MatchOcrReviewRow(
     availableTeamSlotOptions: List<MatchOcrReviewTeamSlotCandidateUiState> = emptyList(),
     showPlayerRows: Boolean = true,
     showAggregateResultFields: Boolean = true,
+    killsFocusRequester: FocusRequester? = null,
 ) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val effectiveCorrectionEnabled = correctionEnabled && reviewInteractionsEnabled
@@ -1377,6 +1580,7 @@ internal fun MatchOcrReviewRow(
                 teamNamesBySlot = teamNamesBySlot,
                 lobbySlotByTeamSlot = lobbySlotByTeamSlot,
                 usesPairRelativeIdentity = usesPairRelativeIdentity,
+                killsFocusRequester = killsFocusRequester,
             )
         }
     }
@@ -1607,6 +1811,28 @@ private fun MatchOcrReviewPositionHeader(
 }
 
 @Composable
+private fun rememberKeyboardAwareInputModifier(
+    modifier: Modifier,
+    enabled: Boolean,
+    readOnly: Boolean = false,
+    keyboardScrollTargetKey: String? = null,
+    keyboardScrollFieldLabel: String? = null,
+): Modifier {
+    val keyboardScrollCoordinator = LocalMatchKeyboardScrollCoordinator.current
+    return modifier.onFocusChanged { focusState ->
+        val targetKey = keyboardScrollTargetKey ?: return@onFocusChanged
+        if (focusState.isFocused && enabled && !readOnly) {
+            keyboardScrollCoordinator?.onFocused(
+                key = targetKey,
+                fieldLabel = keyboardScrollFieldLabel ?: targetKey,
+            )
+        } else if (!focusState.isFocused) {
+            keyboardScrollCoordinator?.onFocusLost(targetKey)
+        }
+    }
+}
+
+@Composable
 private fun CompactOcrNumberField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -1616,6 +1842,9 @@ private fun CompactOcrNumberField(
     keyboardOptions: KeyboardOptions,
     isError: Boolean,
     modifier: Modifier,
+    keyboardScrollTargetKey: String? = null,
+    keyboardScrollFieldLabel: String? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors(
@@ -1647,7 +1876,15 @@ private fun CompactOcrNumberField(
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.height(50.dp),
+        modifier = rememberKeyboardAwareInputModifier(
+            modifier = modifier
+                .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                .height(50.dp),
+            enabled = enabled,
+            readOnly = readOnly,
+            keyboardScrollTargetKey = keyboardScrollTargetKey,
+            keyboardScrollFieldLabel = keyboardScrollFieldLabel,
+        ),
         enabled = enabled,
         readOnly = readOnly,
         singleLine = true,
@@ -1697,7 +1934,10 @@ private fun MatchOcrReviewCorrectionFields(
     teamNamesBySlot: Map<Int, String> = emptyMap(),
     lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
     usesPairRelativeIdentity: Boolean = false,
+    killsFocusRequester: FocusRequester? = null,
 ) {
+    val keyboardScrollCoordinator = LocalMatchKeyboardScrollCoordinator.current
+    val keyboardScrollTargetKey = keyboardScrollCorrectionRowKey(correctionDraft.rowIndex)
     val placementField: @Composable (Modifier) -> Unit = { modifier ->
         CompactOcrNumberField(
             value = correctionDraft.placementDraftValue,
@@ -1722,6 +1962,8 @@ private fun MatchOcrReviewCorrectionFields(
                     it == MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
             },
             modifier = modifier.testTag(MatchOcrReviewTestTags.placementInput(correctionDraft.rowIndex)),
+            keyboardScrollTargetKey = keyboardScrollTargetKey,
+            keyboardScrollFieldLabel = "Position",
         )
     }
     val killsField: @Composable (Modifier) -> Unit = { modifier ->
@@ -1748,6 +1990,9 @@ private fun MatchOcrReviewCorrectionFields(
                     it == MatchOcrReviewCorrectionReason.NEGATIVE_KILLS
             },
             modifier = modifier.testTag(MatchOcrReviewTestTags.killsInput(correctionDraft.rowIndex)),
+            keyboardScrollTargetKey = keyboardScrollTargetKey,
+            keyboardScrollFieldLabel = "Kills",
+            focusRequester = killsFocusRequester,
         )
     }
     val teamSlotField: @Composable (Modifier) -> Unit = { modifier ->
@@ -1793,12 +2038,19 @@ private fun MatchOcrReviewCorrectionFields(
                     it == MatchOcrReviewCorrectionReason.DUPLICATE_TEAM_SLOT
             },
             modifier = modifier.testTag(MatchOcrReviewTestTags.teamSlotInput(correctionDraft.rowIndex)),
+            keyboardScrollTargetKey = keyboardScrollTargetKey,
+            keyboardScrollFieldLabel = "Slot",
         )
     }
     if (compactFieldRow) {
         Spacer(modifier = Modifier.height(8.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    keyboardScrollCoordinator?.targetModifier(keyboardScrollTargetKey)
+                        ?: Modifier,
+                ),
             horizontalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
         ) {
             placementField(Modifier.weight(1f))
@@ -1807,7 +2059,12 @@ private fun MatchOcrReviewCorrectionFields(
         }
     } else {
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    keyboardScrollCoordinator?.targetModifier(keyboardScrollTargetKey)
+                        ?: Modifier,
+                ),
             verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
         ) {
             placementField(Modifier.fillMaxWidth())
