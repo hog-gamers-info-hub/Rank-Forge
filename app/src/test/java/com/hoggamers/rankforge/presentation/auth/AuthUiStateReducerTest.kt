@@ -100,6 +100,26 @@ class AuthUiStateReducerTest {
             AuthUiMessage.RestorationWarning(AuthFailureCategory.NetworkUnavailable),
             uiState.warningMessage,
         )
+        assertTrue(uiState.isRestorationRetryPending)
+    }
+
+    @Test
+    fun pendingRestorationWarningCannotBeOverwrittenByStaleSessionEvents() {
+        val warningState = AuthUiStateReducer.reduceRestoration(
+            currentState = AuthUiState(isSessionLoading = true),
+            result = AuthRestorationResult.TemporaryFailure(
+                AuthFailure(AuthFailureCategory.NetworkUnavailable),
+            ),
+        )
+
+        val afterSignedOut = AuthUiStateReducer.reduceSession(warningState, AuthState.SignedOut)
+        val afterCachedAuthenticated = AuthUiStateReducer.reduceSession(
+            warningState,
+            AuthState.SignedIn(AuthUser(id = "cached", email = "cached@example.com")),
+        )
+
+        assertEquals(warningState, afterSignedOut)
+        assertEquals(warningState, afterCachedAuthenticated)
     }
 
     @Test

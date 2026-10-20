@@ -77,6 +77,13 @@
     <string name="auth_restoration_network_warning">Could not verify the saved session because the network is unavailable. Sign in again when the connection is restored.</string>
     <string name="auth_restoration_timeout_warning">Session verification timed out. Sign in again.</string>
     <string name="auth_restoration_unknown_warning">The saved session could not be verified. Sign in again.</string>
+    <string name="auth_restoration_network_title">No Internet Connection</string>
+    <string name="auth_restoration_network_description">Check your internet connection and try again.</string>
+    <string name="auth_restoration_timeout_title">Connection Timed Out</string>
+    <string name="auth_restoration_timeout_description">The authentication server did not respond. Check your connection and try again.</string>
+    <string name="auth_restoration_unknown_title">Connection Problem</string>
+    <string name="auth_restoration_unknown_description">The saved session could not be verified. Check your connection and try again.</string>
+    <string name="auth_restoration_retry_action">Retry</string>
     <string name="auth_failure_invalid_credentials">The email or password is incorrect.</string>
     <string name="auth_failure_invalid_email">Enter a valid email address.</string>
     <string name="auth_failure_weak_password">Choose a stronger password.</string>
