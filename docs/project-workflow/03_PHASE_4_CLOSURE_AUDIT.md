@@ -60,7 +60,7 @@ The implementation on `origin/main` matches the canonical scoring rules:
 * Finalized duplicate match IDs are counted once by the cumulative standings and scoring-verification domain behavior.
 * Standings derive total position points, total kill points, total points, first-place finishes, latest-match placement, and matches included.
 * Standings aggregate up to 10 finalized matches.
-* Tie-break order is total points, first-place finishes, total kills, and latest-match placement, evaluated sequentially.
+* Tie-break order is total points, first-place finishes, total kills, and total position points, evaluated sequentially.
 * Complete unresolved ties remain explicitly unresolved. No alphabetical, team-slot, head-to-head, average-placement, best-match, manual, or other unapproved competitive fallback was added.
 
 ## 6. Android Standings Interface Audit

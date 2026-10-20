@@ -230,7 +230,7 @@ For every team, standings must derive:
 * Total kill points
 * Total points
 * Number of first-place finishes
-* Latest-match placement required for tie-breaking
+* Latest-match placement as an informational standings statistic
 * Matches included in the calculation
 
 Definitions:
@@ -259,14 +259,14 @@ The approved tie-break order is:
 1. Total points
 2. Number of first-place finishes
 3. Total kills
-4. Placement in the latest match
+4. Total position points
 
 Rules:
 
 * Higher total points ranks first.
 * If total points are equal, more first-place finishes ranks first.
 * If still equal, more total kills ranks first.
-* If still equal, the better placement in the latest match ranks first.
+* If still equal, higher total position points ranks first.
 * Tie-break criteria must be evaluated sequentially.
 * Later criteria must not be used when an earlier criterion already resolves the tie.
 * Ordering must be deterministic and reproducible.
@@ -388,7 +388,7 @@ Required tie-break tests:
 * Equal total points
 * Equal total points and first-place counts
 * Equal total points, first-place counts, and total kills
-* Latest-match placement resolution
+* Total position points resolution
 * Complete equality across all approved tie-break criteria
 * Multiple matches for the same tournament
 

@@ -19,8 +19,7 @@ class TieBreakRules {
                 compareByDescending<CumulativeTournamentStanding> { it.totalPoints }
                     .thenByDescending { it.firstPlaceFinishes }
                     .thenByDescending { it.totalKillPoints }
-                    .thenBy { it.latestMatchPlacement == null }
-                    .thenBy { it.latestMatchPlacement }
+                    .thenByDescending { it.totalPositionPoints }
                     .thenBy { it.teamSlotNumber },
             )
             .map { standing ->
@@ -36,13 +35,13 @@ class TieBreakRules {
             totalPoints = standing.totalPoints,
             firstPlaceFinishes = standing.firstPlaceFinishes,
             totalKills = standing.totalKillPoints,
-            latestMatchPlacement = standing.latestMatchPlacement,
+            totalPositionPoints = standing.totalPositionPoints,
         )
 
     private data class TieBreakKey(
         val totalPoints: Int,
         val firstPlaceFinishes: Int,
         val totalKills: Int,
-        val latestMatchPlacement: Int?,
+        val totalPositionPoints: Int,
     )
 }

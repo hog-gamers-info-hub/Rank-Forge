@@ -81,7 +81,7 @@ fun ScoringRulesScreen(
         val tieBreakRules = listOf(
             R.string.scoring_rules_tie_break_first,
             R.string.scoring_rules_tie_break_kills,
-            R.string.scoring_rules_tie_break_latest_placement,
+            R.string.scoring_rules_tie_break_position_points,
         )
         tieBreakRules.forEachIndexed { index, ruleRes ->
             Text(

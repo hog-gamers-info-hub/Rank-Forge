@@ -108,7 +108,7 @@ Scoring and standings requirements:
   1. Total points
   2. Number of first-place finishes
   3. Total kills
-  4. Placement in the latest match
+  4. Total position points
 * Scoring must be deterministic.
 * Detailed scoring specification remains governed by `docs/05_SCORING_AND_PROCESSING_RULES.md` once populated.
 

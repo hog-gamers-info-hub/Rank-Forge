@@ -155,7 +155,7 @@ Approved logical field groups are:
 * Total kill points
 * Total points
 * Number of first-place finishes
-* Latest-match placement where needed for tie-breaking
+* Latest-match placement as an informational standings statistic
 * Matches included in standings
 * Export context where approved
 
@@ -172,7 +172,7 @@ Ranking must follow the approved tie-break order:
 1. Total points
 2. Number of first-place finishes
 3. Total kills
-4. Placement in the latest match
+4. Total position points
 
 A complete unresolved tie after all approved tie-break fields must not be resolved using an invented export-only rule.
 

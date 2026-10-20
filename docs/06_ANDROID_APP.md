@@ -234,7 +234,7 @@ Approved Android scoring and standings behavior:
   * Cumulative totals
   * First-place finish count
   * Total kills
-  * Latest-match placement where needed for tie-breaking
+  * Latest-match placement as an informational standings statistic
   * Final rank
 * Tie-break ordering must follow the canonical scoring document.
 * Recalculation after an authorized correction must not double-count results.
