@@ -2256,49 +2256,32 @@ internal fun MatchOcrReviewFinalizeAction(
     onFinalizeOcrCorrection: () -> Unit,
 ) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
-    Button(
-        onClick = onFinalizeOcrCorrection,
+    ReviewMatchActionButton(
+        label = stringResource(
+            if (finalization.isFinalizing) {
+                R.string.match_ocr_review_finalization_in_progress
+            } else {
+                R.string.match_ocr_review_finalize_action
+            },
+        ),
         enabled = reviewInteractionsEnabled && correctionDraft.blockerCount == 0 &&
             !finalization.isFinalizing &&
             !finalization.isFinalized,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF176AF7),
-            contentColor = Color.White,
-            disabledContainerColor = Color(0xFFB8C7DC),
-            disabledContentColor = Color.White.copy(alpha = 0.85f),
-        ),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
-    ) {
-        Text(
-            text = stringResource(
-                if (finalization.isFinalizing) {
-                    R.string.match_ocr_review_finalization_in_progress
-                } else {
-                    R.string.match_ocr_review_finalize_action
-                },
-            ),
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
+        onClick = onFinalizeOcrCorrection,
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
+    )
 }
 
 @Composable
 private fun MatchOcrReviewBackAction(onBack: () -> Unit) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-    Button(
-        onClick = onBack,
+    ReviewMatchSecondaryActionButton(
+        label = stringResource(R.string.back_to_match_details_action),
         enabled = reviewInteractionsEnabled,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.BACK_ACTION),
-    ) {
-        Text(text = stringResource(R.string.back_to_match_details_action))
-    }
+        onClick = onBack,
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.BACK_ACTION),
+    )
 }
 
 private fun MatchOcrReviewCorrectionDraftStatus.toMessageRes(): Int = when (this) {

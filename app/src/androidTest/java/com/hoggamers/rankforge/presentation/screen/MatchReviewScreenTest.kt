@@ -408,7 +408,7 @@ class MatchReviewScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
             .assertIsEnabled()
-        composeTestRule.onNodeWithText("Create Match 2").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Calculate Match 2").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG).performClick()
         composeTestRule.runOnIdle { assertEquals(1, createRequests) }
     }
