@@ -100,7 +100,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = 627f,
-                centerY = 170f,
+                centerY = 190f,
                 textSize = 42f,
                 maxWidthPx = 1000f,
                 minimumTextSizePx = 14f,
@@ -183,7 +183,7 @@ object FreeDesignTemplateRegistry {
                 color = BLUE_HEADER_COLOR,
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
-                centerY = 150f,
+                centerY = 170f,
                 textSize = 42f,
                 maxWidthPx = 1000f,
                 minimumTextSizePx = 26f,
@@ -270,7 +270,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = V3_SOURCE_WIDTH / 2f,
-                centerY = 190f,
+                centerY = 210f,
                 textSize = 40f,
                 maxWidthPx = 850f,
                 minimumTextSizePx = 22f,
@@ -356,7 +356,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = 627f,
-                centerY = 160f,
+                centerY = 180f,
                 textSize = 42f,
                 maxWidthPx = 980f,
                 minimumTextSizePx = 22f,
@@ -443,7 +443,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = 627f,
-                centerY = 150f,
+                centerY = 170f,
                 textSize = 42f,
                 maxWidthPx = 980f,
                 minimumTextSizePx = 22f,
@@ -533,7 +533,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = 687f,
-                centerY = 155f,
+                centerY = 175f,
                 textSize = 42f,
                 maxWidthPx = 1100f,
                 minimumTextSizePx = 22f,
@@ -623,7 +623,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = 561f,
-                centerY = 180f,
+                centerY = 200f,
                 textSize = 40f,
                 maxWidthPx = 900f,
                 minimumTextSizePx = 22f,
@@ -713,7 +713,7 @@ object FreeDesignTemplateRegistry {
             ),
             FreeDesignHeaderField.STAGE_NAME to headerAnchor(
                 centerX = 627f,
-                centerY = 170f,
+                centerY = 190f,
                 textSize = 40f,
                 maxWidthPx = 980f,
                 minimumTextSizePx = 22f,
