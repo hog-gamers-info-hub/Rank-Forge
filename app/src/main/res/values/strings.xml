@@ -605,7 +605,8 @@
     <string name="match_review_not_found_title">Match not found</string>
     <string name="match_review_not_found_message">This draft match is no longer available.</string>
     <string name="match_review_status_value">Status: %1$s</string>
-    <string name="match_review_finalized_read_only">Finalized matches are read-only.</string>
+    <string name="match_review_finalized_read_only_compact">Finalized Result · Read-only</string>
+    <string name="match_review_finalized_total_kills_label">Total Kills</string>
     <string name="match_review_download_result_action">Download Result</string>
     <string name="match_review_download_current_match">Current Match</string>
     <string name="match_review_download_whole_tournament">Whole Tournament</string>

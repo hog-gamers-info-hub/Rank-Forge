@@ -124,6 +124,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
@@ -1792,6 +1793,12 @@ private fun MatchReviewContent(
         slot.hasLinkedAsset || !slot.selectedScreenshotUri.isNullOrBlank()
     }
     val hasResultScreenshotSelection = uiState.resultScreenshots.any { it.hasSelection() }
+    val hasAvailableLobbyScreenshot = lobbyUiState.slots.any {
+        it.hasUsableLocalPreview()
+    }
+    val hasAvailableResultScreenshot = uiState.resultScreenshots.any {
+        it.hasUsableLocalPreview()
+    }
     val manualPanelInScrollablePage = manualModeOpened && hasResultScreenshotSelection
     val matchReviewScrollState = rememberScrollState()
     val manualPanelScrollState = rememberScrollState()
@@ -1830,8 +1837,13 @@ private fun MatchReviewContent(
             ?.isNotEmpty() == true
     }
     val isEmptyScreenshotUi = !showLegacyManualReviewContent &&
-        !hasLobbyScreenshotSelection &&
-        !hasResultScreenshotSelection &&
+        (
+            if (uiState.status == MatchStatus.FINALIZED) {
+                !hasAvailableLobbyScreenshot && !hasAvailableResultScreenshot
+            } else {
+                !hasLobbyScreenshotSelection && !hasResultScreenshotSelection
+            }
+        ) &&
         !hasProcessedLobbyOcrData
     val resultRowsPagerUiState = if (uiState.status == MatchStatus.FINALIZED) {
         uiState.toFinalizedResultOcrUiState()
@@ -2158,11 +2170,7 @@ private fun MatchReviewContent(
                                 text = {
                                     Text(
                                         stringResource(
-                                            if (uiState.status == MatchStatus.FINALIZED) {
-                                                R.string.calculate_match_number_action
-                                            } else {
-                                                R.string.create_match_number_action
-                                            },
+                                            R.string.calculate_match_number_action,
                                             uiState.nextMatchNumber ?: 0,
                                         ),
                                     )
@@ -2195,6 +2203,10 @@ private fun MatchReviewContent(
                 }
             }
         }
+        if (uiState.status == MatchStatus.FINALIZED) {
+            MatchReviewFinalizedStatus()
+            Spacer(modifier = Modifier.height(16.dp))
+        }
         if (!showLegacyManualReviewContent &&
             !manualModeOpened &&
             uiState.isEditable &&
@@ -2211,25 +2223,15 @@ private fun MatchReviewContent(
         }
         if (showLegacyManualReviewContent) {
             Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
-            Text(
-                text = stringResource(
-                    R.string.match_review_status_value,
-                    stringResource(
-                        if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
-                            R.string.match_status_finalized
-                        } else {
-                            R.string.match_status_draft
-                        },
+            if (uiState.status != MatchStatus.FINALIZED) {
+                Text(
+                    text = stringResource(
+                        R.string.match_review_status_value,
+                        stringResource(R.string.match_status_draft),
                     ),
-                ),
-                modifier = if (uiState.status == com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED) {
-                    Modifier.testTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG)
-                } else {
-                    Modifier
-                },
-            )
+                )
+            }
             if (uiState.status == MatchStatus.FINALIZED) {
-                Text(text = stringResource(R.string.match_review_finalized_read_only))
                 Button(
                     onClick = onPrepareCsvExport,
                     enabled = reviewInteractionsEnabled && uiState.canPrepareMatchCsvExport,
@@ -2277,6 +2279,12 @@ private fun MatchReviewContent(
                 MatchCorrectionHistory(uiState.correctionHistory)
                 Spacer(modifier = Modifier.height(RankForgeSpacing.Small))
             }
+        } else if (
+            uiState.status == MatchStatus.FINALIZED &&
+            !hasAvailableLobbyScreenshot &&
+            !hasAvailableResultScreenshot
+        ) {
+            resultOcrDetailsContent()
         } else if (isEmptyScreenshotUi) {
             Spacer(modifier = Modifier.height(14.dp))
             PointIqMatchReviewDetailsContainer(
@@ -2286,7 +2294,8 @@ private fun MatchReviewContent(
                     CompositionLocalProvider(
                         LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
                         LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
-                        LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
+                        LocalMatchLobbySourceSectionVisible provides
+                            (uiState.status == MatchStatus.FINALIZED || !hasProcessedLobbyOcrData),
                         LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
                     ) {
                         matchLobbyScreenshotIntake()
@@ -2383,20 +2392,28 @@ private fun MatchReviewContent(
                 modifier = Modifier.testTag(MATCH_REVIEW_LOBBY_SCREENSHOTS_SECTION_TEST_TAG),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CompositionLocalProvider(
-                        LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
-                        LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
-                        LocalMatchLobbySourceSectionVisible provides !hasProcessedLobbyOcrData,
-                        LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
-                    ) {
-                        matchLobbyScreenshotIntake()
+                    if (uiState.status != MatchStatus.FINALIZED || hasAvailableLobbyScreenshot) {
+                        CompositionLocalProvider(
+                            LocalMatchLobbyTeamCropPreviews provides lobbyTeamCropPreviewsByScreenshotIndex,
+                            LocalMatchLobbyTeamNames provides lobbyTeamNamesBySlot,
+                            LocalMatchLobbySourceSectionVisible provides
+                                (uiState.status == MatchStatus.FINALIZED || !hasProcessedLobbyOcrData),
+                            LocalMatchReviewScreenshotActionExpansion provides screenshotActionExpansion,
+                        ) {
+                            matchLobbyScreenshotIntake()
+                        }
                     }
                     if (hasLobbyPlayerOcrEvidence) {
                         MatchReviewLobbyPlayerDetailsContent(ocrUiState)
                     }
                 }
-                if (!manualModeOpened || hasResultScreenshotSelection) {
-                    PointIqMatchReviewDetailsDivider()
+                if (
+                    (uiState.status != MatchStatus.FINALIZED || hasAvailableResultScreenshot) &&
+                    (!manualModeOpened || hasResultScreenshotSelection)
+                ) {
+                    if (uiState.status != MatchStatus.FINALIZED || hasAvailableLobbyScreenshot) {
+                        PointIqMatchReviewDetailsDivider()
+                    }
                     Column(
                         modifier = Modifier.testTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG),
                         verticalArrangement = Arrangement.spacedBy(
@@ -2456,6 +2473,9 @@ private fun MatchReviewContent(
                         )
                     }
                 }
+            }
+            if (uiState.status == MatchStatus.FINALIZED && !hasAvailableResultScreenshot) {
+                resultOcrDetailsContent()
             }
             if (manualModeOpened) {
                 Spacer(modifier = Modifier.height(14.dp))
@@ -2579,7 +2599,7 @@ private fun MatchReviewContent(
             uiState.isEditable &&
             hasDisplayableResultOcrData
         if (showSimplifiedClearResult) {
-            ReviewMatchActionButton(
+            ReviewMatchSecondaryActionButton(
                 label = "Clear Result",
                 enabled = reviewInteractionsEnabled && !isClearResultInProgress,
                 onClick = onClearResult,
@@ -2676,29 +2696,12 @@ private fun MatchReviewContent(
             Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
         }
         if (showLegacyManualReviewContent && showClearResult) {
-            Button(
-                onClick = onClearResult,
+            ReviewMatchSecondaryActionButton(
+                label = "Clear Result",
                 enabled = reviewInteractionsEnabled && !isClearResultInProgress,
-                colors = if (!showLegacyManualReviewContent) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = PointIqMatchReviewBlue,
-                        contentColor = Color.White,
-                    )
-                } else {
-                    ButtonDefaults.buttonColors()
-                },
-                shape = if (!showLegacyManualReviewContent) RoundedCornerShape(14.dp) else ButtonDefaults.shape,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (!showLegacyManualReviewContent) Modifier.height(50.dp) else Modifier)
-                    .testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
-            ) {
-                Text(
-                    "Clear Result",
-                    fontSize = 14.sp,
-                    fontWeight = if (!showLegacyManualReviewContent) FontWeight.SemiBold else FontWeight.Normal,
-                )
-            }
+                onClick = onClearResult,
+                modifier = Modifier.testTag(MATCH_REVIEW_CLEAR_RESULT_ACTION_TEST_TAG),
+            )
         }
         if (showLegacyManualReviewContent && uiState.isEditable) {
             Button(
@@ -2719,25 +2722,20 @@ private fun MatchReviewContent(
             ) {
                 Text(stringResource(R.string.edit_match_kills_action))
             }
-            Button(
-                onClick = { showFinalizeConfirmation = true },
+            ReviewMatchActionButton(
+                label = stringResource(
+                    if (uiState.isFinalizing) {
+                        R.string.match_review_finalizing_action
+                    } else {
+                        R.string.match_review_finalize_action
+                    },
+                ),
                 enabled = reviewInteractionsEnabled && uiState.canFinalize && !uiState.isFinalizing &&
                     !uiState.isScreenshotPreservationInProgress &&
                     !uiState.isScreenshotUploadInProgress,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG),
-            ) {
-                Text(
-                    stringResource(
-                        if (uiState.isFinalizing) {
-                            R.string.match_review_finalizing_action
-                        } else {
-                            R.string.match_review_finalize_action
-                        },
-                    ),
-                )
-            }
+                onClick = { showFinalizeConfirmation = true },
+                modifier = Modifier.testTag(MATCH_REVIEW_FINALIZE_ACTION_TEST_TAG),
+            )
             if (!uiState.isValid) {
                 Text(
                     text = stringResource(R.string.match_review_finalize_blocked_message),
@@ -2746,27 +2744,14 @@ private fun MatchReviewContent(
             }
         }
         if (uiState.status == MatchStatus.FINALIZED) {
+            Spacer(modifier = Modifier.height(16.dp))
             if (showLegacyManualReviewContent) {
-                Button(
-                    onClick = ::openResultDownload,
+                ReviewMatchActionButton(
+                    label = stringResource(R.string.match_review_download_result_action),
                     enabled = reviewInteractionsEnabled && uiState.canDownloadResult,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF176AF7),
-                        contentColor = Color.White,
-                        disabledContainerColor = Color(0xFFB8C7DC),
-                        disabledContentColor = Color.White.copy(alpha = 0.85f),
-                    ),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
-                ) {
-                    Text(
-                        text = stringResource(R.string.match_review_download_result_action),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
+                    onClick = ::openResultDownload,
+                    modifier = Modifier.testTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG),
+                )
             } else {
                 ReviewMatchActionButton(
                     label = stringResource(R.string.match_review_download_result_action),
@@ -2777,7 +2762,7 @@ private fun MatchReviewContent(
             }
             if (!showLegacyManualReviewContent && uiState.shouldShowCreateNextMatch) {
                 Spacer(modifier = Modifier.height(12.dp))
-                ReviewMatchActionButton(
+                ReviewMatchSecondaryActionButton(
                     label = stringResource(
                         R.string.calculate_match_number_action,
                         uiState.nextMatchNumber ?: 0,
@@ -2821,29 +2806,15 @@ private fun MatchReviewContent(
         if (uiState.shouldShowCreateNextMatch) {
             if (showLegacyManualReviewContent) {
                 Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onRequestNextMatchCreation,
-                    enabled = reviewInteractionsEnabled && uiState.canCreateNextMatch,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PointIqMatchReviewBlue,
-                        contentColor = Color.White,
-                        disabledContainerColor = Color(0xFFB8C7DC),
-                        disabledContentColor = Color.White.copy(alpha = 0.85f),
+                ReviewMatchSecondaryActionButton(
+                    label = stringResource(
+                        R.string.calculate_match_number_action,
+                        uiState.nextMatchNumber ?: 0,
                     ),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.calculate_match_number_action,
-                            uiState.nextMatchNumber ?: 0,
-                        ),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
+                    enabled = reviewInteractionsEnabled && uiState.canCreateNextMatch,
+                    onClick = onRequestNextMatchCreation,
+                    modifier = Modifier.testTag(MATCH_REVIEW_CREATE_NEXT_MATCH_ACTION_TEST_TAG),
+                )
             }
             if (uiState.nextMatchCreationMessage != null) {
                 Text(
@@ -3400,6 +3371,43 @@ internal fun ReviewMatchActionButton(
                 fontWeight = FontWeight.Bold,
             )
         }
+    }
+}
+
+@Composable
+internal fun ReviewMatchSecondaryActionButton(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    val contentAlpha = if (enabled) 1f else 0.55f
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = PointIqMatchReviewNavy,
+            contentColor = Color.White,
+            disabledContainerColor = PointIqMatchReviewNavy.copy(alpha = contentAlpha),
+            disabledContentColor = Color.White.copy(alpha = 0.85f),
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = PointIqMatchReviewCtaBorder.copy(alpha = contentAlpha),
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp),
+    ) {
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = contentAlpha),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -4477,7 +4485,6 @@ private fun MatchReviewResultOcrDetailsContent(
         }
         onManualBack?.let { onBack ->
             val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
-            val shape = RoundedCornerShape(8.dp)
             if (uiState is MatchOcrReviewUiState.Ready) {
                 uiState.correctionDraft?.let { correctionDraft ->
                     MatchReviewFinalizeAction(
@@ -4495,39 +4502,12 @@ private fun MatchReviewResultOcrDetailsContent(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                Button(
-                    onClick = onBack,
+                ReviewMatchSecondaryActionButton(
+                    label = stringResource(R.string.back_action),
                     enabled = reviewInteractionsEnabled,
-                    shape = shape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        contentColor = Color.White,
-                        disabledContentColor = Color.White.copy(alpha = 0.85f),
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colorStops = arrayOf(
-                                    0f to PointIqMatchReviewCtaTopBlue,
-                                    0.52f to PointIqMatchReviewCtaMiddleBlue,
-                                    1f to PointIqMatchReviewCtaBottomBlue,
-                                ),
-                            ),
-                            shape = shape,
-                        )
-                        .border(1.dp, PointIqMatchReviewCtaBorder, shape),
-                ) {
-                    Text(
-                        text = stringResource(R.string.back_action),
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                    onClick = onBack,
+                    modifier = Modifier,
+                )
             }
         }
     }
@@ -4872,7 +4852,10 @@ private fun ResultScreenshotSelector(
     )
     val selectedPages = roles.mapNotNull { role ->
         resultScreenshots.slot(role)
-            .takeIf { it.hasSelection() }
+            .takeIf {
+                it.hasSelection() &&
+                    (isEditable || it.hasUsableLocalPreview())
+            }
             ?.let { slot -> role to slot }
     }
     val selectedRoles = selectedPages.map { it.first }
@@ -5030,7 +5013,7 @@ private fun ResultScreenshotSelector(
                 ocrPositionContent = ocrPositionContent,
             )
         }
-        nextEmptyRole?.takeIf { showSourceScreenshot }?.let { role ->
+        nextEmptyRole?.takeIf { showSourceScreenshot && isEditable }?.let { role ->
             val slot = resultScreenshots.slot(role)
             MatchReviewScreenshotUploadButton(
                 label = stringResource(R.string.pointiq_match_review_upload_result_screenshots),
@@ -5046,6 +5029,12 @@ private fun MatchResultScreenshotSlotUiState.hasSelection(): Boolean =
     hasLinkedAsset ||
         !selectedScreenshotUri.isNullOrBlank() ||
         isPreviewPreparationInProgress
+
+private fun MatchResultScreenshotSlotUiState.hasUsableLocalPreview(): Boolean =
+    hasLinkedAsset &&
+        !isLocalFileMissing &&
+        !localPreviewUri.isNullOrBlank() &&
+        hasConfirmedCrop
 
 private fun MatchResultScreenshotSlotUiState.resultScreenshotHeightRatio(): Float? {
     val dimensions = OcrImageDimensions.from(
@@ -5969,6 +5958,31 @@ private fun MatchReviewRow(
                     )
                 }
         }
+    }
+}
+
+@Composable
+private fun MatchReviewFinalizedStatus() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MATCH_REVIEW_FINALIZED_STATUS_TEST_TAG),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Lock,
+            contentDescription = null,
+            tint = PointIqMatchReviewSubtitle,
+            modifier = Modifier.size(15.dp),
+        )
+        Text(
+            text = stringResource(R.string.match_review_finalized_read_only_compact),
+            color = PointIqMatchReviewSubtitle,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

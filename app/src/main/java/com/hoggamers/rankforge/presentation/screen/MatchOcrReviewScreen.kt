@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1063,7 +1064,7 @@ private fun MatchOcrReviewFinalizedResultFields(
                 .testTag(placementTestTag),
         )
         MatchOcrReviewFinalizedResultField(
-            label = stringResource(R.string.match_ocr_review_correction_kills_short_label),
+            label = stringResource(R.string.match_review_finalized_total_kills_label),
             value = kills,
             modifier = Modifier
                 .weight(1f)
@@ -1085,21 +1086,37 @@ private fun MatchOcrReviewFinalizedResultField(
     value: String,
     modifier: Modifier,
 ) {
-    CompactOcrNumberField(
-        value = value,
-        onValueChange = {},
-        enabled = true,
-        readOnly = true,
-        label = {
-            Text(
-                text = label,
-                color = PointIqOcrReviewSubtitle,
+    Column(
+        modifier = modifier
+            .height(50.dp)
+            .background(
+                color = PointIqOcrReviewBackground,
+                shape = RoundedCornerShape(8.dp),
             )
-        },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        isError = false,
-        modifier = modifier,
-    )
+            .border(
+                width = 1.dp,
+                color = PointIqOcrReviewFieldBorder.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = label,
+            color = PointIqOcrReviewSubtitle,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+        )
+        Text(
+            text = value,
+            color = PointIqOcrReviewHeader,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 private fun MatchOcrReviewRowUiState.toCompactPreviewRow(): MatchResultOcrPreviewRowUiState =
@@ -2239,49 +2256,32 @@ internal fun MatchOcrReviewFinalizeAction(
     onFinalizeOcrCorrection: () -> Unit,
 ) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
-    Button(
-        onClick = onFinalizeOcrCorrection,
+    ReviewMatchActionButton(
+        label = stringResource(
+            if (finalization.isFinalizing) {
+                R.string.match_ocr_review_finalization_in_progress
+            } else {
+                R.string.match_ocr_review_finalize_action
+            },
+        ),
         enabled = reviewInteractionsEnabled && correctionDraft.blockerCount == 0 &&
             !finalization.isFinalizing &&
             !finalization.isFinalized,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF176AF7),
-            contentColor = Color.White,
-            disabledContainerColor = Color(0xFFB8C7DC),
-            disabledContentColor = Color.White.copy(alpha = 0.85f),
-        ),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
-    ) {
-        Text(
-            text = stringResource(
-                if (finalization.isFinalizing) {
-                    R.string.match_ocr_review_finalization_in_progress
-                } else {
-                    R.string.match_ocr_review_finalize_action
-                },
-            ),
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
+        onClick = onFinalizeOcrCorrection,
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZE_ACTION),
+    )
 }
 
 @Composable
 private fun MatchOcrReviewBackAction(onBack: () -> Unit) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     Spacer(modifier = Modifier.height(RankForgeSpacing.Medium))
-    Button(
-        onClick = onBack,
+    ReviewMatchSecondaryActionButton(
+        label = stringResource(R.string.back_to_match_details_action),
         enabled = reviewInteractionsEnabled,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(MatchOcrReviewTestTags.BACK_ACTION),
-    ) {
-        Text(text = stringResource(R.string.back_to_match_details_action))
-    }
+        onClick = onBack,
+        modifier = Modifier.testTag(MatchOcrReviewTestTags.BACK_ACTION),
+    )
 }
 
 private fun MatchOcrReviewCorrectionDraftStatus.toMessageRes(): Int = when (this) {
