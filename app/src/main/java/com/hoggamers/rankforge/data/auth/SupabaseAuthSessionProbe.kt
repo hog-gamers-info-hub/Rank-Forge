@@ -2,8 +2,10 @@ package com.hoggamers.rankforge.data.auth
 
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.auth.user.UserSession
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Clock
 
 enum class SupabaseAuthSessionStatus {
     INITIALIZING,
@@ -33,15 +35,19 @@ class SupabaseClientAuthSessionProbe @Inject constructor(
 
     override fun currentReadiness(): SupabaseAuthSessionReadiness {
         val auth = clientProvider.client.auth
+        val session = auth.currentSessionOrNull()
         return SupabaseAuthSessionReadiness(
             status = auth.sessionStatus.value.toSupabaseAuthSessionStatus(),
-            hasUsableSession = auth.currentSessionOrNull() != null,
+            hasUsableSession = session?.isLocallyUsable() == true,
         )
     }
 }
 
 internal fun SupabaseAuthSessionReadiness.allowsAuthenticatedState(): Boolean =
     status == SupabaseAuthSessionStatus.AUTHENTICATED && hasUsableSession
+
+internal fun UserSession.isLocallyUsable(now: kotlin.time.Instant = Clock.System.now()): Boolean =
+    expiresAt > now
 
 private fun SessionStatus.toSupabaseAuthSessionStatus(): SupabaseAuthSessionStatus =
     when (this) {

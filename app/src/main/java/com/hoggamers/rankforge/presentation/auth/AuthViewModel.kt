@@ -15,6 +15,7 @@ import com.hoggamers.rankforge.domain.auth.AuthFailure
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthRestorationConnectivityCoordinator
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionResult
@@ -33,9 +34,13 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
@@ -53,7 +58,10 @@ class AuthViewModel @Inject constructor(
     private val accountDeletionRepository: AccountDeletionRepository,
     private val accountDeletionLocalCleanupRepository: AccountDeletionLocalCleanupRepository,
     private val savedStateHandle: SavedStateHandle,
+    private val authRestorationConnectivityCoordinator: AuthRestorationConnectivityCoordinator =
+        AuthRestorationConnectivityCoordinator(),
 ) : ViewModel() {
+    private val restorationMutex = Mutex()
     private val _uiState = MutableStateFlow(
         AuthUiState(
             isSessionLoading = true,
@@ -70,45 +78,51 @@ class AuthViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val deletionRecovery = recoverAccountDeletionBeforeSessionRestore()
-            val restoration = if (deletionRecovery == AccountDeletionRecovery.NONE) {
-                try {
-                    restoreSession()
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    AuthRestorationResult.Failure(
-                        AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
-                    )
-                }
-            } else {
-                AuthRestorationResult.NoSavedSession
-            }
-            if (deletionRecovery != AccountDeletionRecovery.COMPLETED) {
-                _uiState.update { currentState ->
-                    AuthUiStateReducer.reduceRestoration(currentState, restoration)
-                }
+            if (deletionRecovery == AccountDeletionRecovery.NONE) {
+                restoreSessionGuarded(force = true)
             }
 
-            if (deletionRecovery == AccountDeletionRecovery.NONE &&
-                restoration is AuthRestorationResult.Restored
-            ) {
-                try {
-                    recoverForegroundSyncQueue.recoverAfterAuthenticatedSession()
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Throwable) {
-                    // Queue recovery must not change the restored authentication result.
+            launch {
+                observeAuthState().collectLatest { authState ->
+                    _uiState.update { currentState ->
+                        AuthUiStateReducer.reduceSession(currentState, authState)
+                    }
+                    val ownerUserId = (authState as? com.hoggamers.rankforge.domain.auth.AuthState.SignedIn)
+                        ?.user?.id?.takeIf { it.isNotBlank() }
+                        ?: return@collectLatest
+                    recoverPendingLocalDeletionCleanup(ownerUserId)
+                    reconcileLegacyTournamentOwnership(ownerUserId)
                 }
             }
-
-            observeAuthState().collectLatest { authState ->
-                _uiState.update { currentState -> AuthUiStateReducer.reduceSession(currentState, authState) }
-                val ownerUserId = (authState as? com.hoggamers.rankforge.domain.auth.AuthState.SignedIn)
-                    ?.user?.id?.takeIf { it.isNotBlank() }
-                    ?: return@collectLatest
-                recoverPendingLocalDeletionCleanup(ownerUserId)
-                reconcileLegacyTournamentOwnership(ownerUserId)
+            launch {
+                authRestorationConnectivityCoordinator.connectivityAvailable.collect { available ->
+                    if (!available || !authRestorationConnectivityCoordinator.consumeConnectivityAvailability()) {
+                        return@collect
+                    }
+                    val currentState = _uiState.value
+                    if (currentState.isRestorationRetryPending &&
+                        !currentState.isSessionLoading &&
+                        currentState.accountDeletionState == AccountDeletionUiState.IDLE &&
+                        !currentState.isPasswordRecoveryActive
+                    ) {
+                        restoreSessionGuarded(force = false)
+                    }
+                }
             }
+        }
+    }
+
+    fun retrySessionRestoration() {
+        val currentState = _uiState.value
+        if (!currentState.isRestorationRetryPending ||
+            currentState.isSessionLoading ||
+            currentState.accountDeletionState != AccountDeletionUiState.IDLE ||
+            currentState.isPasswordRecoveryActive
+        ) {
+            return
+        }
+        viewModelScope.launch {
+            restoreSessionGuarded(force = false)
         }
     }
 
@@ -439,8 +453,54 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    private suspend fun restoreSessionGuarded(force: Boolean): AuthRestorationResult? {
+        if (!restorationMutex.tryLock()) return null
+        try {
+            val currentState = _uiState.value
+            if ((!force && !currentState.isRestorationRetryPending) ||
+                currentState.accountDeletionState != AccountDeletionUiState.IDLE
+            ) {
+                return null
+            }
+            _uiState.update(AuthUiStateReducer::beginRestoration)
+            val restoration = restoreSessionWithTimeout()
+            _uiState.update { state ->
+                AuthUiStateReducer.reduceRestoration(state, restoration)
+            }
+            if (restoration is AuthRestorationResult.Restored) {
+                try {
+                    recoverForegroundSyncQueue.recoverAfterAuthenticatedSession()
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // Queue recovery must not change the restored authentication result.
+                }
+            }
+            return restoration
+        } finally {
+            restorationMutex.unlock()
+        }
+    }
+
+    private suspend fun restoreSessionWithTimeout(): AuthRestorationResult = try {
+        withTimeout(SESSION_RESTORATION_TIMEOUT_MILLIS) {
+            restoreSession()
+        }
+    } catch (timeout: TimeoutCancellationException) {
+        AuthRestorationResult.TemporaryFailure(
+            AuthFailure(AuthFailureCategory.Timeout),
+        )
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        AuthRestorationResult.Failure(
+            AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+        )
+    }
+
     private companion object {
         const val ACCOUNT_DELETION_STATE_KEY = "account_deletion_state"
+        const val SESSION_RESTORATION_TIMEOUT_MILLIS = 15_000L
     }
 
     private suspend fun completeRemoteDeletion(

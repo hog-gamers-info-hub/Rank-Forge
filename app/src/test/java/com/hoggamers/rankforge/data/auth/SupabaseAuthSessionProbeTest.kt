@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.data.auth
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import io.github.jan.supabase.auth.user.UserSession
+import kotlin.time.Instant
 
 class SupabaseAuthSessionProbeTest {
     @Test
@@ -34,5 +36,21 @@ class SupabaseAuthSessionProbeTest {
         ).forEach { readiness ->
             assertFalse(readiness.toString(), readiness.allowsAuthenticatedState())
         }
+    }
+
+    @Test
+    fun cachedSessionIsUsableOnlyWhileItsAccessTokenHasNotExpired() {
+        val now = Instant.fromEpochMilliseconds(2_000)
+        val unexpired = UserSession(
+            accessToken = "access",
+            refreshToken = "refresh",
+            expiresIn = 3_600,
+            tokenType = "bearer",
+            expiresAt = Instant.fromEpochMilliseconds(3_000),
+        )
+        val expired = unexpired.copy(expiresAt = Instant.fromEpochMilliseconds(1_000))
+
+        assertTrue(unexpired.isLocallyUsable(now))
+        assertFalse(expired.isLocallyUsable(now))
     }
 }

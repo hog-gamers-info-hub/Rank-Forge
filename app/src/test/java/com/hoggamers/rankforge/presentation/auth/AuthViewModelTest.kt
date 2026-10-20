@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.auth.AuthFailure
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.auth.AuthOperationResult
 import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationConnectivityCoordinator
 import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
 import com.hoggamers.rankforge.domain.auth.AuthState
 import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
@@ -276,6 +277,64 @@ class AuthViewModelTest {
             AuthUiMessage.RestorationWarning(AuthFailureCategory.Timeout),
             viewModel.uiState.value.warningMessage,
         )
+    }
+
+    @Test
+    fun retryRestoresSessionAfterTemporaryFailure() = runTest {
+        repository.restoreResult = AuthRestorationResult.TemporaryFailure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser("user-id", "restored@example.com"),
+        )
+        viewModel.retrySessionRestoration()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.restoreCalls)
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertFalse(viewModel.uiState.value.isRestorationRetryPending)
+        assertEquals(null, viewModel.uiState.value.warningMessage)
+    }
+
+    @Test
+    fun concurrentRetryRequestsShareOneRestorationAttempt() = runTest {
+        repository.restoreResult = AuthRestorationResult.TemporaryFailure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser("user-id", "restored@example.com"),
+        )
+        viewModel.retrySessionRestoration()
+        viewModel.retrySessionRestoration()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.restoreCalls)
+        assertTrue(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun connectivityAvailabilityRetriesOnlyPendingRestoration() = runTest {
+        repository.restoreResult = AuthRestorationResult.TemporaryFailure(
+            AuthFailure(AuthFailureCategory.NetworkUnavailable),
+        )
+        val connectivityCoordinator = AuthRestorationConnectivityCoordinator()
+        val viewModel = createViewModel(connectivityCoordinator = connectivityCoordinator)
+        advanceUntilIdle()
+
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser("user-id", "restored@example.com"),
+        )
+        connectivityCoordinator.onConnectivityAvailable()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.restoreCalls)
+        assertTrue(viewModel.uiState.value.isSignedIn)
     }
 
     @Test
@@ -1185,6 +1244,8 @@ class AuthViewModelTest {
         pendingCleanup: RecoverPendingLocalDeletionCleanupUseCase = noOpPendingCleanup(),
         reconciliation: ReconcileLegacyTournamentOwnershipUseCase = noOpReconciliation(),
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
+        connectivityCoordinator: AuthRestorationConnectivityCoordinator =
+            AuthRestorationConnectivityCoordinator(),
     ): AuthViewModel =
         AuthViewModel(
             observeAuthState = ObserveAuthStateUseCase(repository),
@@ -1201,6 +1262,7 @@ class AuthViewModelTest {
             accountDeletionRepository = accountDeletionRepository,
             accountDeletionLocalCleanupRepository = accountDeletionLocalCleanupRepository,
             savedStateHandle = savedStateHandle,
+            authRestorationConnectivityCoordinator = connectivityCoordinator,
         )
 
     private fun noOpReconciliation() = ReconcileLegacyTournamentOwnershipUseCase(

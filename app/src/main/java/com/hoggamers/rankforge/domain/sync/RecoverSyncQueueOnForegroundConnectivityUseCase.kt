@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.domain.sync
 
 import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationConnectivityCoordinator
 import com.hoggamers.rankforge.domain.auth.AuthState
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -14,9 +15,12 @@ class RecoverSyncQueueOnForegroundConnectivityUseCase @Inject constructor(
     private val authRepository: AuthRepository,
     private val queueRecovery: ForegroundSyncQueueRecoveryAction,
     private val screenshotRecovery: ForegroundScreenshotRecoveryAction = NoOpForegroundScreenshotRecoveryAction,
+    private val authRestorationConnectivityCoordinator: AuthRestorationConnectivityCoordinator =
+        AuthRestorationConnectivityCoordinator(),
 ) : ForegroundConnectivityRetryAction {
     override suspend fun onConnectivityChanged(isNetworkAvailable: Boolean) {
         if (!isNetworkAvailable) return
+        authRestorationConnectivityCoordinator.onConnectivityAvailable()
         try {
             val isSignedIn = authRepository.observeAuthState().first() is AuthState.SignedIn
             if (isSignedIn) {

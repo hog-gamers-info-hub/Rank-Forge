@@ -20,6 +20,7 @@ object AuthUiStateReducer {
                     accountEmail = null,
                     accountUserId = null,
                     isSessionLoading = false,
+                    isRestorationRetryPending = false,
                     isExternalAuthCallbackProcessing = false,
                     isSignedIn = false,
                     warningMessage = null,
@@ -30,6 +31,7 @@ object AuthUiStateReducer {
                     accountEmail = result.user.email,
                     accountUserId = result.user.id,
                     isSessionLoading = false,
+                    isRestorationRetryPending = false,
                     isExternalAuthCallbackProcessing = false,
                     isSignedIn = true,
                     warningMessage = null,
@@ -41,6 +43,7 @@ object AuthUiStateReducer {
                 accountEmail = null,
                 accountUserId = null,
                 isSessionLoading = false,
+                isRestorationRetryPending = false,
                 isSignedIn = false,
                 warningMessage = null,
                 errorMessage = AuthUiMessage.AuthenticationFailure(
@@ -51,6 +54,7 @@ object AuthUiStateReducer {
                 accountEmail = null,
                 accountUserId = null,
                 isSessionLoading = false,
+                isRestorationRetryPending = true,
                 isSignedIn = false,
                 warningMessage = AuthUiMessage.RestorationWarning(
                     result.failure.category,
@@ -61,6 +65,7 @@ object AuthUiStateReducer {
                 accountEmail = null,
                 accountUserId = null,
                 isSessionLoading = false,
+                isRestorationRetryPending = false,
                 isSignedIn = false,
                 warningMessage = null,
                 errorMessage = AuthUiMessage.AuthenticationFailure(
@@ -76,6 +81,18 @@ object AuthUiStateReducer {
     ): AuthUiState {
         if (currentState.accountDeletionState != AccountDeletionUiState.IDLE) {
             return currentState
+        }
+        if (currentState.isRestorationRetryPending) {
+            return when (authState) {
+                AuthState.Loading -> currentState.copy(isSessionLoading = true)
+                is AuthState.RestorationWarning -> currentState.copy(
+                    isSessionLoading = false,
+                    isSignedIn = false,
+                    warningMessage = AuthUiMessage.RestorationWarning(authState.failure.category),
+                    errorMessage = null,
+                )
+                else -> currentState
+            }
         }
         return when (authState) {
             AuthState.Loading -> currentState.copy(
@@ -130,6 +147,13 @@ object AuthUiStateReducer {
             )
         }
     }
+
+    fun beginRestoration(currentState: AuthUiState): AuthUiState = currentState.copy(
+        isSessionLoading = true,
+        isRestorationRetryPending = true,
+        statusMessage = null,
+        errorMessage = null,
+    )
 
     fun beginAccountDeletion(currentState: AuthUiState): AuthUiState =
         currentState.copy(
@@ -196,6 +220,7 @@ object AuthUiStateReducer {
             accountEmail = null,
             accountUserId = null,
             isSessionLoading = false,
+            isRestorationRetryPending = false,
             isExternalAuthCallbackProcessing = false,
             isSignedIn = false,
         )
@@ -292,6 +317,7 @@ object AuthUiStateReducer {
         when (outcome) {
             AuthSuccessOutcome.SignedIn -> currentState.copy(
                 isSubmitting = false,
+                isRestorationRetryPending = false,
                 accountEmail = currentState.email.trim(),
                 isSignedIn = true,
                 statusMessage = AuthUiMessage.SignedIn,
@@ -306,6 +332,7 @@ object AuthUiStateReducer {
             )
             AuthSuccessOutcome.SignUpAuthenticated -> currentState.copy(
                 isSubmitting = false,
+                isRestorationRetryPending = false,
                 accountEmail = currentState.email.trim(),
                 isSignedIn = true,
                 statusMessage = AuthUiMessage.SignUpAuthenticated,
@@ -354,6 +381,7 @@ object AuthUiStateReducer {
         accountEmail = null,
         accountUserId = null,
         isSessionLoading = false,
+        isRestorationRetryPending = false,
         isSignedIn = false,
         warningMessage = null,
         errorMessage = null,

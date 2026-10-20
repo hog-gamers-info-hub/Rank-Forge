@@ -11,6 +11,7 @@ data class AuthUiState(
     val accountEmail: String? = null,
     val accountUserId: String? = null,
     val isSessionLoading: Boolean = false,
+    val isRestorationRetryPending: Boolean = false,
     val isExternalAuthCallbackProcessing: Boolean = false,
     val isSubmitting: Boolean = false,
     val isSignedIn: Boolean = false,

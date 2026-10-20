@@ -13,6 +13,7 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.status.RefreshFailureCause
 import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.auth.user.UserSession
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,16 +67,15 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
         }
 
         return try {
-            client.auth.loadFromStorage(autoRefresh = true)
+            client.auth.loadFromStorage(autoRefresh = false)
             client.auth.awaitInitialization()
-            client.auth.currentSessionOrNull()?.let { session ->
-                AuthRestorationResult.Restored(
-                    AuthUser(
-                        id = session.user?.id.orEmpty(),
-                        email = session.user?.email,
-                    ),
-                )
-            } ?: when (val status = client.auth.sessionStatus.value) {
+            val session = client.auth.currentSessionOrNull()
+            if (session != null && session.isLocallyUsable()) {
+                client.auth.startAutoRefreshForCurrentSession()
+                session.toRestoredResult()
+            } else if (session != null) {
+                refreshExpiredSession()
+            } else when (val status = client.auth.sessionStatus.value) {
                 is SessionStatus.RefreshFailure -> status.refreshFailureCause().toRestorationResult()
                 SessionStatus.Initializing -> AuthRestorationResult.Failure(
                     AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
@@ -99,7 +99,11 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
-            throwable.toRestorationResult()
+            throwable.toRestorationResult().also { result ->
+                if (result is AuthRestorationResult.ExpiredOrInvalid) {
+                    clearInvalidLocalSession()
+                }
+            }
         }
     }
 
@@ -181,7 +185,47 @@ class SupabaseAuthRemoteDataSource @Inject constructor(
             throw AuthConfigurationException()
         }
     }
+
+    private suspend fun refreshExpiredSession(): AuthRestorationResult = try {
+        client.auth.refreshCurrentSession()
+        val refreshedSession = client.auth.currentSessionOrNull()
+        if (refreshedSession?.isLocallyUsable() == true) {
+            client.auth.startAutoRefreshForCurrentSession()
+            refreshedSession.toRestoredResult()
+        } else {
+            clearInvalidLocalSession()
+            AuthRestorationResult.ExpiredOrInvalid(
+                AuthFailure(AuthFailureCategory.ExpiredOrInvalidSession),
+            )
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        throwable.toRestorationResult().also { result ->
+            if (result is AuthRestorationResult.ExpiredOrInvalid) {
+                clearInvalidLocalSession()
+            }
+        }
+    }
+
+    private suspend fun clearInvalidLocalSession() {
+        try {
+            client.auth.clearSession()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            // Keep the invalid-session result authoritative if local cleanup fails.
+        }
+    }
 }
+
+private fun UserSession.toRestoredResult(): AuthRestorationResult =
+    AuthRestorationResult.Restored(
+        AuthUser(
+            id = user?.id.orEmpty(),
+            email = user?.email,
+        ),
+    )
 
 private fun SessionStatus.toAuthState(hasUsableSession: Boolean = true): AuthState =
     when (this) {

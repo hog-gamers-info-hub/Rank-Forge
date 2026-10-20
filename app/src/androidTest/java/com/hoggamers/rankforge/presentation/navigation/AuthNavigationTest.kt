@@ -22,15 +22,19 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.presentation.AUTH_SESSION_LOADING_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.AUTH_EXTERNAL_AUTH_CALLBACK_PROCESSING_TEST_TAG
+import com.hoggamers.rankforge.presentation.AUTH_RESTORATION_ERROR_SCREEN_TEST_TAG
+import com.hoggamers.rankforge.presentation.AUTH_RESTORATION_RETRY_TEST_TAG
 import com.hoggamers.rankforge.presentation.RankForgeAppContent
 import com.hoggamers.rankforge.presentation.auth.AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AUTH_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.auth.AuthMode
+import com.hoggamers.rankforge.presentation.auth.AuthUiMessage
 import com.hoggamers.rankforge.presentation.auth.AuthUiState
 import com.hoggamers.rankforge.presentation.auth.PasswordRecoveryStage
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import com.hoggamers.rankforge.presentation.screen.TOURNAMENT_LIST_SCREEN_TEST_TAG
 import com.hoggamers.rankforge.presentation.screen.TournamentListViewModel
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentsUseCase
 import com.hoggamers.rankforge.presentation.navigation.RankForgeNavHost
 import org.junit.Rule
@@ -58,6 +62,33 @@ class AuthNavigationTest {
         composeTestRule.onAllNodesWithText("Checking account session.").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag("protected_home").assertCountEquals(0)
+    }
+
+    @Test
+    fun temporaryRestorationFailureShowsDedicatedRetryScreenInsteadOfLogin() {
+        var retryCount = 0
+        composeTestRule.setContent {
+            RankForgeTheme {
+                RankForgeAppContent(
+                    authUiState = AuthUiState(
+                        isRestorationRetryPending = true,
+                        warningMessage = AuthUiMessage.RestorationWarning(
+                            AuthFailureCategory.NetworkUnavailable,
+                        ),
+                    ),
+                    onAuthRetrySessionRestoration = { retryCount += 1 },
+                    authenticatedContent = { Text("protected_home") },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_RESTORATION_ERROR_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("No Internet Connection").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Check your internet connection and try again.")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_RESTORATION_RETRY_TEST_TAG).performClick()
+        composeTestRule.runOnIdle { org.junit.Assert.assertEquals(1, retryCount) }
+        composeTestRule.onAllNodesWithTag(AUTH_SCREEN_TEST_TAG).assertCountEquals(0)
     }
 
     @Test
