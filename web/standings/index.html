@@ -12,12 +12,14 @@
       font-family: Arial, Helvetica, sans-serif;
       background: #031225;
       color: #f6f8ff;
-      --header-title-font-size: 24px;
-      --header-title-line-height: 28px;
-      --header-stage-font-size: 12px;
-      --header-stage-line-height: 16px;
-      --header-overall-font-size: 16px;
-      --header-overall-line-height: 22px;
+      --header-title-font-size: 30px;
+      --header-title-line-height: 36px;
+      --header-stage-font-size: 22px;
+      --header-stage-line-height: 26px;
+      --header-overall-font-size: 24px;
+      --header-overall-line-height: 29px;
+      --header-made-with-font-size: 16px;
+      --header-made-with-line-height: 20px;
     }
     * { box-sizing: border-box; }
     html { min-width: 0; overflow-x: hidden; }
@@ -44,12 +46,16 @@
       font-weight: 700;
       overflow-wrap: anywhere;
     }
+    .tournament-name {
+      text-align: center;
+    }
     .stage-name {
       margin: 4px 0 0;
       color: #91afe0;
       font-size: var(--header-stage-font-size);
       line-height: var(--header-stage-line-height);
       overflow-wrap: anywhere;
+      text-align: center;
     }
     .page-header-divider {
       height: 1px;
@@ -62,12 +68,14 @@
       font-size: var(--header-overall-font-size);
       line-height: var(--header-overall-line-height);
       font-weight: 700;
+      text-align: left;
     }
     .made-with {
       margin: 2px 0 0;
       color: #91afe0;
-      font-size: 10px;
-      line-height: 14px;
+      font-size: var(--header-made-with-font-size);
+      line-height: var(--header-made-with-line-height);
+      text-align: left;
     }
     .standings-list {
       display: grid;
@@ -181,12 +189,14 @@
         padding-left: max(14px, calc(18px + env(safe-area-inset-left)));
       }
       body {
-        --header-title-font-size: 22px;
-        --header-title-line-height: 27px;
-        --header-stage-font-size: 11px;
-        --header-stage-line-height: 15px;
-        --header-overall-font-size: 14.67px;
-        --header-overall-line-height: 20px;
+        --header-title-font-size: 25px;
+        --header-title-line-height: 30px;
+        --header-stage-font-size: 20px;
+        --header-stage-line-height: 24px;
+        --header-overall-font-size: 20px;
+        --header-overall-line-height: 24px;
+        --header-made-with-font-size: 15px;
+        --header-made-with-line-height: 18px;
       }
       .standing-card { padding-right: 12px; padding-left: 12px; }
       .standing-heading { gap: 10px; }
@@ -224,7 +234,7 @@
           stageName.trim().length > 0;
 
         if (hasTournamentName) {
-          header.append(createTextElement("h1", "", tournamentName));
+          header.append(createTextElement("h1", "tournament-name", tournamentName));
           if (hasStageName) {
             header.append(createTextElement("p", "stage-name", stageName));
           }
