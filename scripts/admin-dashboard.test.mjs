@@ -4,6 +4,7 @@ import { after, test } from "node:test";
 import { generateKeyPair, sign } from "node:crypto";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
+import vm from "node:vm";
 
 const generateKeyPairAsync = promisify(generateKeyPair);
 const root = new URL("../", import.meta.url);
@@ -174,6 +175,79 @@ test("attachment API requires auth and reads only a D1-referenced private object
     FEEDBACK_MEDIA: media,
   })));
   assert.equal(missing.status, 404);
+});
+
+test("a single feedback entry keeps Load more hidden and repeated clicks do not refetch", async () => {
+  const source = await readFile(new URL("functions/admin.js", root), "utf8");
+  assert.match(source, /#load-more\[hidden\]\s*\{\s*display:\s*none !important;/);
+  const script = source.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
+  assert.ok(script);
+
+  class FakeElement {
+    constructor() {
+      this.children = [];
+      this.listeners = new Map();
+      this.hidden = false;
+      this.disabled = false;
+      this._textContent = "";
+    }
+
+    append(...children) {
+      this.children.push(...children);
+    }
+
+    addEventListener(type, listener) {
+      this.listeners.set(type, listener);
+    }
+
+    click() {
+      this.listeners.get("click")?.();
+    }
+
+    set textContent(value) {
+      this._textContent = String(value);
+      if (this._textContent === "") this.children = [];
+    }
+
+    get textContent() {
+      return this._textContent;
+    }
+  }
+
+  const entries = new FakeElement();
+  const loadMore = new FakeElement();
+  loadMore.hidden = true;
+  const status = new FakeElement();
+  const elements = { entries, "load-more": loadMore, status };
+  const document = {
+    getElementById: (id) => elements[id],
+    createElement: () => new FakeElement(),
+  };
+  let fetchCount = 0;
+  const fetch = async () => {
+    fetchCount += 1;
+    return new Response(JSON.stringify({
+      items: [{ createdAt: "2026-10-21T12:00:00.000Z", category: "general", categoryValue: "good", description: "One entry", email: null, attachmentUrl: null, attachmentKind: null }],
+      nextCursor: null,
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+
+  vm.runInNewContext(script, {
+    document,
+    fetch,
+    URL,
+    window: { location: { origin: "https://feedback.point-iq.com" } },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(fetchCount, 1);
+  assert.equal(entries.children.length, 1);
+  assert.equal(loadMore.hidden, true);
+
+  loadMore.click();
+  loadMore.click();
+  assert.equal(fetchCount, 1);
+  assert.equal(entries.children.length, 1);
 });
 
 test("admin page renders feedback through textContent instead of HTML injection", async () => {

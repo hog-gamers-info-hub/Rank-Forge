@@ -24,7 +24,8 @@ const ADMIN_PAGE = String.raw`<!doctype html>
     .email { margin: 8px 0 0; color: #a9bbd4; font-size: 13px; overflow-wrap: anywhere; }
     .attachment { display: block; max-width: min(100%, 520px); max-height: 360px; margin-top: 12px; border-radius: 4px; }
     video.attachment { width: 100%; }
-    #load-more { display: block; width: 100%; min-height: 42px; margin-top: 24px; border: 1px solid #41648c; border-radius: 4px; background: transparent; color: #eef5ff; font: inherit; cursor: pointer; }
+    #load-more:not([hidden]) { display: block; width: 100%; min-height: 42px; margin-top: 24px; border: 1px solid #41648c; border-radius: 4px; background: transparent; color: #eef5ff; font: inherit; cursor: pointer; }
+    #load-more[hidden] { display: none !important; }
     #load-more:hover:not(:disabled) { background: #102b4c; }
     #load-more:focus-visible { outline: 2px solid #8fc4ff; outline-offset: 2px; }
     #load-more:disabled { cursor: wait; opacity: .65; }
@@ -93,7 +94,7 @@ const ADMIN_PAGE = String.raw`<!doctype html>
       }
 
       async function loadPage(reset) {
-        if (loading) return;
+        if (loading || (!reset && !cursor)) return;
         loading = true;
         loadMore.disabled = true;
         status.textContent = reset ? "Loading feedback..." : "Loading more...";
@@ -105,7 +106,8 @@ const ADMIN_PAGE = String.raw`<!doctype html>
           const data = await response.json();
           if (reset) entries.textContent = "";
           for (const item of Array.isArray(data.items) ? data.items : []) addEntry(item);
-          cursor = typeof data.nextCursor === "string" && data.nextCursor ? data.nextCursor : null;
+          const nextCursor = data && data.nextCursor;
+          cursor = typeof nextCursor === "string" && /^[A-Za-z0-9_-]{1,512}$/.test(nextCursor) ? nextCursor : null;
           loadMore.hidden = !cursor;
           if (entries.children.length === 0) {
             const empty = document.createElement("p");
