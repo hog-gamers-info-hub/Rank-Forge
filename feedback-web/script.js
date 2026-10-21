@@ -392,7 +392,6 @@
       payload.append("attachment", file, file.name);
     }
 
-    let completed = false;
     try {
       const response = await fetch(new URL("./api/feedback", window.location.href), {
         method: "POST",
@@ -407,7 +406,6 @@
       }
 
       if (response.ok || result?.error?.code === "duplicate_submission") {
-        completed = true;
         setSubmissionStatus(
           state,
           response.ok ? "Thanks — your feedback was received." : "This submission was already received.",
@@ -428,9 +426,7 @@
       resetTurnstile(state, false);
     } finally {
       state.pending = false;
-      if (!completed) {
-        state.button.textContent = state.defaultLabel;
-      }
+      state.button.textContent = state.defaultLabel;
     }
   }
 
