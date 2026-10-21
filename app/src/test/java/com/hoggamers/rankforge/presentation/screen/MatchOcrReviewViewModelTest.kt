@@ -1252,7 +1252,107 @@ class MatchOcrReviewViewModelTest {
         )
         assertEquals(3, state.lobbySlotByTeamSlot[18])
         assertTrue(state.usesPairRelativeIdentity)
+        assertFalse(state.isUuidBackedGroupRotation)
         assertTrue(state.correctionDraft != null)
+    }
+
+    @Test
+    fun firstOpenUuidBackedGroupRotationManualReviewUsesUuidFinalization() = runTest(dispatcher) {
+        val repository = createGroupRotationRepository()
+        val snapshot = uuidSnapshot(
+            lobbySlots = (1..12).toList(),
+            tournamentId = GROUP_TOURNAMENT_ID,
+            pairing = groupRotationPairing(),
+        )
+        val draftRepository = RecordingGroupRotationMatchDraftRepository(
+            GroupRotationMatchDraftState(snapshot, emptyList(), emptyMap()),
+        )
+        val finalizationRepository = RecordingGroupRotationMatchFinalizationRepository()
+        val authRepository = com.hoggamers.rankforge.domain.tournament
+            .SignedInTournamentTestAuthRepository()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                MatchResultOcrPreviewProcessingResult.MissingAsset
+            },
+            matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+                MatchLobbyPlayersOcrResult.unavailable()
+            },
+            matchLobbySlotNumberOcrRunner = MatchLobbySlotNumberOcrRunner { _, _ ->
+                phase1SlotNumberResult()
+            },
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            tournamentRepository = repository,
+            readMatchTeamIdentityContext = ReadMatchTeamIdentityContextUseCase(
+                repository = repository,
+                authRepository = authRepository,
+            ),
+            observeGroupRotationMatchDraft = ObserveGroupRotationMatchDraftUseCase(
+                draftRepository,
+                authRepository,
+            ),
+            saveGroupRotationMatchParticipantResults = SaveGroupRotationMatchParticipantResultsUseCase(
+                draftRepository,
+                authRepository,
+            ),
+            finalizeGroupRotationMatch = FinalizeGroupRotationMatchUseCase(
+                finalizationRepository,
+                authRepository,
+            ),
+        )
+
+        viewModel.openManualReview(GROUP_TOURNAMENT_ID, GROUP_MATCH_ID)
+        advanceUntilIdle()
+
+        val opened = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertTrue(opened.isUuidBackedGroupRotation)
+        assertEquals((1..12).associateWith { it }, opened.lobbySlotByTeamSlot)
+
+        (0 until 12).forEach { rowIndex ->
+            viewModel.onPlacementChanged(rowIndex, (rowIndex + 1).toString())
+            viewModel.onKillsChanged(rowIndex, "0")
+            viewModel.onAssignedTeamSlotChanged(rowIndex, (rowIndex + 1).toString())
+        }
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        assertNotNull(finalizationRepository.input)
+        assertEquals(
+            finalizationRepository.input!!.participantResults,
+            draftRepository.savedParticipantResults,
+        )
+        assertEquals(
+            MatchStatus.DRAFT,
+            repository.observeMatchById(GROUP_MATCH_ID).first()!!.status,
+        )
+        assertTrue((viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun standardManualReviewRemainsOnLegacyFinalizationPath() = runTest(dispatcher) {
+        val repository = createRepository()
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(repository),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                MatchResultOcrPreviewProcessingResult.MissingAsset
+            },
+            matchLobbyPlayersOcrRunner = MatchLobbyPlayersOcrRunner { _, _ ->
+                MatchLobbyPlayersOcrResult.unavailable()
+            },
+            matchLobbySlotNumberOcrRunner = MatchLobbySlotNumberOcrRunner { _, _ ->
+                phase1SlotNumberResult()
+            },
+            observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
+            observeRoster = ObserveRosterByTournamentUseCase(repository),
+            tournamentRepository = repository,
+        )
+
+        viewModel.openManualReview(TOURNAMENT_ID, MATCH_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertFalse(state.isUuidBackedGroupRotation)
     }
 
     @Test
@@ -2752,10 +2852,14 @@ class MatchOcrReviewViewModelTest {
         return UuidFinalizeRecording(viewModel, draftRepository, finalizationRepository)
     }
 
-    private fun uuidSnapshot(lobbySlots: List<Int>): GroupRotationMatchIdentitySnapshot =
+    private fun uuidSnapshot(
+        lobbySlots: List<Int>,
+        tournamentId: String = TOURNAMENT_ID,
+        pairing: GroupPairing = GroupPairing.fromCanonicalKey("A:B"),
+    ): GroupRotationMatchIdentitySnapshot =
         GroupRotationMatchIdentitySnapshot(
-            tournamentId = TOURNAMENT_ID,
-            pairing = GroupPairing.fromCanonicalKey("A:B"),
+            tournamentId = tournamentId,
+            pairing = pairing,
             teams = lobbySlots.map { lobbySlot ->
                 GroupRotationMatchTeamIdentity(
                     lobbySlotNumber = lobbySlot,

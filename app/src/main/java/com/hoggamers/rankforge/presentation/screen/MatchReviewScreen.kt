@@ -970,7 +970,7 @@ fun MatchReviewScreen(
         }
     }
 
-    BackHandler(enabled = reviewInteractionsLocked || !uiState.isDeleting) {
+    BackHandler(enabled = uiState.isAvailable && (reviewInteractionsLocked || !uiState.isDeleting)) {
         if (reviewInteractionsEnabled) {
             if (manualModeOpened) {
                 closeManualMode()
