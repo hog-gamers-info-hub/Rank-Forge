@@ -8,6 +8,28 @@ const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const RATE_LIMIT_MAX_SUBMISSIONS = 5;
 
+class FeedbackBackendError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = "FeedbackBackendError";
+    this.code = code;
+  }
+}
+
+function backendError(code) {
+  return new FeedbackBackendError(code);
+}
+
+function logBackendFailure(code, details = {}) {
+  const safeDetails = {};
+  if (Number.isInteger(details.status)) safeDetails.status = details.status;
+  console.error("feedback_backend_failure", { code, ...safeDetails });
+}
+
+function backendErrorCode(error, fallback) {
+  return error instanceof FeedbackBackendError && error.code ? error.code : fallback;
+}
+
 const CATEGORY_VALUES = {
   problem: new Set([
     "calculation-ocr",
@@ -98,6 +120,11 @@ function jsonResponse(request, env, status, code, message) {
   });
 }
 
+function unavailableResponse(request, env, code, message = "Feedback submission is unavailable.", details = {}) {
+  logBackendFailure(code, details);
+  return jsonResponse(request, env, 503, code, message);
+}
+
 function formText(formData, name) {
   const value = formData.get(name);
   return typeof value === "string" ? value : "";
@@ -180,22 +207,27 @@ async function verifyTurnstile(env, token, submissionId) {
       }),
     });
   } catch {
-    return { valid: false, unavailable: true };
+    return { valid: false, unavailable: true, code: "turnstile_siteverify_network_error" };
   }
 
   if (!response.ok) {
-    return { valid: false, unavailable: true };
+    return {
+      valid: false,
+      unavailable: true,
+      code: "turnstile_siteverify_http_error",
+      status: response.status,
+    };
   }
 
   let result;
   try {
     result = await response.json();
   } catch {
-    return { valid: false, unavailable: true };
+    return { valid: false, unavailable: true, code: "turnstile_siteverify_invalid_json" };
   }
 
   const origin = configuredOrigin(env.FEEDBACK_ALLOWED_ORIGIN);
-  if (!origin) return { valid: false, unavailable: true };
+  if (!origin) return { valid: false, unavailable: true, code: "invalid_origin_configuration" };
   const expectedHostname = new URL(origin).hostname;
 
   return {
@@ -212,7 +244,12 @@ async function hashedRateLimitKey(request, env) {
 }
 
 async function rateLimitAllows(request, env) {
-  const bucketKey = await hashedRateLimitKey(request, env);
+  let bucketKey;
+  try {
+    bucketKey = await hashedRateLimitKey(request, env);
+  } catch {
+    throw backendError("rate_limit_key_error");
+  }
   const windowStart = Math.floor(Date.now() / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS;
 
   const statements = [
@@ -251,19 +288,24 @@ async function rateLimitAllows(request, env) {
       .bind(windowStart),
   ];
 
-  const results = await env.FEEDBACK_DB.batch(statements);
+  let results;
+  try {
+    results = await env.FEEDBACK_DB.batch(statements);
+  } catch {
+    throw backendError("rate_limit_batch_error");
+  }
   if (
     !Array.isArray(results) ||
     results.length !== 3 ||
     results.some((result) => result?.success !== true)
   ) {
-    throw new Error("Rate-limit batch failed");
+    throw backendError("rate_limit_batch_result_error");
   }
 
   const row = results[1]?.results?.[0];
   const requestCount = Number(row?.request_count);
   if (!Number.isSafeInteger(requestCount)) {
-    throw new Error("Rate-limit count was unavailable");
+    throw backendError("rate_limit_count_error");
   }
 
   return requestCount <= RATE_LIMIT_MAX_SUBMISSIONS;
@@ -274,11 +316,15 @@ function isDuplicateError(error) {
 }
 
 async function existingSubmission(env, submissionId) {
-  const row = await env.FEEDBACK_DB
-    .prepare("SELECT id FROM feedback_submissions WHERE client_submission_id = ? LIMIT 1")
-    .bind(submissionId)
-    .first();
-  return Boolean(row);
+  try {
+    const row = await env.FEEDBACK_DB
+      .prepare("SELECT id FROM feedback_submissions WHERE client_submission_id = ? LIMIT 1")
+      .bind(submissionId)
+      .first();
+    return Boolean(row);
+  } catch {
+    throw backendError("duplicate_check_error");
+  }
 }
 
 async function readRequestWithLimit(request) {
@@ -348,7 +394,7 @@ async function cleanupAttachment(bucket, key) {
     await bucket.delete(key);
     return true;
   } catch {
-    console.error("feedback_attachment_cleanup_failed");
+    logBackendFailure("r2_cleanup_error");
     return false;
   }
 }
@@ -367,7 +413,7 @@ export async function onRequest(context) {
     return jsonResponse(request, env, 405, "method_not_allowed", "Request not allowed.");
   }
   if (!configured(env)) {
-    return jsonResponse(request, env, 503, "service_unavailable", "Feedback submission is unavailable.");
+    return unavailableResponse(request, env, "backend_not_configured");
   }
   if (!originIsAllowed(request, env)) {
     return jsonResponse(request, env, 403, "forbidden", "Request not allowed.");
@@ -431,7 +477,9 @@ export async function onRequest(context) {
 
   const turnstile = await verifyTurnstile(env, turnstileToken, submissionId);
   if (turnstile.unavailable) {
-    return jsonResponse(request, env, 503, "service_unavailable", "Feedback submission is unavailable.");
+    return unavailableResponse(request, env, turnstile.code || "turnstile_siteverify_error", undefined, {
+      status: turnstile.status,
+    });
   }
   if (!turnstile.valid) {
     return jsonResponse(request, env, 400, "turnstile_failed", "Security verification failed. Try again.");
@@ -444,8 +492,8 @@ export async function onRequest(context) {
     if (await existingSubmission(env, submissionId)) {
       return jsonResponse(request, env, 409, "duplicate_submission", "This submission was already received.");
     }
-  } catch {
-    return jsonResponse(request, env, 503, "service_unavailable", "Feedback submission is unavailable.");
+  } catch (error) {
+    return unavailableResponse(request, env, backendErrorCode(error, "database_precheck_error"));
   }
 
   const id = crypto.randomUUID();
@@ -460,8 +508,13 @@ export async function onRequest(context) {
         httpMetadata: { contentType: attachment.type },
       });
     }
+  } catch {
+    await cleanupAttachment(env.FEEDBACK_MEDIA, attachmentKey);
+    return unavailableResponse(request, env, "r2_upload_error");
+  }
 
-    await env.FEEDBACK_DB
+  try {
+    const insertResult = await env.FEEDBACK_DB
       .prepare(
         `INSERT INTO feedback_submissions
           (id, client_submission_id, category, category_value, description, email, attachment_key, status, created_at)
@@ -478,12 +531,15 @@ export async function onRequest(context) {
         createdAt,
       )
       .run();
+    if (!insertResult || insertResult.success !== true) {
+      throw backendError("d1_insert_result_error");
+    }
   } catch (error) {
     await cleanupAttachment(env.FEEDBACK_MEDIA, attachmentKey);
     if (isDuplicateError(error)) {
       return jsonResponse(request, env, 409, "duplicate_submission", "This submission was already received.");
     }
-    return jsonResponse(request, env, 503, "service_unavailable", "Feedback submission is unavailable.");
+    return unavailableResponse(request, env, backendErrorCode(error, "d1_insert_error"));
   }
 
   return new Response(JSON.stringify({ ok: true }), {

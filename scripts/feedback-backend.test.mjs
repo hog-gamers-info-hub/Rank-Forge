@@ -12,7 +12,7 @@ const feedbackConfig = await import(`data:text/javascript,${encodeURIComponent(c
 
 const ORIGIN = "https://feedback.point-iq.com";
 
-function createD1({ insertError = false } = {}) {
+function createD1({ insertError = false, batchError = false } = {}) {
   const submissions = new Map();
   const buckets = new Map();
   const batchCalls = [];
@@ -47,6 +47,7 @@ function createD1({ insertError = false } = {}) {
       return { bind: (...args) => bindStatement(sql, args) };
     },
     async batch(statements) {
+      if (batchError) throw new Error("D1 batch unavailable");
       assert.equal(statements.length, 3);
       const [upsert, select, cleanup] = statements;
       assert.match(upsert.sql, /ON CONFLICT\(bucket_key\)/);
@@ -187,7 +188,31 @@ test("failed D1 insertion attempts to remove the uploaded R2 object", async () =
   });
 
   assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "d1_insert_error");
   assert.equal(env.FEEDBACK_MEDIA.deleted.length, 1);
+});
+
+test("D1 rate-limit failures identify the failing operation", async () => {
+  const env = createEnv({ batchError: true });
+  const response = await feedback.onRequest({ request: createRequest(), env });
+
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "rate_limit_batch_error");
+});
+
+test("Turnstile Siteverify transport failures identify the failing operation", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("Siteverify unavailable");
+  };
+
+  try {
+    const response = await feedback.onRequest({ request: createRequest(), env: createEnv() });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error.code, "turnstile_siteverify_network_error");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test("invalid origins disable the configuration endpoint", async () => {
@@ -214,4 +239,5 @@ test("submissions remain fail-closed when disabled", async () => {
   const env = { ...createEnv(), FEEDBACK_SUBMISSIONS_ENABLED: "false" };
   const response = await feedback.onRequest({ request: createRequest(), env });
   assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "backend_not_configured");
 });
