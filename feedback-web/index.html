@@ -22,23 +22,14 @@
 
       <div class="content-grid" id="feedback-page">
         <section class="intro" aria-labelledby="page-title">
-          <p class="eyebrow">PointIQ community</p>
-          <h1 id="page-title">Feedback &amp; Support</h1>
+          <h1 id="page-title">Help Improve PointIQ</h1>
           <p class="intro-copy">
-            Help us make tournament scoring clearer, faster, and more reliable.
-            Tell us what happened, what you would improve, or what is on your mind.
+            Share your experience, suggest improvements, or report a problem.
           </p>
         </section>
 
-        <section class="form-card" aria-labelledby="form-title">
-          <div class="card-heading">
-            <p class="card-kicker">We are listening</p>
-            <h2 id="form-title">Share your feedback</h2>
-            <p class="card-copy">
-              Choose a category, add the details.
-            </p>
-          </div>
-
+        <fieldset class="form-card">
+          <legend class="card-kicker">We are listening</legend>
           <form id="feedback-form" novalidate>
             <fieldset class="category-group" aria-describedby="category-error">
               <legend>What would you like to share?</legend>
@@ -68,17 +59,9 @@
               <p class="field-error" id="category-error" aria-live="polite"></p>
             </fieldset>
 
-            <div class="submission-notice" id="submit-note" role="status">
-              <span class="notice-mark" aria-hidden="true">→</span>
-              <p>Submission will become available after secure backend integration.</p>
-            </div>
-
-            <button class="submit-button" id="submit-button" type="submit" disabled aria-describedby="submit-note">
-              Submit feedback
-            </button>
             <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
           </form>
-        </section>
+        </fieldset>
       </div>
 
       <section
