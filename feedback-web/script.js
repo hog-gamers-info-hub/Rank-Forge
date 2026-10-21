@@ -405,12 +405,22 @@
         result = null;
       }
 
-      if (response.ok || result?.error?.code === "duplicate_submission") {
+      if (response.ok) {
         setSubmissionStatus(
           state,
-          response.ok ? "Thanks — your feedback was received." : "This submission was already received.",
+          "Thanks — your feedback was received.",
           "success",
         );
+        state.form.reset();
+        descriptionField.setCustomValidity("");
+        if (attachmentField) clearAttachment();
+        validateEmail();
+        state.submissionId = null;
+        resetTurnstile(state);
+        formStatus.textContent = "Thanks — your feedback was received.";
+        resetFeedbackPage();
+      } else if (result?.error?.code === "duplicate_submission") {
+        setSubmissionStatus(state, "This submission was already received.", "success");
         state.form.reset();
         descriptionField.setCustomValidity("");
         if (attachmentField) clearAttachment();
