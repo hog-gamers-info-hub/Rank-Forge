@@ -3,7 +3,6 @@
 
   const form = document.querySelector("#feedback-form");
   const categoryInputs = [...document.querySelectorAll('input[name="category"]')];
-  const submitButton = document.querySelector("#submit-button");
   const formStatus = document.querySelector("#form-status");
   const feedbackPage = document.querySelector("#feedback-page");
   const problemReportPage = document.querySelector("#problem-report-page");
@@ -36,7 +35,6 @@
 
   if (
     !(form instanceof HTMLFormElement) ||
-    !(submitButton instanceof HTMLButtonElement) ||
     !(formStatus instanceof HTMLElement) ||
     !(feedbackPage instanceof HTMLElement) ||
     !(problemReportPage instanceof HTMLElement) ||
@@ -126,10 +124,6 @@
       categoryError.textContent = message;
     }
     return !message;
-  }
-
-  function validateForm() {
-    return validateCategory();
   }
 
   function clearAttachment() {
@@ -523,15 +517,6 @@
     );
   });
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (validateForm()) {
-      formStatus.textContent =
-        "Submission will become available after secure backend integration.";
-    }
-  });
-
-  submitButton.disabled = true;
   Object.values(formStates).forEach((state) => {
     state.button.disabled = true;
   });

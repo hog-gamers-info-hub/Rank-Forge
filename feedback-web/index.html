@@ -22,29 +22,25 @@
 
       <div class="content-grid" id="feedback-page">
         <section class="intro" aria-labelledby="page-title">
-          <p class="eyebrow">PointIQ community</p>
-          <h1 id="page-title">Feedback &amp; Support</h1>
+          <h1 id="page-title">Help Improve PointIQ</h1>
           <p class="intro-copy">
-            Help us make tournament scoring clearer, faster, and more reliable.
-            Tell us what happened, what you would improve, or what is on your mind.
+            Share your experience, suggest improvements, or report a problem.
           </p>
         </section>
 
-        <section class="form-card" aria-labelledby="form-title">
-          <div class="card-heading">
-            <p class="card-kicker">We are listening</p>
-            <h2 id="form-title">Share your feedback</h2>
-            <p class="card-copy">
-              Choose a category, add the details.
-            </p>
-          </div>
-
+        <fieldset class="form-card">
+          <legend class="card-kicker">We are listening</legend>
           <form id="feedback-form" novalidate>
             <fieldset class="category-group" aria-describedby="category-error">
               <legend>What would you like to share?</legend>
               <div class="category-options">
                 <label class="category-option">
                   <input type="radio" name="category" value="problem" />
+                  <svg class="category-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#17C9F2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+                    <path d="M12 9v4" />
+                    <path d="M12 17h.01" />
+                  </svg>
                   <span class="category-content">
                     <span class="category-title">Report a Problem</span>
                     <span class="category-description">Something is not working as expected.</span>
@@ -52,6 +48,12 @@
                 </label>
                 <label class="category-option">
                   <input type="radio" name="category" value="improvement" />
+                  <svg class="category-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#17C9F2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M9 18h6" />
+                    <path d="M10 22h4" />
+                    <path d="M15.09 14c.18-.82.55-1.31 1.18-1.87A6 6 0 1 0 7.76 12.1c.64.6 1.06 1.1 1.18 1.9Z" />
+                    <path d="M9 14h6" />
+                  </svg>
                   <span class="category-content">
                     <span class="category-title">Suggest an Improvement</span>
                     <span class="category-description">Share an idea that could make PointIQ better.</span>
@@ -59,6 +61,9 @@
                 </label>
                 <label class="category-option">
                   <input type="radio" name="category" value="general" />
+                  <svg class="category-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#17C9F2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
                   <span class="category-content">
                     <span class="category-title">General Feedback</span>
                     <span class="category-description">Tell us about your overall experience.</span>
@@ -68,17 +73,9 @@
               <p class="field-error" id="category-error" aria-live="polite"></p>
             </fieldset>
 
-            <div class="submission-notice" id="submit-note" role="status">
-              <span class="notice-mark" aria-hidden="true">→</span>
-              <p>Submission will become available after secure backend integration.</p>
-            </div>
-
-            <button class="submit-button" id="submit-button" type="submit" disabled aria-describedby="submit-note">
-              Submit feedback
-            </button>
             <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
           </form>
-        </section>
+        </fieldset>
       </div>
 
       <section
