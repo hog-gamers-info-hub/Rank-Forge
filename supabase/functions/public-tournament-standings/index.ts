@@ -32,6 +32,12 @@ interface PublishedStandingRow {
   isCompleteTie: boolean;
 }
 
+interface PublishedStandingsResponse {
+  tournamentName: string;
+  stageName: string | null;
+  standings: PublishedStandingRow[];
+}
+
 const CORS_ORIGIN = "https://hog-gamers-info-hub.github.io";
 const COMMON_HEADERS = {
   "Access-Control-Allow-Origin": CORS_ORIGIN,
@@ -115,16 +121,32 @@ function parseStandings(value: unknown): PublishedStandingRow[] | null {
     : null;
 }
 
+function parseTournamentMetadata(
+  value: unknown,
+): Pick<PublishedStandingsResponse, "tournamentName" | "stageName"> | null {
+  if (!isRecord(value) || typeof value.name !== "string") return null;
+
+  return {
+    tournamentName: value.name,
+    stageName: typeof value.organizer_name === "string"
+      ? value.organizer_name
+      : null,
+  };
+}
+
 async function readPublishedStandings(
   token: string,
   config: SupabaseServerConfig,
   fetchImpl: FetchImplementation,
   timeoutMs: number,
-): Promise<PublishedStandingRow[] | null> {
+): Promise<PublishedStandingsResponse | null> {
   const url = new URL(
     `${config.url}/rest/v1/tournament_standings_shares`,
   );
-  url.searchParams.set("select", "standings");
+  url.searchParams.set(
+    "select",
+    "standings,tournament:tournaments(name,organizer_name)",
+  );
   url.searchParams.set("share_token", `eq.${token}`);
   url.searchParams.set("limit", "2");
 
@@ -173,11 +195,19 @@ async function readPublishedStandings(
   if (rows === null) {
     throw new Error("Published standings snapshot was invalid.");
   }
-  return rows;
+  const metadata = parseTournamentMetadata(payload[0].tournament);
+  if (metadata === null) {
+    throw new Error("Published tournament metadata was invalid.");
+  }
+
+  return {
+    ...metadata,
+    standings: rows,
+  };
 }
 
 function jsonResponse(
-  body: Record<string, unknown>,
+  body: object,
   status: number,
 ): Response {
   return new Response(JSON.stringify(body), {
@@ -214,15 +244,15 @@ export async function handleRequest(
   try {
     const getEnv = dependencies.env ?? ((name: string) => Deno.env.get(name));
     const config = readSupabaseServerConfig(getEnv);
-    const rows = await readPublishedStandings(
+    const standingsResponse = await readPublishedStandings(
       token,
       config,
       dependencies.fetchImpl ?? fetch,
       dependencies.timeoutMs ?? SUPABASE_STANDINGS_TIMEOUT_MS,
     );
-    return rows === null
+    return standingsResponse === null
       ? notFoundResponse()
-      : jsonResponse({ standings: rows }, 200);
+      : jsonResponse(standingsResponse, 200);
   } catch {
     return internalErrorResponse();
   }

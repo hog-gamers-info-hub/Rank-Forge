@@ -66,8 +66,20 @@ const VALID_ROW = {
   isCompleteTie: false,
 };
 
+const VALID_TOURNAMENT = {
+  name: "Test Tournament",
+  organizer_name: "Stage One",
+};
+
 function snapshotRow(overrides: Record<string, unknown> = {}) {
   return { ...VALID_ROW, ...overrides };
+}
+
+function sharePayload(
+  standings: unknown,
+  tournament: unknown = VALID_TOURNAMENT,
+) {
+  return [{ standings, tournament }];
 }
 
 async function responseJsonValue(response: Response): Promise<unknown> {
@@ -110,7 +122,7 @@ Deno.test("valid snapshots return exact standings JSON and query only the share 
   const standings = [
     snapshotRow({ teamName: null, latestMatchPlacement: null }),
   ];
-  const { fetchImpl, calls } = mockFetch(responseJson([{ standings }]));
+  const { fetchImpl, calls } = mockFetch(responseJson(sharePayload(standings)));
   const response = await handleRequest(request(SHARE_TOKEN), {
     env: env(),
     fetchImpl,
@@ -124,9 +136,16 @@ Deno.test("valid snapshots return exact standings JSON and query only the share 
   );
   assertEquals(
     await responseJsonValue(response),
-    { standings },
+    {
+      tournamentName: VALID_TOURNAMENT.name,
+      stageName: VALID_TOURNAMENT.organizer_name,
+      standings,
+    },
   );
-  assertEquals(query.get("select"), "standings");
+  assertEquals(
+    query.get("select"),
+    "standings,tournament:tournaments(name,organizer_name)",
+  );
   assertEquals(query.get("share_token"), `eq.${SHARE_TOKEN}`);
   assert(!query.has("tournament_id"));
   assertEquals(
@@ -149,28 +168,88 @@ Deno.test("valid snapshots return exact standings JSON and query only the share 
 
 Deno.test("team names remain JSON data rather than HTML", async () => {
   const teamName = '<img src="x" onerror="alert(1)">';
-  const { fetchImpl } = mockFetch(responseJson([{
-    standings: [snapshotRow({ teamName })],
-  }]));
+  const { fetchImpl } = mockFetch(responseJson(sharePayload([
+    snapshotRow({ teamName }),
+  ])));
   const response = await handleRequest(request(SHARE_TOKEN), {
     env: env(),
     fetchImpl,
   });
 
   assertEquals(await responseJsonValue(response), {
+    tournamentName: VALID_TOURNAMENT.name,
+    stageName: VALID_TOURNAMENT.organizer_name,
     standings: [snapshotRow({ teamName })],
   });
 });
 
+Deno.test("missing optional stage name returns null", async () => {
+  const { fetchImpl } = mockFetch(responseJson(sharePayload(
+    [snapshotRow()],
+    { name: "Test Tournament", organizer_name: null },
+  )));
+  const response = await handleRequest(request(SHARE_TOKEN), {
+    env: env(),
+    fetchImpl,
+  });
+
+  assertEquals(await responseJsonValue(response), {
+    tournamentName: "Test Tournament",
+    stageName: null,
+    standings: [snapshotRow()],
+  });
+});
+
+Deno.test("special characters in metadata remain ordinary JSON data", async () => {
+  const tournament = {
+    name: 'Cup <Final> \\"2026\\"',
+    organizer_name: "Stage & Round 1",
+  };
+  const { fetchImpl } = mockFetch(responseJson(sharePayload(
+    [snapshotRow()],
+    tournament,
+  )));
+  const response = await handleRequest(request(SHARE_TOKEN), {
+    env: env(),
+    fetchImpl,
+  });
+
+  assertEquals(await responseJsonValue(response), {
+    tournamentName: tournament.name,
+    stageName: tournament.organizer_name,
+    standings: [snapshotRow()],
+  });
+});
+
+Deno.test("malformed tournament metadata fails safely", async () => {
+  const { fetchImpl } = mockFetch(responseJson(sharePayload(
+    [snapshotRow()],
+    { name: 42, organizer_name: "Stage One" },
+  )));
+  const response = await handleRequest(request(SHARE_TOKEN), {
+    env: env(),
+    fetchImpl,
+  });
+
+  assertEquals(response.status, 500);
+  assertEquals(await responseJsonValue(response), {
+    error: "standings_unavailable",
+  });
+});
+
 Deno.test("empty snapshots return an empty standings array", async () => {
-  const { fetchImpl } = mockFetch(responseJson([{ standings: [] }]));
+  const { fetchImpl } = mockFetch(responseJson(sharePayload([])));
   const response = await handleRequest(request(SHARE_TOKEN), {
     env: env(),
     fetchImpl,
   });
 
   assertEquals(response.status, 200);
-  assertEquals(await responseJsonValue(response), { standings: [] });
+  assertEquals(await responseJsonValue(response), {
+    tournamentName: VALID_TOURNAMENT.name,
+    stageName: VALID_TOURNAMENT.organizer_name,
+    standings: [],
+  });
 });
 
 Deno.test("non-GET requests return deterministic method rejection", async () => {
@@ -212,9 +291,9 @@ Deno.test("OPTIONS returns a CORS preflight response without querying Supabase",
 });
 
 Deno.test("malformed stored snapshots fail with a safe generic JSON response", async () => {
-  const { fetchImpl } = mockFetch(responseJson([{
-    standings: '<script>alert("unsafe")</script>',
-  }]));
+  const { fetchImpl } = mockFetch(responseJson(sharePayload(
+    '<script>alert("unsafe")</script>',
+  )));
   const response = await handleRequest(request(SHARE_TOKEN), {
     env: env(),
     fetchImpl,
@@ -227,9 +306,9 @@ Deno.test("malformed stored snapshots fail with a safe generic JSON response", a
 });
 
 Deno.test("snapshots with more than 12 rows fail safely", async () => {
-  const { fetchImpl } = mockFetch(responseJson([{
-    standings: Array.from({ length: 13 }, () => snapshotRow()),
-  }]));
+  const { fetchImpl } = mockFetch(responseJson(sharePayload(
+    Array.from({ length: 13 }, () => snapshotRow()),
+  )));
   const response = await handleRequest(request(SHARE_TOKEN), {
     env: env(),
     fetchImpl,
@@ -242,9 +321,9 @@ Deno.test("snapshots with more than 12 rows fail safely", async () => {
 });
 
 Deno.test("invalid snapshot row field types fail safely", async () => {
-  const { fetchImpl } = mockFetch(responseJson([{
-    standings: [snapshotRow({ totalPoints: "20" })],
-  }]));
+  const { fetchImpl } = mockFetch(responseJson(sharePayload([
+    snapshotRow({ totalPoints: "20" }),
+  ])));
   const response = await handleRequest(request(SHARE_TOKEN), {
     env: env(),
     fetchImpl,
