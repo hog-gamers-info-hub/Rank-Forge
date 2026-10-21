@@ -307,7 +307,10 @@ class MatchOcrReviewViewModel @Inject constructor(
                     ),
                 )
             }
-            _uiState.value = ready.copy(correctionDraft = seededDraft)
+            _uiState.value = ready.copy(
+                correctionDraft = seededDraft,
+                isUuidBackedGroupRotation = teamContext.uuidSnapshot != null,
+            )
         }
     }
 
