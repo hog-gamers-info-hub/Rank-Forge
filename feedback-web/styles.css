@@ -447,6 +447,25 @@ form {
   padding: 10px 16px;
 }
 
+.turnstile-slot {
+  min-height: 0;
+}
+
+.submission-status {
+  margin: -4px 0 0;
+  color: var(--body-text);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.submission-status[data-state="success"] {
+  color: #9fe6c1;
+}
+
+.submission-status[data-state="error"] {
+  color: var(--error);
+}
+
 .problem-report-form select:focus,
 .problem-report-form textarea:focus,
 .problem-report-form input[type="email"]:focus {
