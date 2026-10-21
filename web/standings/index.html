@@ -12,6 +12,12 @@
       font-family: Arial, Helvetica, sans-serif;
       background: #031225;
       color: #f6f8ff;
+      --header-title-font-size: 24px;
+      --header-title-line-height: 28px;
+      --header-stage-font-size: 12px;
+      --header-stage-line-height: 16px;
+      --header-overall-font-size: 16px;
+      --header-overall-line-height: 22px;
     }
     * { box-sizing: border-box; }
     html { min-width: 0; overflow-x: hidden; }
@@ -33,15 +39,35 @@
     h1 {
       margin: 0;
       color: #f6f8ff;
-      font-size: 24px;
-      line-height: 28px;
+      font-size: var(--header-title-font-size);
+      line-height: var(--header-title-line-height);
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .stage-name {
+      margin: 4px 0 0;
+      color: #91afe0;
+      font-size: var(--header-stage-font-size);
+      line-height: var(--header-stage-line-height);
+      overflow-wrap: anywhere;
+    }
+    .page-header-divider {
+      height: 1px;
+      margin: 9px 0;
+      background: rgba(23, 106, 247, 0.24);
+    }
+    .overall-heading {
+      margin: 0;
+      color: #f6f8ff;
+      font-size: var(--header-overall-font-size);
+      line-height: var(--header-overall-line-height);
       font-weight: 700;
     }
-    .subtitle {
-      margin: 7px 0 0;
+    .made-with {
+      margin: 2px 0 0;
       color: #91afe0;
-      font-size: 14px;
-      line-height: 20px;
+      font-size: 10px;
+      line-height: 14px;
     }
     .standings-list {
       display: grid;
@@ -154,7 +180,14 @@
         padding-bottom: calc(18px + env(safe-area-inset-bottom));
         padding-left: max(14px, calc(18px + env(safe-area-inset-left)));
       }
-      h1 { font-size: 22px; line-height: 27px; }
+      body {
+        --header-title-font-size: 22px;
+        --header-title-line-height: 27px;
+        --header-stage-font-size: 11px;
+        --header-stage-line-height: 15px;
+        --header-overall-font-size: 14.67px;
+        --header-overall-line-height: 20px;
+      }
       .standing-card { padding-right: 12px; padding-left: 12px; }
       .standing-heading { gap: 10px; }
       .metrics { grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr) 10px minmax(0, 1fr); }
@@ -182,12 +215,25 @@
         return element;
       }
 
-      function createPageHeader() {
+      function createPageHeader(tournamentName, stageName) {
         const header = document.createElement("header");
         header.className = "page-header";
+        const hasTournamentName = typeof tournamentName === "string" &&
+          tournamentName.trim().length > 0;
+        const hasStageName = typeof stageName === "string" &&
+          stageName.trim().length > 0;
+
+        if (hasTournamentName) {
+          header.append(createTextElement("h1", "", tournamentName));
+          if (hasStageName) {
+            header.append(createTextElement("p", "stage-name", stageName));
+          }
+          header.append(createTextElement("div", "page-header-divider", ""));
+        }
+
         header.append(
-          createTextElement("h1", "", "Overall Standing"),
-          createTextElement("p", "subtitle", "Finalized matches only"),
+          createTextElement(hasTournamentName ? "h2" : "h1", "overall-heading", "Overall Standings"),
+          createTextElement("p", "made-with", "Made with PointIQ"),
         );
         return header;
       }
@@ -339,8 +385,8 @@
         return card;
       }
 
-      function renderStandings(rows) {
-        app.replaceChildren(createPageHeader());
+      function renderStandings(rows, tournamentName, stageName) {
+        app.replaceChildren(createPageHeader(tournamentName, stageName));
 
         if (rows.length === 0) {
           const emptyState = document.createElement("section");
@@ -376,7 +422,13 @@
             payload.standings.length > 12 || !payload.standings.every(isStandingRow)) {
             throw new Error("invalid response");
           }
-          renderStandings(payload.standings);
+          const tournamentName = typeof payload.tournamentName === "string"
+            ? payload.tournamentName
+            : null;
+          const stageName = typeof payload.stageName === "string"
+            ? payload.stageName
+            : null;
+          renderStandings(payload.standings, tournamentName, stageName);
         } catch {
           showUnavailable();
         }
