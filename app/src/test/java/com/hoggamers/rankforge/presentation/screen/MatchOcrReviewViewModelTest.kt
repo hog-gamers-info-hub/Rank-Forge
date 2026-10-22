@@ -102,17 +102,20 @@ import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1196,6 +1199,146 @@ class MatchOcrReviewViewModelTest {
         assertEquals(4, calls)
         assertEquals("2", (viewModel.uiState.value as MatchOcrReviewUiState.Ready)
             .rows.first().detectedPlacementDisplayValue)
+    }
+
+    @Test
+    fun unexpectedResultOcrExceptionProducesActionableError() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                throw IllegalStateException("unexpected OCR failure")
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Error
+        assertEquals(TOURNAMENT_ID, state.tournamentId)
+        assertEquals(MATCH_ID, state.matchId)
+        assertEquals(
+            "Unable to calculate results. Please try again or enter results manually.",
+            state.message,
+        )
+    }
+
+    @Test
+    fun immediateUnexpectedResultOcrExceptionTransitionsToError() = runTest(dispatcher) {
+        Dispatchers.setMain(UnconfinedTestDispatcher(scheduler))
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                throw IllegalStateException("immediate OCR failure")
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+
+        val state = viewModel.uiState.value as MatchOcrReviewUiState.Error
+        assertEquals(
+            "Unable to calculate results. Please try again or enter results manually.",
+            state.message,
+        )
+    }
+
+    @Test
+    fun unexpectedLowerResultCoordinatorExceptionProducesActionableError() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                if (identity.role == MatchResultScreenshotRole.MATCH_RESULT_LOWER) {
+                    throw IllegalArgumentException("unexpected lower-result failure")
+                }
+                completePreviewRunner().process(identity)
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Error)
+    }
+
+    @Test
+    fun resultOcrCancellationIsNotConvertedToUiError() = runTest(dispatcher) {
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner {
+                throw kotlinx.coroutines.CancellationException("calculation cancelled")
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Calculating)
+    }
+
+    @Test
+    fun staleCalculationFailureCannotReplaceNewerCalculationState() = runTest(dispatcher) {
+        val firstCalculationStarted = CompletableDeferred<Unit>()
+        val releaseFirstCalculation = CompletableDeferred<Unit>()
+        var callCount = 0
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                if (callCount++ == 0) {
+                    firstCalculationStarted.complete(Unit)
+                    try {
+                        releaseFirstCalculation.await()
+                    } catch (_: kotlinx.coroutines.CancellationException) {
+                        withContext(NonCancellable) {
+                            releaseFirstCalculation.await()
+                        }
+                    }
+                    throw IllegalStateException("stale calculation failure")
+                }
+                completePreviewRunner().process(identity)
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        runCurrent()
+        firstCalculationStarted.await()
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Ready)
+
+        releaseFirstCalculation.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Ready)
+    }
+
+    @Test
+    fun failedCalculationCanBeRetriedSuccessfully() = runTest(dispatcher) {
+        var shouldFail = true
+        val viewModel = MatchOcrReviewViewModel(
+            finalizeOcrCorrectionMatch = createFinalizeUseCase(InMemoryTournamentRepository()),
+            matchResultOcrPreviewRunner = MatchResultOcrPreviewRunner { identity ->
+                if (shouldFail) {
+                    throw IllegalStateException("retryable OCR failure")
+                }
+                completePreviewRunner().process(identity)
+            },
+            initialUiState = MatchOcrReviewUiState.Loading,
+        )
+
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Error)
+
+        shouldFail = false
+        viewModel.reprocess(TOURNAMENT_ID, MATCH_ID, allowIncompleteEvidence = false)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is MatchOcrReviewUiState.Ready)
     }
 
     @Test

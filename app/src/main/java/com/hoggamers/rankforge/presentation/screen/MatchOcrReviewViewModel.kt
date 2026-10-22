@@ -62,9 +62,11 @@ import com.hoggamers.rankforge.domain.matching.TeamCandidateRosterInput
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,6 +75,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
 import com.hoggamers.rankforge.domain.sync.QueueRecordingResult
+
+private const val UNEXPECTED_OCR_CALCULATION_ERROR =
+    "Unable to calculate results. Please try again or enter results manually."
 
 @HiltViewModel
 class MatchOcrReviewViewModel @Inject constructor(
@@ -328,7 +333,8 @@ class MatchOcrReviewViewModel @Inject constructor(
             matchId = matchId,
         )
         _cacheAvailability.value = MatchOcrCacheAvailability.UNKNOWN
-        previewJob = viewModelScope.launch {
+        val newPreviewJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
             val teamContext = loadTeamContext(tournamentId, matchId)
             teamContext.identityFailure?.let { failure ->
                 _uiState.value = MatchOcrReviewUiState.Error(
@@ -485,7 +491,29 @@ class MatchOcrReviewViewModel @Inject constructor(
                     MatchOcrReviewUiState.Loading -> state
                 }
             }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                val calculationJob = currentCoroutineContext()[Job]
+                val state = _uiState.value
+                if (
+                    calculationJob?.isActive == true &&
+                    previewJob === calculationJob &&
+                    loadedMatchKey == "$tournamentId:$matchId" &&
+                    state is MatchOcrReviewUiState.Calculating &&
+                    state.tournamentId == tournamentId &&
+                    state.matchId == matchId
+                ) {
+                    _uiState.value = MatchOcrReviewUiState.Error(
+                        tournamentId = tournamentId,
+                        matchId = matchId,
+                        message = UNEXPECTED_OCR_CALCULATION_ERROR,
+                    )
+                }
+            }
         }
+        previewJob = newPreviewJob
+        newPreviewJob.start()
     }
 
     private suspend fun processSlotNumberOnlyLobbyOcr(
