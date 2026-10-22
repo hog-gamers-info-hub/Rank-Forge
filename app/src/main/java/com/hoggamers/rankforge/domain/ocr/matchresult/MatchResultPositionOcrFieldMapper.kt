@@ -292,19 +292,8 @@ class MatchResultPositionOcrFieldMapper {
 
     private fun stripLeadingMergedEliminationPrefix(text: String): String {
         for (startIndex in 0..2) {
-            for (marker in MERGED_ELIMINATION_MARKERS) {
-                if (
-                    startIndex + marker.length <= text.length &&
-                    text.regionMatches(
-                        startIndex,
-                        marker,
-                        0,
-                        marker.length,
-                        ignoreCase = true,
-                    )
-                ) {
-                    return text.substring(startIndex + marker.length).trim()
-                }
+            MatchResultEliminationAnchorText.findMarkerEndIndex(text, startIndex)?.let { endIndex ->
+                return text.substring(endIndex).trim()
             }
         }
         return text
@@ -563,16 +552,6 @@ class MatchResultPositionOcrFieldMapper {
     }
 
     private companion object {
-        val MERGED_ELIMINATION_MARKERS = listOf(
-            "Eliminations",
-            "Elimination",
-            "Eliminatio",
-            "Eliminati",
-            "Eiminations",
-            "Eimination",
-            "Eiminatio",
-            "Eiminati",
-        )
         val RIGHT_LEFT_PLAYER_RANGE = 0.05..0.40
         val RIGHT_MERGED_RANGE = 0.40..0.81
         val RIGHT_KILL_RANGE = 0.81..1.0
@@ -582,41 +561,10 @@ class MatchResultPositionOcrFieldMapper {
 }
 
 object MatchResultPositionSemanticTextParser {
-    // Longest supported marker first so "Eliminatiok..." consumes "Eliminatio".
-    private val markerPattern = Regex(
-        "^\\s*(?:(\\d+|[Oo])\\s*)?(Eliminations?|Eliminatio|Eliminati|Eiminations?|Eiminatio|Eiminati)(.*)$",
-        RegexOption.IGNORE_CASE,
-    )
-    private val truncatedStrongPrefixPattern = Regex(
-        "^(\\d+|[Oo])\\s*(?:Eliminat|Eiminat)$",
-        RegexOption.IGNORE_CASE,
-    )
-
     fun parse(text: String): ParsedEliminationText {
         val raw = text.trim()
-        val match = markerPattern.matchEntire(raw)
-        if (match == null) {
-            val truncatedMatch = truncatedStrongPrefixPattern.matchEntire(raw)
-            if (truncatedMatch != null) {
-                val prefix = truncatedMatch.groupValues[1]
-                val prefixType = if (prefix.equals("O", ignoreCase = true)) {
-                    MatchResultEliminationPrefixType.O_NORMALIZED
-                } else {
-                    MatchResultEliminationPrefixType.EXPLICIT_NUMERIC
-                }
-                return ParsedEliminationText(
-                    kill = if (prefixType == MatchResultEliminationPrefixType.O_NORMALIZED) {
-                        0
-                    } else {
-                        prefix.toIntOrNull()
-                    },
-                    playerSuffix = null,
-                    markerMatched = true,
-                    prefixType = prefixType,
-                    rawText = raw,
-                    markerType = "ELIMINAT",
-                )
-            }
+        val match = MatchResultEliminationAnchorText.find(raw)
+        if (match == null || !isParserMarkerMatch(match, raw)) {
             return ParsedEliminationText(
                 kill = null,
                 playerSuffix = null,
@@ -624,27 +572,31 @@ object MatchResultPositionSemanticTextParser {
                 rawText = raw,
             )
         }
-        val prefix = match.groupValues[1]
-        val prefixType = when {
-            prefix.equals("O", ignoreCase = true) -> MatchResultEliminationPrefixType.O_NORMALIZED
-            prefix.isNotBlank() -> MatchResultEliminationPrefixType.EXPLICIT_NUMERIC
-            else -> MatchResultEliminationPrefixType.EMPTY_PREFIX
-        }
         return ParsedEliminationText(
-            kill = when (prefixType) {
+            kill = when (match.prefixType) {
                 MatchResultEliminationPrefixType.O_NORMALIZED -> 0
-                MatchResultEliminationPrefixType.EXPLICIT_NUMERIC -> prefix.toIntOrNull()
+                MatchResultEliminationPrefixType.EXPLICIT_NUMERIC -> match.kill
                 MatchResultEliminationPrefixType.EMPTY_PREFIX -> null
             },
-            playerSuffix = match.groupValues[3].trim().ifBlank { null },
+            playerSuffix = raw.substring(match.markerEndIndex).trim().ifBlank { null },
             markerMatched = true,
-            prefixType = prefixType,
+            prefixType = match.prefixType,
             rawText = raw,
-            markerType = match.groupValues[2].uppercase(),
+            markerType = match.markerText.uppercase(),
         )
     }
 
     fun suffixAfterElimination(text: String): String = parse(text).playerSuffix.orEmpty()
+
+    private fun isParserMarkerMatch(
+        match: MatchResultEliminationAnchorMatch,
+        raw: String,
+    ): Boolean {
+        val remainder = raw.substring(match.markerEndIndex)
+        return remainder.isBlank() ||
+            match.markerIsComplete ||
+            remainder.firstOrNull()?.isWhitespace() == true
+    }
 }
 
 internal fun ParsedEliminationText.isResolvedKill(): Boolean =
