@@ -445,7 +445,12 @@ class FinalizeOcrCorrectionMatchUseCase(
                 FinalizeOcrCorrectionMatchFailure.AUTHENTICATION_REQUIRED
             FinalizeMatchGlobalError.MATCH_NOT_FOUND -> FinalizeOcrCorrectionMatchFailure.MISSING_MATCH
             FinalizeMatchGlobalError.MATCH_NOT_DRAFT -> FinalizeOcrCorrectionMatchFailure.ALREADY_FINALIZED
-            FinalizeMatchGlobalError.INVALID_DATA, null -> FinalizeOcrCorrectionMatchFailure.FINALIZATION_FAILED
+            FinalizeMatchGlobalError.INVALID_DATA,
+            FinalizeMatchGlobalError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
+            FinalizeMatchGlobalError.DRAFT_SAVING_FAILED,
+            FinalizeMatchGlobalError.UNKNOWN_FINALIZATION_FAILURE,
+            null,
+            -> FinalizeOcrCorrectionMatchFailure.FINALIZATION_FAILED
         }
 
     private fun String.isStrictNegativeInteger(): Boolean =

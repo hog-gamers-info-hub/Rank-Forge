@@ -68,6 +68,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftState
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationFailure
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationValidator
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot
@@ -539,7 +540,12 @@ class MatchOcrReviewViewModelTest {
 
         assertNull(result.draftRepository.savedParticipantResults)
         assertNull(result.finalizationRepository.input)
-        assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+        val state = result.viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertFalse(state.finalization.isFinalized)
+        assertEquals(
+            MatchOcrReviewFinalizationError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
+            state.finalization.error,
+        )
     }
 
     @Test
@@ -553,7 +559,44 @@ class MatchOcrReviewViewModelTest {
 
         assertNotNull(result.draftRepository.savedParticipantResults)
         assertNull(result.finalizationRepository.input)
-        assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+        val state = result.viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertFalse(state.finalization.isFinalized)
+        assertEquals(MatchOcrReviewFinalizationError.DRAFT_SAVING_FAILED, state.finalization.error)
+    }
+
+    @Test
+    fun uuidAuthenticationFailureIsActionableAndBlocksFinalization() = runTest(dispatcher) {
+        val result = runUuidFinalize(
+            snapshot = uuidSnapshot(listOf(1, 2)),
+            existing = emptyList(),
+            saveResult = GroupRotationMatchDraftMutationResult.AUTHENTICATION_REQUIRED,
+        )
+        advanceUntilIdle()
+
+        val state = result.viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertNull(result.finalizationRepository.input)
+        assertFalse(state.finalization.isFinalized)
+        assertEquals(MatchOcrReviewFinalizationError.AUTHENTICATION_REQUIRED, state.finalization.error)
+    }
+
+    @Test
+    fun uuidGenericInvalidDataUsesUnknownFailureWithoutGuessingCause() = runTest(dispatcher) {
+        val result = runUuidFinalize(
+            snapshot = uuidSnapshot(listOf(1, 2)),
+            existing = emptyList(),
+            finalizationResult = GroupRotationMatchFinalizationResult.Rejected(
+                GroupRotationMatchFinalizationFailure.INVALID_DATA,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = result.viewModel.uiState.value as MatchOcrReviewUiState.Ready
+        assertNotNull(result.draftRepository.savedParticipantResults)
+        assertFalse(state.finalization.isFinalized)
+        assertEquals(
+            MatchOcrReviewFinalizationError.UNKNOWN_FINALIZATION_FAILURE,
+            state.finalization.error,
+        )
     }
 
     @Test
@@ -3047,8 +3090,9 @@ class MatchOcrReviewViewModelTest {
         ): GroupRotationMatchDraftMutationResult = GroupRotationMatchDraftMutationResult.SAVED
     }
 
-    private class RecordingGroupRotationMatchFinalizationRepository :
-        GroupRotationMatchFinalizationRepository {
+    private class RecordingGroupRotationMatchFinalizationRepository(
+        private val result: GroupRotationMatchFinalizationResult? = null,
+    ) : GroupRotationMatchFinalizationRepository {
         var input: com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput? = null
 
         override suspend fun finalizeGroupRotationMatchByOwner(
@@ -3065,7 +3109,7 @@ class MatchOcrReviewViewModelTest {
                 status = MatchStatus.FINALIZED,
                 groupPairing = GroupPairing.fromCanonicalKey("A:B"),
             )
-            return GroupRotationMatchFinalizationResult.Finalized(
+            return result ?: GroupRotationMatchFinalizationResult.Finalized(
                 match = match,
                 snapshot = GroupRotationMatchPersistenceSnapshot(
                     identity = GroupRotationMatchIdentitySnapshot(
@@ -3269,6 +3313,7 @@ class MatchOcrReviewViewModelTest {
         rows: List<MatchOcrReviewRowUiState> = uuidCorrectionRows(snapshot.teams.map { it.lobbySlotNumber }),
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },
         saveResult: GroupRotationMatchDraftMutationResult = GroupRotationMatchDraftMutationResult.SAVED,
+        finalizationResult: GroupRotationMatchFinalizationResult? = null,
     ): UuidFinalizeRecording {
         val correctionDraft = transform(
             MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
@@ -3277,7 +3322,7 @@ class MatchOcrReviewViewModelTest {
             GroupRotationMatchDraftState(snapshot, existing, emptyMap()),
             saveResult,
         )
-        val finalizationRepository = RecordingGroupRotationMatchFinalizationRepository()
+        val finalizationRepository = RecordingGroupRotationMatchFinalizationRepository(finalizationResult)
         val viewModel = viewModelWith(
             repository = InMemoryTournamentRepository(),
             initialUiState = readyState(

@@ -2343,8 +2343,16 @@ private fun MatchOcrReviewFinalizationError.toMessageRes(): Int = when (this) {
         R.string.match_ocr_review_finalization_missing_match
     MatchOcrReviewFinalizationError.ALREADY_FINALIZED ->
         R.string.match_ocr_review_finalization_already_finalized
+    MatchOcrReviewFinalizationError.AUTHENTICATION_REQUIRED ->
+        R.string.match_ocr_review_finalization_authentication_required
+    MatchOcrReviewFinalizationError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED ->
+        R.string.match_ocr_review_finalization_team_assignments_unverified
+    MatchOcrReviewFinalizationError.DRAFT_SAVING_FAILED ->
+        R.string.match_ocr_review_finalization_draft_save_failed
+    MatchOcrReviewFinalizationError.UNKNOWN_FINALIZATION_FAILURE ->
+        R.string.match_ocr_review_finalization_unknown_failure
     MatchOcrReviewFinalizationError.FINALIZATION_FAILED ->
-        R.string.match_ocr_review_finalization_failed
+        R.string.match_ocr_review_finalization_unknown_failure
     MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE ->
-        R.string.match_ocr_review_finalization_failed
+        R.string.match_ocr_review_finalization_unknown_failure
 }

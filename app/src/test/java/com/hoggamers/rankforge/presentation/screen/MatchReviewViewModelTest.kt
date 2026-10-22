@@ -46,21 +46,36 @@ import com.hoggamers.rankforge.domain.tournament.DraftMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadAction
 import com.hoggamers.rankforge.domain.tournament.TournamentCloudUploadResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftReadResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftState
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationRepository
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchTeamIdentity
+import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.GroupRotationPairingLobbySlot
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncAction
 import com.hoggamers.rankforge.domain.tournament.FinalizedMatchCloudSyncResult
 import com.hoggamers.rankforge.domain.tournament.GetTournamentByIdUseCase
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
+import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
+import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchDraftValuesUseCase
+import com.hoggamers.rankforge.domain.tournament.ObserveGroupRotationMatchDraftUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveMatchesUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveRosterByTournamentUseCase
 import com.hoggamers.rankforge.domain.tournament.ObserveTournamentSlotsUseCase
 import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.RosterPlayer
 import com.hoggamers.rankforge.domain.tournament.SaveTeamSlotNamesUseCase
+import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchParticipantResultsUseCase
 import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
@@ -83,6 +98,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
@@ -93,6 +109,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -233,6 +250,178 @@ class MatchReviewViewModelTest {
         assertEquals(canonicalSlots, viewModel.uiState.value.rows.map { it.teamSlotNumber })
         assertEquals("Team 14", viewModel.uiState.value.rows.first().teamName)
         assertEquals(12, viewModel.uiState.value.activeTeamCount)
+    }
+
+    @Test
+    fun uuidTeamAssignmentConversionFailureIsNotMisreportedAsPositionOrKills() = runTest {
+        val tournamentId = "uuid-conversion-failure"
+        val pairing = GroupPairing(TournamentGroup.A, TournamentGroup.C)
+        repository.create(
+            Tournament(
+                id = tournamentId,
+                name = "Rotation Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.DRAFT,
+                ownerUserId = SignedInTournamentTestAuthRepository.OWNER_USER_ID,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = listOf(pairing),
+            ),
+        )
+        repository.saveTeamNames(
+            tournamentId,
+            (1..12).associateWith { slotNumber -> "Team $slotNumber" },
+        )
+        repository.replaceGroupRotationPairingLobbySlots(
+            (1..12).map { lobbySlotNumber ->
+                GroupRotationPairingLobbySlot(
+                    tournamentId = tournamentId,
+                    pairing = pairing,
+                    lobbySlotNumber = lobbySlotNumber,
+                    teamSlotNumber = lobbySlotNumber,
+                )
+            },
+        )
+        val uuidMatchId = "uuid-conversion-failure-match"
+        repository.createDraftMatch(
+            Match(
+                id = uuidMatchId,
+                tournamentId = tournamentId,
+                matchNumber = 1,
+                date = LocalDate.of(2026, 10, 7),
+                mapName = "Bermuda",
+                status = MatchStatus.DRAFT,
+                groupPairing = pairing,
+            ),
+        )
+        val validSnapshot = GroupRotationMatchIdentitySnapshot(
+            tournamentId = tournamentId,
+            pairing = pairing,
+            teams = listOf(
+                GroupRotationMatchTeamIdentity(1, "uuid-one", "Team One"),
+                GroupRotationMatchTeamIdentity(2, "uuid-two", "Team Two"),
+            ),
+        )
+        val validResults = listOf(
+            GroupRotationMatchParticipantResult(
+                teamUUID = "uuid-one",
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = 1,
+                kills = 0,
+            ),
+            GroupRotationMatchParticipantResult(
+                teamUUID = "uuid-two",
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = 2,
+                kills = 0,
+            ),
+        )
+        val validState = GroupRotationMatchDraftState(
+            snapshot = validSnapshot,
+            participantResults = validResults,
+            valuesByLobbySlot = mapOf(
+                1 to MatchDraftFieldValues(placementInput = "1", killsInput = ""),
+                2 to MatchDraftFieldValues(placementInput = "2", killsInput = "0"),
+            ),
+        )
+        val conversionFailureState = validState.copy(
+            snapshot = validSnapshot.copy(teams = listOf(validSnapshot.teams[1])),
+            participantResults = listOf(validResults[1]),
+            valuesByLobbySlot = mapOf(2 to MatchDraftFieldValues("2", "0")),
+        )
+        val observationCount = AtomicInteger(0)
+        val draftRepository = object : GroupRotationMatchDraftRepository {
+            override fun observeByOwner(
+                tournamentId: String,
+                matchId: String,
+                ownerUserId: String,
+            ): Flow<GroupRotationMatchDraftReadResult> = flow {
+                val state = if (observationCount.incrementAndGet() == 1) {
+                    validState
+                } else {
+                    conversionFailureState
+                }
+                emit(GroupRotationMatchDraftReadResult.Loaded(state))
+            }
+
+            override suspend fun saveValueByOwner(
+                tournamentId: String,
+                matchId: String,
+                ownerUserId: String,
+                lobbySlotNumber: Int,
+                placementInput: String?,
+                killsInput: String?,
+                pointAdjustment: Int?,
+            ) = GroupRotationMatchDraftMutationResult.INVALID_DATA
+
+            override suspend fun savePlacementsByOwner(
+                tournamentId: String,
+                matchId: String,
+                ownerUserId: String,
+                placementsByLobbySlot: Map<Int, String>,
+            ) = GroupRotationMatchDraftMutationResult.INVALID_DATA
+
+            override suspend fun saveKillsByOwner(
+                tournamentId: String,
+                matchId: String,
+                ownerUserId: String,
+                killsByLobbySlot: Map<Int, String>,
+            ) = GroupRotationMatchDraftMutationResult.INVALID_DATA
+
+            override suspend fun saveParticipantResultsByOwner(
+                tournamentId: String,
+                matchId: String,
+                ownerUserId: String,
+                participantResults: List<GroupRotationMatchParticipantResult>,
+            ) = GroupRotationMatchDraftMutationResult.INVALID_DATA
+
+            override suspend fun savePointAdjustmentByOwner(
+                tournamentId: String,
+                matchId: String,
+                ownerUserId: String,
+                lobbySlotNumber: Int,
+                pointAdjustment: Int,
+            ) = GroupRotationMatchDraftMutationResult.INVALID_DATA
+
+            override suspend fun clearByOwner(
+                tournamentId: String,
+                matchId: String,
+                ownerUserId: String,
+            ) = GroupRotationMatchDraftMutationResult.INVALID_DATA
+        }
+        val viewModel = reviewViewModel(
+            observeGroupRotationMatchDraft = ObserveGroupRotationMatchDraftUseCase(
+                draftRepository,
+                SignedInTournamentTestAuthRepository(),
+            ),
+            saveGroupRotationMatchParticipantResults = SaveGroupRotationMatchParticipantResultsUseCase(
+                draftRepository,
+            ),
+            finalizeGroupRotationMatch = FinalizeGroupRotationMatchUseCase(
+                object : GroupRotationMatchFinalizationRepository {
+                    override suspend fun finalizeGroupRotationMatchByOwner(
+                        input: com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput,
+                        ownerUserId: String,
+                    ): GroupRotationMatchFinalizationResult = error("not reached")
+                },
+            ),
+        )
+
+        viewModel.load(tournamentId, uuidMatchId)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isAvailable)
+        assertTrue(viewModel.uiState.value.isUuidBackedGroupRotation)
+        assertTrue(viewModel.uiState.value.canFinalize)
+        assertEquals(1, observationCount.get())
+
+        viewModel.finalizeMatch()
+        advanceUntilIdle()
+
+        assertEquals(
+            FinalizeMatchGlobalError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
+            viewModel.uiState.value.finalizationError,
+        )
     }
 
     @Test
@@ -4099,6 +4288,9 @@ class MatchReviewViewModelTest {
                 MatchLobbyScreenshotUploadCheckpointResult.Skipped
             },
         ),
+        observeGroupRotationMatchDraft: ObserveGroupRotationMatchDraftUseCase? = null,
+        saveGroupRotationMatchParticipantResults: SaveGroupRotationMatchParticipantResultsUseCase? = null,
+        finalizeGroupRotationMatch: FinalizeGroupRotationMatchUseCase? = null,
         observeMatches: ObserveMatchesUseCase = ObserveMatchesUseCase(repository),
     ) = MatchReviewViewModel(
         getTournamentById = GetTournamentByIdUseCase(repository),
@@ -4135,6 +4327,9 @@ class MatchReviewViewModelTest {
              repository,
              com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository(),
          ),
+        observeGroupRotationMatchDraft = observeGroupRotationMatchDraft,
+        finalizeGroupRotationMatch = finalizeGroupRotationMatch,
+        saveGroupRotationMatchParticipantResults = saveGroupRotationMatchParticipantResults,
         )
 
     private fun batchReviewViewModel(

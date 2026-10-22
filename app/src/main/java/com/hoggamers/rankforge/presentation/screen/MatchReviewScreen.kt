@@ -2836,7 +2836,9 @@ private fun MatchReviewContent(
         }
         if (uiState.finalizationError != null) {
             Text(
-                text = stringResource(uiState.finalizationError.toMessageRes()),
+                text = stringResource(
+                    uiState.finalizationError.toMessageRes(uiState.isUuidBackedGroupRotation),
+                ),
                 color = MaterialTheme.colorScheme.error,
             )
         }
@@ -6019,9 +6021,17 @@ private fun MatchOcrReviewFinalizationError.toMatchReviewMessageRes(): Int = whe
         R.string.match_ocr_review_finalization_missing_match
     MatchOcrReviewFinalizationError.ALREADY_FINALIZED ->
         R.string.match_ocr_review_finalization_already_finalized
+    MatchOcrReviewFinalizationError.AUTHENTICATION_REQUIRED ->
+        R.string.match_ocr_review_finalization_authentication_required
+    MatchOcrReviewFinalizationError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED ->
+        R.string.match_ocr_review_finalization_team_assignments_unverified
+    MatchOcrReviewFinalizationError.DRAFT_SAVING_FAILED ->
+        R.string.match_ocr_review_finalization_draft_save_failed
+    MatchOcrReviewFinalizationError.UNKNOWN_FINALIZATION_FAILURE ->
+        R.string.match_ocr_review_finalization_unknown_failure
     MatchOcrReviewFinalizationError.FINALIZATION_FAILED,
     MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE,
-    -> R.string.match_ocr_review_finalization_failed
+    -> R.string.match_ocr_review_finalization_unknown_failure
 }
 
 private fun MatchResultValidationError.toMessageRes(): Int = when (this) {
@@ -6034,15 +6044,27 @@ private fun MatchResultValidationError.toMessageRes(): Int = when (this) {
     MatchResultValidationError.INVALID_KILLS -> R.string.match_validation_invalid_kills
 }
 
-private fun com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.toMessageRes(): Int = when (this) {
+private fun com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.toMessageRes(
+    isUuidBackedGroupRotation: Boolean = false,
+): Int = when (this) {
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.AUTHENTICATION_REQUIRED ->
-        R.string.match_review_finalize_invalid_data_error
+        if (isUuidBackedGroupRotation) {
+            R.string.match_ocr_review_finalization_authentication_required
+        } else {
+            R.string.match_review_finalize_invalid_data_error
+        }
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.MATCH_NOT_FOUND ->
         R.string.match_review_finalize_match_not_found_error
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.MATCH_NOT_DRAFT ->
         R.string.match_review_finalize_not_draft_error
     com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.INVALID_DATA ->
         R.string.match_review_finalize_invalid_data_error
+    com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED ->
+        R.string.match_ocr_review_finalization_team_assignments_unverified
+    com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.DRAFT_SAVING_FAILED ->
+        R.string.match_ocr_review_finalization_draft_save_failed
+    com.hoggamers.rankforge.domain.tournament.FinalizeMatchGlobalError.UNKNOWN_FINALIZATION_FAILURE ->
+        R.string.match_ocr_review_finalization_unknown_failure
 }
 
 private fun MatchDeletionUiError.toMessageRes(): Int = when (this) {

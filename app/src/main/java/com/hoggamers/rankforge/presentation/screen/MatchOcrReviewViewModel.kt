@@ -50,6 +50,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutation
 import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput
 import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchUseCase
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationFailure
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchParticipantResultsUseCase
@@ -1087,7 +1088,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         val saveResults = saveGroupRotationMatchParticipantResults
         val finalize = finalizeGroupRotationMatch
         if (saveResults == null || finalize == null) {
-            updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+            updateFinalizationError(MatchOcrReviewFinalizationError.UNKNOWN_FINALIZATION_FAILURE)
             return
         }
         _uiState.updateReady {
@@ -1100,16 +1101,54 @@ class MatchOcrReviewViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            val draft = observeGroupRotationMatchDraft
+            val draftResult = observeGroupRotationMatchDraft
                 ?.invoke(current.tournamentId, current.matchId)
-                ?.first() as? GroupRotationMatchDraftReadResult.Loaded
-            val participantResults = draft?.state?.toUuidParticipantResults(correctionDraft)
-            if (participantResults == null ||
-                saveResults(current.tournamentId, current.matchId, participantResults) !=
-                GroupRotationMatchDraftMutationResult.SAVED
-            ) {
-                updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+                ?.first()
+            when (draftResult) {
+                GroupRotationMatchDraftReadResult.AuthenticationRequired -> {
+                    updateFinalizationError(MatchOcrReviewFinalizationError.AUTHENTICATION_REQUIRED)
+                    return@launch
+                }
+                GroupRotationMatchDraftReadResult.MatchNotFound -> {
+                    updateFinalizationError(MatchOcrReviewFinalizationError.MISSING_MATCH)
+                    return@launch
+                }
+                null -> {
+                    updateFinalizationError(MatchOcrReviewFinalizationError.UNKNOWN_FINALIZATION_FAILURE)
+                    return@launch
+                }
+                else -> Unit
+            }
+            val draft = draftResult as? GroupRotationMatchDraftReadResult.Loaded
+            if (draft == null) {
+                updateFinalizationError(
+                    MatchOcrReviewFinalizationError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
+                )
                 return@launch
+            }
+            val participantResults = draft.state.toUuidParticipantResults(correctionDraft)
+            if (participantResults == null) {
+                updateFinalizationError(
+                    MatchOcrReviewFinalizationError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
+                )
+                return@launch
+            }
+            when (
+                saveResults(current.tournamentId, current.matchId, participantResults)
+            ) {
+                GroupRotationMatchDraftMutationResult.SAVED -> Unit
+                GroupRotationMatchDraftMutationResult.AUTHENTICATION_REQUIRED -> {
+                    updateFinalizationError(MatchOcrReviewFinalizationError.AUTHENTICATION_REQUIRED)
+                    return@launch
+                }
+                GroupRotationMatchDraftMutationResult.MATCH_NOT_FOUND -> {
+                    updateFinalizationError(MatchOcrReviewFinalizationError.MISSING_MATCH)
+                    return@launch
+                }
+                GroupRotationMatchDraftMutationResult.INVALID_DATA -> {
+                    updateFinalizationError(MatchOcrReviewFinalizationError.DRAFT_SAVING_FAILED)
+                    return@launch
+                }
             }
             when (
                 val result = finalize(
@@ -1127,7 +1166,21 @@ class MatchOcrReviewViewModel @Inject constructor(
                     launchFinalizedMatchCloudSync(current.tournamentId)
                 }
                 is GroupRotationMatchFinalizationResult.Rejected -> {
-                    updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+                    updateFinalizationError(
+                        when (result.reason) {
+                            GroupRotationMatchFinalizationFailure.AUTHENTICATION_REQUIRED ->
+                                MatchOcrReviewFinalizationError.AUTHENTICATION_REQUIRED
+                            GroupRotationMatchFinalizationFailure.TOURNAMENT_NOT_FOUND ->
+                                MatchOcrReviewFinalizationError.MISSING_TOURNAMENT
+                            GroupRotationMatchFinalizationFailure.MATCH_NOT_FOUND ->
+                                MatchOcrReviewFinalizationError.MISSING_MATCH
+                            GroupRotationMatchFinalizationFailure.MATCH_NOT_DRAFT ->
+                                MatchOcrReviewFinalizationError.ALREADY_FINALIZED
+                            GroupRotationMatchFinalizationFailure.NOT_GROUP_ROTATION,
+                            GroupRotationMatchFinalizationFailure.INVALID_DATA,
+                            -> MatchOcrReviewFinalizationError.UNKNOWN_FINALIZATION_FAILURE
+                        },
+                    )
                 }
             }
         }
@@ -1349,7 +1402,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                 MatchOcrReviewFinalizationError.ALREADY_FINALIZED
             FinalizeOcrCorrectionMatchFailure.UNEXPECTED_FAILURE in this ->
                 MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE
-            else -> MatchOcrReviewFinalizationError.FINALIZATION_FAILED
+            else -> MatchOcrReviewFinalizationError.UNKNOWN_FINALIZATION_FAILURE
         }
 
     private fun mapPreviewResults(

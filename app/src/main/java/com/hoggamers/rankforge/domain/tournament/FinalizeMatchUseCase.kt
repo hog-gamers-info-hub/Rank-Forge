@@ -15,6 +15,9 @@ enum class FinalizeMatchGlobalError {
     MATCH_NOT_FOUND,
     MATCH_NOT_DRAFT,
     INVALID_DATA,
+    TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
+    DRAFT_SAVING_FAILED,
+    UNKNOWN_FINALIZATION_FAILURE,
 }
 
 sealed interface FinalizeMatchResult {

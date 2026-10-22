@@ -3724,18 +3724,58 @@ class MatchReviewViewModel @Inject constructor(
     private fun finalizeUuidBackedMatch(current: MatchReviewUiState) {
         val tournamentId = current.tournamentId ?: return
         val matchId = current.matchId ?: return
-        val finalize = finalizeGroupRotationMatch ?: return
-        val saveResults = saveGroupRotationMatchParticipantResults ?: return
+        val finalize = finalizeGroupRotationMatch
+        val saveResults = saveGroupRotationMatchParticipantResults
+        if (finalize == null || saveResults == null) {
+            _uiState.update {
+                it.copy(
+                    isFinalizing = false,
+                    finalizationError = FinalizeMatchGlobalError.UNKNOWN_FINALIZATION_FAILURE,
+                )
+            }
+            return
+        }
         _uiState.update { it.copy(isFinalizing = true, finalizationError = null) }
         viewModelScope.launch {
-            val draft = observeGroupRotationMatchDraft
+            val draftResult = observeGroupRotationMatchDraft
                 ?.invoke(tournamentId, matchId)
-                ?.first() as? GroupRotationMatchDraftReadResult.Loaded
+                ?.first()
+            when (draftResult) {
+                GroupRotationMatchDraftReadResult.AuthenticationRequired -> {
+                    _uiState.update {
+                        it.copy(
+                            isFinalizing = false,
+                            finalizationError = FinalizeMatchGlobalError.AUTHENTICATION_REQUIRED,
+                        )
+                    }
+                    return@launch
+                }
+                GroupRotationMatchDraftReadResult.MatchNotFound -> {
+                    _uiState.update {
+                        it.copy(
+                            isFinalizing = false,
+                            finalizationError = FinalizeMatchGlobalError.MATCH_NOT_FOUND,
+                        )
+                    }
+                    return@launch
+                }
+                null -> {
+                    _uiState.update {
+                        it.copy(
+                            isFinalizing = false,
+                            finalizationError = FinalizeMatchGlobalError.UNKNOWN_FINALIZATION_FAILURE,
+                        )
+                    }
+                    return@launch
+                }
+                else -> Unit
+            }
+            val draft = draftResult as? GroupRotationMatchDraftReadResult.Loaded
             if (draft == null) {
                 _uiState.update {
                     it.copy(
                         isFinalizing = false,
-                        finalizationError = FinalizeMatchGlobalError.INVALID_DATA,
+                        finalizationError = FinalizeMatchGlobalError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
                     )
                 }
                 return@launch
@@ -3772,20 +3812,41 @@ class MatchReviewViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isFinalizing = false,
-                        finalizationError = FinalizeMatchGlobalError.INVALID_DATA,
+                        finalizationError = FinalizeMatchGlobalError.TEAM_ASSIGNMENTS_OR_RESULTS_UNVERIFIED,
                     )
                 }
                 return@launch
             }
             val participantResults = results.filterNotNull()
-            if (saveResults(tournamentId, matchId, participantResults) != GroupRotationMatchDraftMutationResult.SAVED) {
-                _uiState.update {
-                    it.copy(
-                        isFinalizing = false,
-                        finalizationError = FinalizeMatchGlobalError.INVALID_DATA,
-                    )
+            when (saveResults(tournamentId, matchId, participantResults)) {
+                GroupRotationMatchDraftMutationResult.SAVED -> Unit
+                GroupRotationMatchDraftMutationResult.AUTHENTICATION_REQUIRED -> {
+                    _uiState.update {
+                        it.copy(
+                            isFinalizing = false,
+                            finalizationError = FinalizeMatchGlobalError.AUTHENTICATION_REQUIRED,
+                        )
+                    }
+                    return@launch
                 }
-                return@launch
+                GroupRotationMatchDraftMutationResult.MATCH_NOT_FOUND -> {
+                    _uiState.update {
+                        it.copy(
+                            isFinalizing = false,
+                            finalizationError = FinalizeMatchGlobalError.MATCH_NOT_FOUND,
+                        )
+                    }
+                    return@launch
+                }
+                GroupRotationMatchDraftMutationResult.INVALID_DATA -> {
+                    _uiState.update {
+                        it.copy(
+                            isFinalizing = false,
+                            finalizationError = FinalizeMatchGlobalError.DRAFT_SAVING_FAILED,
+                        )
+                    }
+                    return@launch
+                }
             }
             when (
                 val result = finalize(
@@ -3810,7 +3871,13 @@ class MatchReviewViewModel @Inject constructor(
                                 FinalizeMatchGlobalError.MATCH_NOT_FOUND
                             GroupRotationMatchFinalizationFailure.MATCH_NOT_DRAFT ->
                                 FinalizeMatchGlobalError.MATCH_NOT_DRAFT
-                            else -> FinalizeMatchGlobalError.INVALID_DATA
+                            GroupRotationMatchFinalizationFailure.AUTHENTICATION_REQUIRED ->
+                                FinalizeMatchGlobalError.AUTHENTICATION_REQUIRED
+                            GroupRotationMatchFinalizationFailure.TOURNAMENT_NOT_FOUND ->
+                                FinalizeMatchGlobalError.UNKNOWN_FINALIZATION_FAILURE
+                            GroupRotationMatchFinalizationFailure.NOT_GROUP_ROTATION,
+                            GroupRotationMatchFinalizationFailure.INVALID_DATA,
+                            -> FinalizeMatchGlobalError.UNKNOWN_FINALIZATION_FAILURE
                         },
                     )
                 }

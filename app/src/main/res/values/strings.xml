@@ -571,6 +571,10 @@
     <string name="match_ocr_review_finalization_missing_match">Match context is unavailable.</string>
     <string name="match_ocr_review_finalization_already_finalized">This match is already finalized.</string>
     <string name="match_ocr_review_finalization_failed">The corrected match could not be finalized.</string>
+    <string name="match_ocr_review_finalization_authentication_required">Authentication is required to finalize this match.</string>
+    <string name="match_ocr_review_finalization_team_assignments_unverified">Team assignments or result entries could not be verified. Review them and try again.</string>
+    <string name="match_ocr_review_finalization_draft_save_failed">Draft results could not be saved. Try again.</string>
+    <string name="match_ocr_review_finalization_unknown_failure">Finalization failed. Please try again.</string>
     <string name="match_review_title">Review match %1$d</string>
     <string name="match_review_simplified_title">Match %1$d</string>
     <string name="match_review_simplified_back_action">Back to Tournament Details</string>
