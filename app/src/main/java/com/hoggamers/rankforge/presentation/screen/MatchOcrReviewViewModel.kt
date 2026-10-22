@@ -1140,8 +1140,9 @@ class MatchOcrReviewViewModel @Inject constructor(
             correctionDraft.rows.forEach { row ->
                 // A deleted, unassigned structural row is not a registered participant.
                 // Deleted rows with an assigned identity still represent explicit NO_SHOW.
-                if (row.isImplicitlyAbsent || (row.isExcluded &&
-                        row.assignedTeamSlotDraftValue.isBlank())) return@forEach
+                if (row.isImplicitlyAbsent || (row.isExcluded && row.assignedTeamSlotDraftValue.isBlank())) {
+                    return@forEach
+                }
                 val lobbySlotNumber = row.assignedTeamSlotDraftValue.trim().toIntOrNull()
                     ?: return null
                 if (
@@ -1162,6 +1163,14 @@ class MatchOcrReviewViewModel @Inject constructor(
             return null
         }
 
+        val officialPlacementByLobbySlot = reviewedRows
+            .filterNot { it.row.isEffectivelyExcluded }
+            .sortedBy { it.row.rowIndex }
+            .mapIndexed { officialIndex, reviewedRow ->
+                reviewedRow.lobbySlotNumber to officialIndex + 1
+            }
+            .toMap()
+
         val results = teams.map { team ->
             val reviewedRow = reviewedRowsByLobby.getValue(team.lobbySlotNumber).single().row
             val previous = existingByUuid[team.teamUUID]?.singleOrNull()
@@ -1177,8 +1186,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     pointAdjustment = pointAdjustment,
                 )
             } else {
-                val placement = reviewedRow.placementDraftValue.trim().toIntOrNull()
-                    ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                val placement = officialPlacementByLobbySlot[team.lobbySlotNumber]
                     ?: return null
                 val kills = reviewedRow.killsDraftValue.trim().toIntOrNull()
                     ?.takeIf { it >= 0 }
