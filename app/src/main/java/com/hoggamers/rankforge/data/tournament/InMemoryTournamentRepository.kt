@@ -121,7 +121,7 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
         resultsBySlot.keys == registeredTeamSlots &&
         participated.map { it.teamSlotNumber }.toSet() == positionedTeamSlots &&
         noShows.map { it.teamSlotNumber }.toSet() == registeredTeamSlots - positionedTeamSlots &&
-        participated.mapNotNull { it.placement }.toSet() == (1..positionedTeamSlots.size).toSet() &&
+        participated.all { it.placement?.let { placement -> placement in TeamSlot.SLOT_NUMBERS } == true } &&
         participated.mapNotNull { it.placement }.distinct().size == participated.size
 }
 
@@ -584,7 +584,7 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
             .analyzeTeamSlotParticipation(eligibleSlotNumbers)
         val expectedTeamSlots = participation.activeSlotNumbers.toSet()
         val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
-        val expectedPlacements = 1..placements.size
+        val expectedPlacements = TeamSlot.SLOT_NUMBERS
         val finalizedParticipantResults = participantResults
             ?: buildLegacyParticipantResults(
                 expectedTeamSlots,
@@ -602,7 +602,6 @@ private fun List<MatchParticipantResult>.isValidSnapshotFor(
                     it.teamSlotNumber in positionedTeamSlots && it.kills >= 0
                 } &&
                 kills.map { it.teamSlotNumber }.toSet() == positionedTeamSlots &&
-                placements.map { it.position }.toSet() == expectedPlacements.toSet() &&
                 placements.map { it.teamSlotNumber }.distinct().size == placements.size &&
                 kills.map { it.teamSlotNumber }.distinct().size == kills.size &&
                 placements.map { it.position }.distinct().size == placements.size &&

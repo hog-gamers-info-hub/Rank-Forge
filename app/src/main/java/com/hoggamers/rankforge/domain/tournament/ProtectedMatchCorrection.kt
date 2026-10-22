@@ -52,7 +52,8 @@ internal fun Match.finalizedParticipantResultsOrNull(): List<MatchParticipantRes
 
     val participated = snapshot.filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
     if (participated.isEmpty()) return null
-    if (participated.mapNotNull { it.placement }.toSet() != (1..participated.size).toSet()) return null
+    if (participated.any { it.placement?.let { placement -> placement !in TeamSlot.SLOT_NUMBERS } != false }) return null
+    if (participated.mapNotNull { it.placement }.distinct().size != participated.size) return null
     if (participated.any { it.placement == null || it.kills < 0 }) return null
     if (snapshot.any {
             it.participationStatus == MatchParticipationStatus.NO_SHOW &&
@@ -69,7 +70,8 @@ internal fun isValidCorrectionSnapshot(
     if (corrected.map { it.teamSlotNumber }.toSet() != previous.map { it.teamSlotNumber }.toSet()) return false
     val participated = corrected.filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
     return participated.isNotEmpty() &&
-        participated.mapNotNull { it.placement }.toSet() == (1..participated.size).toSet() &&
+        participated.all { it.placement?.let { placement -> placement in TeamSlot.SLOT_NUMBERS } == true } &&
+        participated.mapNotNull { it.placement }.distinct().size == participated.size &&
         participated.all { it.placement != null && it.kills >= 0 } &&
         corrected.filter { it.participationStatus == MatchParticipationStatus.NO_SHOW }
             .all { it.placement == null && it.kills == 0 }

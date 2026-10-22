@@ -1,9 +1,11 @@
 package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
+import android.util.Log
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
@@ -32,6 +34,8 @@ data class MatchResultPositionBitmapCrop(
         if (!bitmap.isRecycled) bitmap.recycle()
     }
 }
+
+private const val RESULT_MLKIT_RAW_LOG_TAG = "RESULT_MLKIT_RAW"
 
 sealed interface MatchResultPositionCropObservationResult {
     data class Observed(
@@ -74,6 +78,7 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
 
     suspend fun observe(
         source: Bitmap,
+        screenshotRole: MatchResultScreenshotRole? = null,
     ): MatchResultPositionCropObservationResult = withContext(Dispatchers.Default) {
         if (!source.isUsable()) {
             return@withContext MatchResultPositionCropObservationResult.InvalidSource
@@ -105,6 +110,9 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
             recognizer.close()
         }
 
+        if (BuildConfig.DEBUG) {
+            logRawMlKitText(recognizedText, screenshotRole)
+        }
         val observations = recognizedText.toPositionCropObservations(dimensions)
         MatchResultPositionCropObservationResult.Observed(
             evidence = MatchResultAutoCropEvidence(
@@ -154,7 +162,7 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
         role: MatchResultScreenshotRole,
         allowUpperPositionElevenFallback: Boolean = false,
     ): MatchResultPositionCropGenerationResult {
-        return when (val observation = observe(source)) {
+        return when (val observation = observe(source, screenshotRole = role)) {
             MatchResultPositionCropObservationResult.InvalidSource ->
                 MatchResultPositionCropGenerationResult.InvalidSource
             MatchResultPositionCropObservationResult.OcrFailed ->
@@ -227,6 +235,48 @@ class AndroidMatchResultPositionCropGenerator @Inject constructor(
             )
         }
         .toList()
+
+    private fun logRawMlKitText(
+        recognizedText: Text,
+        screenshotRole: MatchResultScreenshotRole?,
+    ) {
+        try {
+            val role = screenshotRole?.name ?: "UNKNOWN"
+            Log.d(
+                RESULT_MLKIT_RAW_LOG_TAG,
+                "===== ML KIT RAW START ===== role=$role blocks=${recognizedText.textBlocks.size}",
+            )
+            var observationIndex = 0
+            recognizedText.textBlocks.forEachIndexed { blockIndex, block ->
+                block.lines.forEachIndexed { lineIndex, line ->
+                    line.elements.forEachIndexed { elementIndex, element ->
+                        val bounds = element.boundingBox
+                        val geometry = bounds?.let {
+                            val centerX = (it.left + it.right) / 2.0
+                            val centerY = (it.top + it.bottom) / 2.0
+                            "bbox=(left=${it.left},top=${it.top},right=${it.right},bottom=${it.bottom}) " +
+                                "centerX=$centerX centerY=$centerY width=${it.width()} height=${it.height()}"
+                        } ?: "bbox=null centerX=null centerY=null width=null height=null"
+                        val text = element.text
+                            .replace("\r", "\\r")
+                            .replace("\n", "\\n")
+                        Log.d(
+                            RESULT_MLKIT_RAW_LOG_TAG,
+                            "observation=$observationIndex block=$blockIndex line=$lineIndex " +
+                                "element=$elementIndex text=$text $geometry",
+                        )
+                        observationIndex += 1
+                    }
+                }
+            }
+            Log.d(
+                RESULT_MLKIT_RAW_LOG_TAG,
+                "===== ML KIT RAW END ===== observations=$observationIndex",
+            )
+        } catch (_: RuntimeException) {
+            // Diagnostics must never affect the OCR result or production control flow.
+        }
+    }
 
     private fun Bitmap.isUsable(): Boolean = !isRecycled && width > 0 && height > 0
 

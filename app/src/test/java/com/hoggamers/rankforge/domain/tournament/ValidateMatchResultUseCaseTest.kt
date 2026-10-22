@@ -73,7 +73,7 @@ class ValidateMatchResultUseCaseTest {
     }
 
     @Test
-    fun participantAwareValidationRejectsPlacementAboveActiveCount() {
+    fun participantAwareValidationAllowsNonConsecutivePlacementWithinFixedRange() {
         val rows = (1..10).map { teamSlotNumber ->
             MatchResultRowInput(
                 teamSlotNumber = teamSlotNumber,
@@ -84,7 +84,58 @@ class ValidateMatchResultUseCaseTest {
 
         val result = validate(rows, expectedTeamSlots = (1..10).toList())
 
-        assertTrue(MatchResultValidationError.INVALID_PLACEMENT in result.errorsByTeamSlot.getValue(10))
+        assertTrue(result.isValid)
+    }
+
+    @Test
+    fun initialFinalizationAllowsNonConsecutivePlacementsWithinFixedRange() {
+        val placements = listOf(1, 2, 4, 5, 6, 7, 8, 9, 10, 12)
+        val result = validate.validateForInitialFinalization(
+            rows = (1..10).mapIndexed { index, teamSlotNumber ->
+                MatchResultRowInput(
+                    teamSlotNumber = teamSlotNumber,
+                    placement = placements[index].toString(),
+                    kills = "0",
+                )
+            },
+            registeredTeamSlots = (1..10).toList(),
+        )
+
+        assertTrue(result.isValid)
+    }
+
+    @Test
+    fun participantAwareValidationStillRejectsMissingPlacement() {
+        val rows = (1..10).map { teamSlotNumber ->
+            MatchResultRowInput(
+                teamSlotNumber = teamSlotNumber,
+                placement = if (teamSlotNumber == 10) "" else teamSlotNumber.toString(),
+                kills = "0",
+            )
+        }
+
+        val result = validate.validateParticipantResults(rows, expectedTeamSlots = (1..10).toList())
+
+        assertTrue(
+            MatchResultValidationError.MISSING_PLACEMENT in result.errorsByTeamSlot.getValue(10),
+        )
+    }
+
+    @Test
+    fun participantAwareValidationStillRejectsPlacementOutsideFixedRange() {
+        val rows = (1..10).map { teamSlotNumber ->
+            MatchResultRowInput(
+                teamSlotNumber = teamSlotNumber,
+                placement = if (teamSlotNumber == 10) "13" else teamSlotNumber.toString(),
+                kills = "0",
+            )
+        }
+
+        val result = validate.validateParticipantResults(rows, expectedTeamSlots = (1..10).toList())
+
+        assertTrue(
+            MatchResultValidationError.INVALID_PLACEMENT in result.errorsByTeamSlot.getValue(10),
+        )
     }
 
     @Test

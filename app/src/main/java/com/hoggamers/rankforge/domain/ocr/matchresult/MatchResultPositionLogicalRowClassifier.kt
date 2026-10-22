@@ -136,7 +136,7 @@ class MatchResultPositionLogicalRowClassifier {
         val tolerance = medianHeight * CENTER_TOLERANCE_FRACTION
 
         // The placement number is structural evidence, not a player row. Remove only a
-        // compact numeric-like token in the left placement region near the structural center.
+        // compact token in the left placement region near the structural center.
         val classifiedLines = candidates.map { candidate ->
             val spanning = (candidate.box.bottom - candidate.box.top).toDouble() > medianHeight * SPANNING_HEIGHT_FACTOR
             val placement = isStructuralPlacementCandidate(
@@ -394,9 +394,7 @@ class MatchResultPositionLogicalRowClassifier {
     ): Boolean {
         if (spanning) return false
         val token = candidate.line.text.trim()
-        if (token.isEmpty() || token.length > MAX_PLACEMENT_TOKEN_LENGTH ||
-            token.any { it !in NUMERIC_LIKE_PLACEMENT_CHARACTERS }
-        ) return false
+        if (token.isEmpty() || token.length > MAX_PLACEMENT_TOKEN_LENGTH) return false
         if (abs(candidate.centerY - slotCenterYLocal) > medianHeight) return false
         val centerX = (candidate.box.left + candidate.box.right) / 2.0
         if (centerX <= cropWidth * PLACEMENT_REGION_FRACTION) return true
@@ -550,7 +548,6 @@ class MatchResultPositionLogicalRowClassifier {
         const val CENTER_TOLERANCE_FRACTION = 0.35
         const val SPANNING_HEIGHT_FACTOR = 2.0
         const val MAX_PLACEMENT_TOKEN_LENGTH = 3
-        const val NUMERIC_LIKE_PLACEMENT_CHARACTERS = "0123456789IiLlOo|"
         const val MIN_RECOVERED_ROW_CANDIDATES = 2
         const val ISOLATED_OUTLIER_SEPARATION_FACTOR = 2.0
     }

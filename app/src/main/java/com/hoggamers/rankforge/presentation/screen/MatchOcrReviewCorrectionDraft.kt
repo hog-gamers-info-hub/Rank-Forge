@@ -298,21 +298,6 @@ object MatchOcrReviewCorrectionDraftReducer {
                     ?.let { row.rowIndex to it }
             },
         )
-        val activePlacementValues = draft.includedRows.mapNotNull { row ->
-            row.placementDraftValue.trim()
-                .toStrictPositiveIntOrNull()
-                ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
-        }
-        val nonConsecutivePlacementRows = if (
-            activePlacementValues.size == draft.includedRows.size &&
-                activePlacementValues.toSet().size == activePlacementValues.size &&
-                activePlacementValues.toSet() != (1..draft.includedRows.size).toSet()
-        ) {
-            draft.includedRows.map { it.rowIndex }.toSet()
-        } else {
-            emptySet()
-        }
-
         return draft.copy(
             rows = draft.rows.map { row ->
                 val blockers = mutableSetOf<MatchOcrReviewCorrectionReason>()
@@ -332,8 +317,6 @@ object MatchOcrReviewCorrectionDraftReducer {
                             blockers += MatchOcrReviewCorrectionReason.INVALID_PLACEMENT
                         row.rowIndex in placementDuplicates ->
                             blockers += MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
-                        row.rowIndex in nonConsecutivePlacementRows ->
-                            blockers += MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT
                     }
 
                     if (row.playerKillDrafts.isEmpty()) {
