@@ -3210,6 +3210,7 @@ private fun deriveMatchReviewFinalizationBlockers(
         MatchOcrReviewCorrectionReason.MISSING_PLACEMENT,
         MatchOcrReviewCorrectionReason.INVALID_PLACEMENT,
         MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT,
+        MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT,
         MatchOcrReviewCorrectionReason.MISSING_KILLS,
         MatchOcrReviewCorrectionReason.INVALID_KILLS,
         MatchOcrReviewCorrectionReason.NEGATIVE_KILLS,
@@ -3264,6 +3265,8 @@ internal fun MatchOcrReviewCorrectionReason.toMatchReviewFinalizeBlockerMessageR
             R.string.match_review_finalize_invalid_placement
         MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT ->
             R.string.match_review_finalize_duplicate_placement
+        MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT ->
+            R.string.match_ocr_review_correction_non_consecutive_placement
         MatchOcrReviewCorrectionReason.MISSING_KILLS ->
             R.string.match_review_finalize_missing_kills
         MatchOcrReviewCorrectionReason.INVALID_KILLS ->

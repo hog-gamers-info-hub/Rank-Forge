@@ -195,6 +195,66 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
+    fun excludingRowReindexesActivePlacementsByCorrectedPositionOrder() {
+        val corrected = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+            MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 5, "7"),
+            6,
+            "6",
+        )
+        val draft = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(corrected, 11)
+
+        assertEquals("7", draft.rows[5].placementDraftValue)
+        assertEquals("6", draft.rows[6].placementDraftValue)
+        assertEquals(
+            (1..11).map { it.toString() },
+            draft.includedRows.map { it.placementDraftValue }.sortedBy { it.toInt() },
+        )
+        assertEquals(0, draft.blockerCount)
+    }
+
+    @Test
+    fun nonConsecutiveActivePlacementsRemainBlockedAfterDeletion() {
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(initialDraft(), 11)
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(excluded, 0, "12")
+
+        assertRowBlocked(
+            draft,
+            rowIndex = 0,
+            reason = MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT,
+        )
+    }
+
+    @Test
+    fun restoringExcludedRowPreservesLastCorrectedPlacementOrder() {
+        var corrected = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 0, "2")
+        corrected = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(corrected, 1, "1")
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(corrected, 0)
+        val restored = MatchOcrReviewCorrectionDraftReducer.onRestoreExcludedRow(excluded, 0)
+
+        assertEquals(listOf("2", "1", "3"), restored.rows.take(3).map { it.placementDraftValue })
+        assertEquals(excluded.rows[0].killsDraftValue, restored.rows[0].killsDraftValue)
+        assertEquals(
+            excluded.rows[0].assignedTeamSlotDraftValue,
+            restored.rows[0].assignedTeamSlotDraftValue,
+        )
+        assertFalse(restored.rows[0].isExcluded)
+        assertEquals(0, restored.blockerCount)
+    }
+
+    @Test
+    fun restoringExcludedRowWithInvalidPlacementRemainsBlocked() {
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(initialDraft(), 0)
+        val invalid = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(excluded, 0, "")
+        val restored = MatchOcrReviewCorrectionDraftReducer.onRestoreExcludedRow(invalid, 0)
+
+        assertRowBlocked(
+            restored,
+            rowIndex = 0,
+            reason = MatchOcrReviewCorrectionReason.MISSING_PLACEMENT,
+        )
+    }
+
+    @Test
     fun killCorrectionUpdatesOnlySelectedRow() {
         val draft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(initialDraft(), 1, "9")
 
@@ -584,6 +644,18 @@ class MatchOcrReviewCorrectionDraftReducerTest {
         assertEquals("4", reset.rows[3].assignedTeamSlotDraftValue)
         assertTrue(reset.rows[3].validation.blockers.isEmpty())
         assertFalse(reset.isDirty)
+    }
+
+    @Test
+    fun explicitResetOfExcludedRowRestoresOriginalOcrPlacement() {
+        var corrected = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft(), 0, "2")
+        corrected = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(corrected, 1, "1")
+        val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(corrected, 0)
+        val reset = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(excluded, 0)
+
+        assertEquals(listOf("1", "2", "3"), reset.rows.take(3).map { it.placementDraftValue })
+        assertFalse(reset.rows[0].isExcluded)
+        assertEquals(0, reset.blockerCount)
     }
 
     @Test

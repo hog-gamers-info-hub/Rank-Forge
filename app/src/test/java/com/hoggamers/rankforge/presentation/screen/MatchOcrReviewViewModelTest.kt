@@ -323,6 +323,23 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun uuidCorrectedPositionSwapIsAuthoritativeForFinalization() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot(listOf(1, 2))
+        val result = runUuidFinalize(snapshot, emptyList(), transform = { initial ->
+            initial
+                .let { MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(it, 0, "2") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(it, 1, "1") }
+        })
+        advanceUntilIdle()
+
+        val saved = requireNotNull(result.draftRepository.savedParticipantResults)
+        assertEquals(2, saved.single { it.teamUUID == "uuid-1" }.placement)
+        assertEquals(1, saved.single { it.teamUUID == "uuid-2" }.placement)
+        assertEquals(saved, result.finalizationRepository.input?.participantResults)
+        assertUuidResultsPassFinalizationValidator(snapshot, saved)
+    }
+
+    @Test
     fun uuidDeletedMiddleRowReindexesPlacementsAndPreservesIdentityData() = runTest(dispatcher) {
         val snapshot = uuidSnapshot((1..12).toList())
         val existing = snapshot.teams.mapIndexed { index, team ->
@@ -704,6 +721,38 @@ class MatchOcrReviewViewModelTest {
         assertEquals("", manualDraft.assignedTeamSlotDraftValue)
         assertFalse(manualDraft.isExcluded)
         assertTrue(manualDraft.playerKillDrafts.isEmpty())
+    }
+
+    @Test
+    fun manualCorrectedPositionSurvivesDeleteAndRestore() {
+        var correctionDraft = requireNotNull(manualReadyState().correctionDraft)
+        (0 until TeamSlot.MAX_SLOT_NUMBER).forEach { rowIndex ->
+            correctionDraft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+                correctionDraft,
+                rowIndex,
+                "0",
+            )
+            correctionDraft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+                correctionDraft,
+                rowIndex,
+                (rowIndex + 1).toString(),
+            )
+        }
+        correctionDraft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(correctionDraft, 0, "2")
+        correctionDraft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(correctionDraft, 1, "1")
+        val viewModel = viewModelWith(
+            repository = InMemoryTournamentRepository(),
+            initialUiState = manualReadyState(correctionDraft),
+        )
+
+        viewModel.onExcludeRow(0)
+        viewModel.onCompactAddTeam()
+
+        val restored = (viewModel.uiState.value as MatchOcrReviewUiState.Ready).correctionDraft
+            ?: error("Expected correction draft")
+        assertEquals(listOf("2", "1", "3"), restored.rows.take(3).map { it.placementDraftValue })
+        assertFalse(restored.rows[0].isExcluded)
+        assertEquals(0, restored.blockerCount)
     }
 
     @Test
@@ -2090,7 +2139,7 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
-    fun manualCalculationRestoresDeletedPositionWithFreshSeededValues() = runTest(dispatcher) {
+    fun manualCalculationRestoresDeletedPositionWithInvalidCorrectionBlocked() = runTest(dispatcher) {
         val viewModel = viewModelWith(repository = createRepository(), initialUiState = manualReadyState())
 
         viewModel.onPlacementChanged(4, "99")
@@ -2102,10 +2151,11 @@ class MatchOcrReviewViewModelTest {
         val restored = (viewModel.uiState.value as MatchOcrReviewUiState.Ready)
             .correctionDraft!!
             .rows[4]
-        assertEquals("5", restored.placementDraftValue)
-        assertEquals("", restored.killsDraftValue)
-        assertEquals("", restored.assignedTeamSlotDraftValue)
+        assertEquals("99", restored.placementDraftValue)
+        assertEquals("7", restored.killsDraftValue)
+        assertEquals("6", restored.assignedTeamSlotDraftValue)
         assertFalse(restored.isExcluded)
+        assertTrue(restored.validation.blockers.contains(MatchOcrReviewCorrectionReason.INVALID_PLACEMENT))
     }
 
     @Test
@@ -2348,6 +2398,82 @@ class MatchOcrReviewViewModelTest {
         assertEquals(null, ready.finalization.error)
         assertEquals(MatchStatus.FINALIZED, repository.observeMatchById(MATCH_ID).first()!!.status)
         assertEquals(listOf(TOURNAMENT_ID), finalizedSync.tournamentIds)
+    }
+
+    @Test
+    fun standardCorrectedPositionSwapIsAuthoritativeForFinalizationAndEvidence() = runTest(dispatcher) {
+        val repository = createRepository()
+        val draft = correctionDraft { initial ->
+            initial
+                .let { MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(it, 0, "2") }
+                .let { MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(it, 1, "1") }
+        }
+        val viewModel = viewModelWith(repository, readyState(correctionDraft = draft))
+
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val finalized = repository.observeMatchById(MATCH_ID).first()!!
+        val positionsByTeamSlot = finalized.placements.associateBy { it.teamSlotNumber }
+        assertEquals(2, positionsByTeamSlot.getValue(1).position)
+        assertEquals(1, positionsByTeamSlot.getValue(2).position)
+        val evidence = repository.readPreservedOcrEvidence(MATCH_ID)!!
+        assertEquals(2, evidence.correctionSnapshots.first { it.rowIndex == 0 }.correctedPlacement)
+        assertEquals(1, evidence.correctionSnapshots.first { it.rowIndex == 1 }.correctedPlacement)
+        assertTrue(evidence.correctionSnapshots.first { it.rowIndex == 0 }.placementChanged)
+        assertTrue((viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun standardOcrPositionCorrectionIsSavedAsTheOfficialPlacement() = runTest(dispatcher) {
+        val repository = createRepository()
+        val rows = correctionRows().map { row ->
+            if (row.rowIndex == 0) {
+                row.copy(
+                    detectedPlacementDisplayValue = "2",
+                    originalParsedPlacementValue = 2,
+                )
+            } else {
+                row
+            }
+        }
+        val initialDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        val draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initialDraft, 0, "1")
+        val viewModel = viewModelWith(repository, readyState(correctionDraft = draft, rows = rows))
+
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val finalized = repository.observeMatchById(MATCH_ID).first()!!
+        assertEquals(1, finalized.placements.single { it.teamSlotNumber == 1 }.position)
+        val evidence = repository.readPreservedOcrEvidence(MATCH_ID)!!
+        assertEquals(2, evidence.rows.single { it.rowIndex == 0 }.originalPlacement)
+        val correction = evidence.correctionSnapshots.single { it.rowIndex == 0 }
+        assertEquals(1, correction.correctedPlacement)
+        assertTrue(correction.placementChanged)
+    }
+
+    @Test
+    fun standardDeletedRowsUseCorrectedPositionOrderForOfficialPlacements() = runTest(dispatcher) {
+        val repository = createRepository(activeTeamCount = 11)
+        val draft = correctionDraft { initial ->
+            val corrected = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+                MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(initial, 5, "7"),
+                6,
+                "6",
+            )
+            MatchOcrReviewCorrectionDraftReducer.onRowExcluded(corrected, 11)
+        }
+        val viewModel = viewModelWith(repository, readyState(correctionDraft = draft))
+
+        viewModel.onFinalizeOcrCorrection()
+        advanceUntilIdle()
+
+        val finalized = repository.observeMatchById(MATCH_ID).first()!!
+        val positionsByTeamSlot = finalized.placements.associateBy { it.teamSlotNumber }
+        assertEquals(7, positionsByTeamSlot.getValue(6).position)
+        assertEquals(6, positionsByTeamSlot.getValue(7).position)
+        assertEquals((1..11).toList(), finalized.placements.map { it.position }.sorted())
     }
 
     @Test

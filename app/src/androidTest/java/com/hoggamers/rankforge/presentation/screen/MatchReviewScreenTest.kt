@@ -4701,6 +4701,58 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     }
 
     @Test
+    fun finalizedAggregatePositionUsesCorrectedDraftInsteadOfOcrEvidence() {
+        val ocrState = inlineOcrStateWithRows()
+        val firstPreview = previewRow(1, MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        val secondPreview = previewRow(2, MatchResultScreenshotRole.MATCH_RESULT_UPPER)
+        val initialDraft = requireNotNull(ocrState.correctionDraft)
+        val correctionDraft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+            MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+                initialDraft,
+                rowIndex = 0,
+                value = "2",
+            ),
+            rowIndex = 1,
+            value = "1",
+        )
+        val firstReviewRow = ocrState.rows.single { it.rowIndex == 0 }
+        val secondReviewRow = ocrState.rows.single { it.rowIndex == 1 }
+
+        assertEquals("1", firstPreview.placementText)
+        assertEquals("2", secondPreview.placementText)
+        assertEquals("1", initialDraft.rows.single { it.rowIndex == 0 }.originalPlacementValue)
+        assertEquals("2", initialDraft.rows.single { it.rowIndex == 1 }.originalPlacementValue)
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                Column {
+                    MatchOcrReviewCompactRow(
+                        previewRow = firstPreview,
+                        reviewRow = firstReviewRow,
+                        teamNamesBySlot = mapOf(1 to "Team 1", 2 to "Team 2"),
+                        correctionDraft = correctionDraft.rows.single { it.rowIndex == 0 },
+                        showPlayerRows = false,
+                        showAggregateResultFields = true,
+                    )
+                    MatchOcrReviewCompactRow(
+                        previewRow = secondPreview,
+                        reviewRow = secondReviewRow,
+                        teamNamesBySlot = mapOf(1 to "Team 1", 2 to "Team 2"),
+                        correctionDraft = correctionDraft.rows.single { it.rowIndex == 1 },
+                        showPlayerRows = false,
+                        showAggregateResultFields = true,
+                    )
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
+            .assertTextContains("2")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(1))
+            .assertTextContains("1")
+    }
+
+    @Test
     fun draftReviewDoesNotExposeDownloadResultAction() {
         composeTestRule.setContent {
             RankForgeTheme {

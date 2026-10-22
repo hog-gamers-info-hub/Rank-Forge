@@ -93,6 +93,7 @@ enum class MatchOcrReviewCorrectionReason {
     MISSING_PLACEMENT,
     INVALID_PLACEMENT,
     DUPLICATE_PLACEMENT,
+    NON_CONSECUTIVE_PLACEMENT,
     MISSING_KILLS,
     INVALID_KILLS,
     NEGATIVE_KILLS,
@@ -209,23 +210,52 @@ object MatchOcrReviewCorrectionDraftReducer {
     fun onRowExcluded(
         draft: MatchOcrReviewCorrectionDraft,
         rowIndex: Int,
-    ): MatchOcrReviewCorrectionDraft = updateRow(draft, rowIndex) { row ->
-        row.copy(isExcluded = true)
+    ): MatchOcrReviewCorrectionDraft {
+        val excluded = updateRow(draft, rowIndex) { row ->
+            row.copy(isExcluded = true)
+        }
+        return reindexActivePlacementsAfterExclusion(excluded)
+    }
+
+    /**
+     * Restores a row that was explicitly deleted without resetting its correction values.
+     * The row's last corrected placement is used as its insertion point, while the
+     * surviving rows keep their current relative order.
+     */
+    fun onRestoreExcludedRow(
+        draft: MatchOcrReviewCorrectionDraft,
+        rowIndex: Int,
+    ): MatchOcrReviewCorrectionDraft {
+        val rowBeforeRestore = draft.rows.firstOrNull { it.rowIndex == rowIndex }
+        if (rowBeforeRestore?.isExcluded != true) return draft
+
+        val restored = updateRow(draft, rowIndex) { row ->
+            row.copy(isExcluded = false)
+        }
+        return restorePlacementOrderAfterExcludedRowRestore(restored, rowIndex)
     }
 
     fun onResetRowCorrection(
         draft: MatchOcrReviewCorrectionDraft,
         rowIndex: Int,
-    ): MatchOcrReviewCorrectionDraft = updateRow(draft, rowIndex) { row ->
-        row.copy(
-            placementDraftValue = row.originalPlacementValue,
-            killsDraftValue = row.originalKillsValue,
-            assignedTeamSlotDraftValue = row.originalAssignedTeamSlotValue,
-            isExcluded = false,
-            playerKillDrafts = row.playerKillDrafts.map { player ->
-                player.copy(killsDraftValue = player.originalKillsValue)
-            },
-        )
+    ): MatchOcrReviewCorrectionDraft {
+        val rowBeforeReset = draft.rows.firstOrNull { it.rowIndex == rowIndex }
+        val reset = updateRow(draft, rowIndex) { row ->
+            row.copy(
+                placementDraftValue = row.originalPlacementValue,
+                killsDraftValue = row.originalKillsValue,
+                assignedTeamSlotDraftValue = row.originalAssignedTeamSlotValue,
+                isExcluded = false,
+                playerKillDrafts = row.playerKillDrafts.map { player ->
+                    player.copy(killsDraftValue = player.originalKillsValue)
+                },
+            )
+        }
+        return if (rowBeforeReset?.isExcluded == true) {
+            restorePlacementOrderAfterExcludedRowReset(reset, rowIndex)
+        } else {
+            reset
+        }
     }
 
     fun onResetAllCorrections(draft: MatchOcrReviewCorrectionDraft): MatchOcrReviewCorrectionDraft =
@@ -268,6 +298,20 @@ object MatchOcrReviewCorrectionDraftReducer {
                     ?.let { row.rowIndex to it }
             },
         )
+        val activePlacementValues = draft.includedRows.mapNotNull { row ->
+            row.placementDraftValue.trim()
+                .toStrictPositiveIntOrNull()
+                ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+        }
+        val nonConsecutivePlacementRows = if (
+            activePlacementValues.size == draft.includedRows.size &&
+                activePlacementValues.toSet().size == activePlacementValues.size &&
+                activePlacementValues.toSet() != (1..draft.includedRows.size).toSet()
+        ) {
+            draft.includedRows.map { it.rowIndex }.toSet()
+        } else {
+            emptySet()
+        }
 
         return draft.copy(
             rows = draft.rows.map { row ->
@@ -288,6 +332,8 @@ object MatchOcrReviewCorrectionDraftReducer {
                             blockers += MatchOcrReviewCorrectionReason.INVALID_PLACEMENT
                         row.rowIndex in placementDuplicates ->
                             blockers += MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
+                        row.rowIndex in nonConsecutivePlacementRows ->
+                            blockers += MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT
                     }
 
                     if (row.playerKillDrafts.isEmpty()) {
@@ -378,6 +424,121 @@ object MatchOcrReviewCorrectionDraftReducer {
             },
         ),
     )
+
+    private fun reindexActivePlacementsAfterExclusion(
+        draft: MatchOcrReviewCorrectionDraft,
+    ): MatchOcrReviewCorrectionDraft {
+        val activeRows = draft.includedRows
+        val placementsByRowIndex = activeRows.mapNotNull { row ->
+            row.placementDraftValue.trim()
+                .toStrictPositiveIntOrNull()
+                ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                ?.let { row.rowIndex to it }
+        }
+        if (
+            activeRows.isEmpty() ||
+            placementsByRowIndex.size != activeRows.size ||
+            placementsByRowIndex.map { it.second }.toSet().size != activeRows.size
+        ) {
+            return draft
+        }
+
+        val officialPlacementByRowIndex = placementsByRowIndex
+            .sortedBy { it.second }
+            .mapIndexed { officialIndex, (rowIndex, _) -> rowIndex to officialIndex + 1 }
+            .toMap()
+        return validate(
+            draft.copy(
+                rows = draft.rows.map { row ->
+                    officialPlacementByRowIndex[row.rowIndex]?.let { officialPlacement ->
+                        row.copy(placementDraftValue = officialPlacement.toString())
+                    } ?: row
+                },
+            ),
+        )
+    }
+
+    private fun restorePlacementOrderAfterExcludedRowReset(
+        draft: MatchOcrReviewCorrectionDraft,
+        rowIndex: Int,
+    ): MatchOcrReviewCorrectionDraft {
+        val restoredRow = draft.rows.firstOrNull { it.rowIndex == rowIndex } ?: return draft
+        val activeRows = draft.includedRows.filterNot { it.rowIndex == rowIndex }
+        val activePlacements = activeRows.mapNotNull { row ->
+            row.placementDraftValue.trim()
+                .toIntOrNull()
+                ?.takeIf { it in 1..activeRows.size }
+                ?.let { row.rowIndex to it }
+        }
+        if (
+            restoredRow.originalPlacementValue.toIntOrNull() == null ||
+            activePlacements.size != activeRows.size ||
+            activePlacements.map { it.second }.toSet() != (1..activeRows.size).toSet()
+        ) {
+            return draft
+        }
+        val restoredPlacement = restoredRow.originalPlacementValue.toInt()
+            .coerceIn(1, activeRows.size + 1)
+        val orderedRows = activePlacements
+            .sortedBy { it.second }
+            .map { it.first }
+            .toMutableList()
+            .apply { add(restoredPlacement - 1, rowIndex) }
+        val placementByRowIndex = orderedRows.mapIndexed { index, currentRowIndex ->
+            currentRowIndex to index + 1
+        }.toMap()
+        return validate(
+            draft.copy(
+                rows = draft.rows.map { row ->
+                    placementByRowIndex[row.rowIndex]?.let { placement ->
+                        row.copy(placementDraftValue = placement.toString())
+                    } ?: row
+                },
+            ),
+        )
+    }
+
+    private fun restorePlacementOrderAfterExcludedRowRestore(
+        draft: MatchOcrReviewCorrectionDraft,
+        rowIndex: Int,
+    ): MatchOcrReviewCorrectionDraft {
+        val restoredRow = draft.rows.firstOrNull { it.rowIndex == rowIndex } ?: return draft
+        val activeRows = draft.includedRows.filterNot { it.rowIndex == rowIndex }
+        val activePlacements = activeRows.mapNotNull { row ->
+            row.placementDraftValue.trim()
+                .toIntOrNull()
+                ?.takeIf { it in 1..activeRows.size }
+                ?.let { row.rowIndex to it }
+        }
+        val restoredPlacement = restoredRow.placementDraftValue.trim()
+            .toIntOrNull()
+            ?.takeIf { it in 1..activeRows.size + 1 }
+        if (
+            restoredPlacement == null ||
+            activePlacements.size != activeRows.size ||
+            activePlacements.map { it.second }.toSet() != (1..activeRows.size).toSet()
+        ) {
+            return draft
+        }
+
+        val orderedRows = activePlacements
+            .sortedBy { it.second }
+            .map { it.first }
+            .toMutableList()
+            .apply { add(restoredPlacement - 1, rowIndex) }
+        val placementByRowIndex = orderedRows.mapIndexed { index, currentRowIndex ->
+            currentRowIndex to index + 1
+        }.toMap()
+        return validate(
+            draft.copy(
+                rows = draft.rows.map { row ->
+                    placementByRowIndex[row.rowIndex]?.let { placement ->
+                        row.copy(placementDraftValue = placement.toString())
+                    } ?: row
+                },
+            ),
+        )
+    }
 
     private fun MatchOcrReviewRowCorrectionDraft.withDerivedKillsDraftValue(): MatchOcrReviewRowCorrectionDraft =
         if (playerKillDrafts.isEmpty()) {

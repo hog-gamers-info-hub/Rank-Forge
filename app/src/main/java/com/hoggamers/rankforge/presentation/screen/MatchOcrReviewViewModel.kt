@@ -842,7 +842,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     val currentDraft = state.correctionDraft
                         ?: return@update state
                     state.copy(
-                        correctionDraft = MatchOcrReviewCorrectionDraftReducer.onResetRowCorrection(
+                        correctionDraft = MatchOcrReviewCorrectionDraftReducer.onRestoreExcludedRow(
                             draft = currentDraft,
                             rowIndex = position - 1,
                         ),
@@ -1163,13 +1163,7 @@ class MatchOcrReviewViewModel @Inject constructor(
             return null
         }
 
-        val officialPlacementByLobbySlot = reviewedRows
-            .filterNot { it.row.isEffectivelyExcluded }
-            .sortedBy { it.row.rowIndex }
-            .mapIndexed { officialIndex, reviewedRow ->
-                reviewedRow.lobbySlotNumber to officialIndex + 1
-            }
-            .toMap()
+        val officialPlacementByRowIndex = correctionDraft.authoritativePlacementByRowIndex()
 
         val results = teams.map { team ->
             val reviewedRow = reviewedRowsByLobby.getValue(team.lobbySlotNumber).single().row
@@ -1186,7 +1180,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     pointAdjustment = pointAdjustment,
                 )
             } else {
-                val placement = officialPlacementByLobbySlot[team.lobbySlotNumber]
+                val placement = officialPlacementByRowIndex[reviewedRow.rowIndex]
                     ?: return null
                 val kills = reviewedRow.killsDraftValue.trim().toIntOrNull()
                     ?.takeIf { it >= 0 }
@@ -1248,11 +1242,7 @@ class MatchOcrReviewViewModel @Inject constructor(
         reviewRows: List<MatchOcrReviewRowUiState>,
     ): List<FinalizeOcrCorrectionRowInput> {
         val reviewRowsByIndex = reviewRows.associateBy { it.rowIndex }
-        val officialPlacementBySourceRowIndex = rows
-            .filterNot { it.isEffectivelyExcluded }
-            .sortedBy { it.rowIndex }
-            .mapIndexed { officialIndex, row -> row.rowIndex to officialIndex + 1 }
-            .toMap()
+        val officialPlacementBySourceRowIndex = authoritativePlacementByRowIndex()
         return rows.map { row ->
             val reviewRow = reviewRowsByIndex[row.rowIndex]
             FinalizeOcrCorrectionRowInput(
@@ -1279,6 +1269,29 @@ class MatchOcrReviewViewModel @Inject constructor(
                 isExcluded = row.isEffectivelyExcluded,
             )
         }
+    }
+
+    private fun MatchOcrReviewCorrectionDraft.authoritativePlacementByRowIndex(): Map<Int, Int> {
+        val activeRows = rows.filterNot { it.isEffectivelyExcluded }
+        val correctedPlacements = activeRows.mapNotNull { row ->
+            row.placementDraftValue.trim()
+                .toIntOrNull()
+                ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                ?.let { row.rowIndex to it }
+        }
+        if (
+            correctedPlacements.size != activeRows.size ||
+            correctedPlacements.map { it.second }.toSet().size != activeRows.size
+        ) {
+            return emptyMap()
+        }
+        if (rows.none { it.isEffectivelyExcluded }) {
+            return correctedPlacements.toMap()
+        }
+        return correctedPlacements
+            .sortedBy { it.second }
+            .mapIndexed { officialIndex, (rowIndex, _) -> rowIndex to officialIndex + 1 }
+            .toMap()
     }
 
     private fun MatchOcrReviewCorrectionReason.toFinalizeWarning(): FinalizeOcrCorrectionMatchWarning? =
