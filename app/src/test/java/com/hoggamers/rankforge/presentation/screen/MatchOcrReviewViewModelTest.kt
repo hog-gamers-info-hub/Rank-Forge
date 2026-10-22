@@ -302,6 +302,76 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun uuidFirstTimeManualEntryWithTenTeamsAndTwoDeletedEmptyRowsFinalizes() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot((1..10).toList())
+        val result = runUuidFinalize(
+            snapshot = snapshot,
+            existing = emptyList(),
+            rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows(),
+            transform = { initial ->
+                var draft = initial
+                (0 until 10).forEach { index ->
+                    draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+                        draft, index, (index + 1).toString(),
+                    )
+                    draft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+                        draft, index, index.toString(),
+                    )
+                    draft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+                        draft, index, (index + 1).toString(),
+                    )
+                }
+                MatchOcrReviewCorrectionDraftReducer.onRowExcluded(
+                    MatchOcrReviewCorrectionDraftReducer.onRowExcluded(draft, 10), 11,
+                )
+            },
+        )
+        advanceUntilIdle()
+
+        val expected = (1..10).map { position ->
+            GroupRotationMatchParticipantResult(
+                teamUUID = "uuid-$position",
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = position,
+                kills = position - 1,
+            )
+        }
+        assertEquals(expected, result.draftRepository.savedParticipantResults)
+        assertEquals(expected, result.finalizationRepository.input?.participantResults)
+        assertTrue((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun uuidFirstTimeManualEntryWithUndeletedEmptyRowCannotFinalize() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot((1..10).toList())
+        val result = runUuidFinalize(
+            snapshot = snapshot,
+            existing = emptyList(),
+            rows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows(),
+            transform = { initial ->
+                var draft = initial
+                (0 until 10).forEach { index ->
+                    draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(
+                        draft, index, (index + 1).toString(),
+                    )
+                    draft = MatchOcrReviewCorrectionDraftReducer.onKillsChanged(
+                        draft, index, index.toString(),
+                    )
+                    draft = MatchOcrReviewCorrectionDraftReducer.onAssignedTeamSlotChanged(
+                        draft, index, (index + 1).toString(),
+                    )
+                }
+                MatchOcrReviewCorrectionDraftReducer.onRowExcluded(draft, 11)
+            },
+        )
+        advanceUntilIdle()
+
+        assertNull(result.draftRepository.savedParticipantResults)
+        assertNull(result.finalizationRepository.input)
+        assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
     fun uuidNoShowAndPointAdjustmentRemainAttachedToPermanentUuid() = runTest(dispatcher) {
         val snapshot = uuidSnapshot(listOf(1, 2))
         val existing = listOf(
@@ -2813,8 +2883,8 @@ class MatchOcrReviewViewModelTest {
         existing: List<GroupRotationMatchParticipantResult>,
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },
         saveResult: GroupRotationMatchDraftMutationResult = GroupRotationMatchDraftMutationResult.SAVED,
+        rows: List<MatchOcrReviewRowUiState> = uuidCorrectionRows(snapshot.teams.map { it.lobbySlotNumber }),
     ): UuidFinalizeRecording {
-        val rows = uuidCorrectionRows(snapshot.teams.map { it.lobbySlotNumber })
         val correctionDraft = transform(
             MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
         )
