@@ -522,6 +522,7 @@
     <string name="match_ocr_review_correction_missing_placement">Placement is missing.</string>
     <string name="match_ocr_review_correction_invalid_placement">Placement is invalid.</string>
     <string name="match_ocr_review_correction_duplicate_placement">Placement is duplicated.</string>
+    <string name="match_ocr_review_correction_non_consecutive_placement">Participating placements must be consecutive.</string>
     <string name="match_ocr_review_correction_missing_kills">Kills are missing.</string>
     <string name="match_ocr_review_correction_invalid_kills">Kills are invalid.</string>
     <string name="match_ocr_review_correction_negative_kills">Kills cannot be negative.</string>

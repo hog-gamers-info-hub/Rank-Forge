@@ -945,7 +945,13 @@ internal fun MatchOcrReviewCompactRow(
     showAggregateResultFields: Boolean = true,
     onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit = { _, _, _ -> },
 ) {
-    val placement = previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
+    val placement = correctionDraft
+        ?.placementDraftValue
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+        ?.toString()
+        ?: previewRow.placementText.trim().ifBlank { previewRow.position.toString() }
     val suggestedSlot = reviewRow?.suggestedTeamSlotDisplayValue
         ?.toIntOrNull()
         ?.takeIf { it in eligibleTeamSlots }
@@ -1976,7 +1982,8 @@ private fun MatchOcrReviewCorrectionFields(
             isError = correctionDraft.validation.blockers.any {
                 it == MatchOcrReviewCorrectionReason.MISSING_PLACEMENT ||
                     it == MatchOcrReviewCorrectionReason.INVALID_PLACEMENT ||
-                    it == MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT
+                    it == MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT ||
+                    it == MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT
             },
             modifier = modifier.testTag(MatchOcrReviewTestTags.placementInput(correctionDraft.rowIndex)),
             keyboardScrollTargetKey = keyboardScrollTargetKey,
@@ -2297,6 +2304,8 @@ private fun MatchOcrReviewCorrectionReason.toMessageRes(): Int = when (this) {
         R.string.match_ocr_review_correction_invalid_placement
     MatchOcrReviewCorrectionReason.DUPLICATE_PLACEMENT ->
         R.string.match_ocr_review_correction_duplicate_placement
+    MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT ->
+        R.string.match_ocr_review_correction_non_consecutive_placement
     MatchOcrReviewCorrectionReason.MISSING_KILLS ->
         R.string.match_ocr_review_correction_missing_kills
     MatchOcrReviewCorrectionReason.INVALID_KILLS ->
