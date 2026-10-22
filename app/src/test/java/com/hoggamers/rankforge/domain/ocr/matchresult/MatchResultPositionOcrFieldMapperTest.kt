@@ -84,6 +84,57 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
+    fun eliminationParserRecognizesAllRequestedMarkerVariantsWithoutInventingKills() {
+        val variants = listOf(
+            "Eliminations", "Elimination", "Eliminatio", "Eliminati", "Eliminat", "Elimina", "Elimin",
+            "Eiminations", "Eiminatians", "Eiminatioň", "Eimination", "Eiminatio", "Eiminati", "Eiminat", "Eimina", "Eimin",
+            "Elminations", "Elmination", "Elminatio", "Elminati", "Elminat", "Elmina", "Elmin",
+            "Elimn", "Elimna", "Elimnat", "Elimnati", "Elimnation", "Elimnations",
+            "Elimln", "Elimlna", "Elimlnat", "Elimlnati", "Elimlnation", "Elimlnations", "Elimlnatons", "Ellmlnatlons",
+            "Ellmin", "Ellmina", "Ellminat", "Ellmination", "Ellminations", "Eliminn", "Eliminna", "Elimmin", "Elimmina", "Elimminations",
+            "EIimin", "EIimina", "EIiminat", "EIimination", "Einin", "Eininat", "Eininati", "Eininations", "Elimim", "Elimimat",
+            "Elim1n", "Elim1nat", "Elim1nations", "Elim|n", "Elim|nat", "Elim|nations", "Eliminati0ns", "Eliminat1ons", "Elimination5",
+            "Elümin", "Elüminat", "Elüminati", "Elümination", "Elüminations", "Elüminatlons", "Elüminatons", "Eümin", "Eüminat", "Eüminati", "Eüminations", "Eüiminations", "Eüiminati", "Elimín", "Elimínat", "Elimínations", "Eliminatioň", "EUminati",
+            "Eliminaton", "Eliminatons", "Eliminatlons", "Eliminatlon", "Eliminatians", "Eliminatiom", "Eliminaion", "Elminatlons",
+            "liminations", "limination", "liminatio", "liminati", "liminat", "limina", "limin",
+            "Flimin", "Fliminat", "Fliminati", "Fliminations",
+            "Blimin", "Bliminat", "Bliminati", "Bliminations",
+            "Climin", "Climinat", "Climinati", "Climinations",
+            "Ilimin", "Iliminat", "Iliminations", "llimin", "lliminat", "lliminations",
+            "3limin", "3liminat", "3liminations",
+            "lmin", "lminat", "lminati", "lminations",
+            "eLiMiNaTi",
+        )
+
+        variants.forEach { text ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertTrue("Expected elimination marker for '$text'", parsed.markerMatched)
+            assertNull("Marker text must not invent a kill for '$text'", parsed.kill)
+        }
+    }
+
+    @Test
+    fun actualDistortedEliminationOcrPreservesExistingNumericSemantics() {
+        val numericCases = mapOf(
+            "2 Elminations" to 2,
+            "O Elminat" to 0,
+            "1EllminationN" to 1,
+            "OElminationRUDRA»12" to 0,
+        )
+        numericCases.forEach { (text, expectedKill) ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertTrue("Expected elimination marker for '$text'", parsed.markerMatched)
+            assertEquals(expectedKill, parsed.kill)
+        }
+
+        listOf("Eininati", "Elüminati", "Ellmlnatlons").forEach { text ->
+            val parsed = MatchResultPositionSemanticTextParser.parse(text)
+            assertTrue("Expected elimination marker for '$text'", parsed.markerMatched)
+            assertNull(parsed.kill)
+        }
+    }
+
+    @Test
     fun missingLEliminationAnchorsUseExistingPrefixSemantics() {
         listOf(
             "Eliminations",
@@ -124,11 +175,15 @@ class MatchResultPositionOcrFieldMapperTest {
     }
 
     @Test
-    fun truncatedEliminationParserRequiresStrongPrefix() {
-        listOf("Eliminat", "Eliminator", "EliminatPLAYER", "ABCEliminat", "PLAYER").forEach { text ->
+    fun truncatedEliminationParserRemainsBoundarySafe() {
+        listOf("Eliminator", "EliminatPLAYER", "ABCEliminat", "PLAYER").forEach { text ->
             val parsed = MatchResultPositionSemanticTextParser.parse(text)
             assertTrue(!parsed.markerMatched)
             assertEquals(null, parsed.kill)
+        }
+
+        listOf("Elimin", "Elimn", "lmin").forEach { text ->
+            assertTrue(MatchResultPositionSemanticTextParser.parse(text).markerMatched)
         }
     }
 

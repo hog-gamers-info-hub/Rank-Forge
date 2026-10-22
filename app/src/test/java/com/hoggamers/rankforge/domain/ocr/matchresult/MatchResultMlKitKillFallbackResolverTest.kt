@@ -28,6 +28,10 @@ class MatchResultMlKitKillFallbackResolverTest {
             "14 Eliminations" to 14,
             "O Eliminations" to 0,
             "3Eliminati" to 3,
+            "2 Elminations" to 2,
+            "O Elminat" to 0,
+            "1EllminationN" to 1,
+            "OElminationRUDRA»12" to 0,
         ).forEach { (text, expected) ->
             val result = resolve(
                 evidence = evidence(observation(text, left = 530, top = 60, right = 570, bottom = 80)),
@@ -126,14 +130,16 @@ class MatchResultMlKitKillFallbackResolverTest {
 
     @Test
     fun markerOnlyMlAnchorDoesNotBecomeAResolvedKill() {
-        val result = resolve(
-            ppAnchorBounds = mapOf(3 to anchorBounds()),
-            evidence = evidence(
-                observation("Eliminations", left = 540, top = 60, right = 590, bottom = 80),
-            ),
-        )
+        listOf("Eliminations", "Eininati", "Elüminati", "Ellmlnatlons", "3limin").forEach { text ->
+            val result = resolve(
+                ppAnchorBounds = mapOf(3 to anchorBounds()),
+                evidence = evidence(
+                    observation(text, left = 540, top = 60, right = 590, bottom = 80),
+                ),
+            )
 
-        assertFalse(result.containsKey(3))
+            assertFalse("Marker-only text invented a kill for '$text'.", result.containsKey(3))
+        }
     }
 
     @Test
