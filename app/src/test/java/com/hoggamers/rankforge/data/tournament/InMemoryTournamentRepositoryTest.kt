@@ -320,6 +320,24 @@ class InMemoryTournamentRepositoryTest {
     }
 
     @Test
+    fun tenTeamFinalizationAcceptsNonConsecutivePositionsWithinTwelveTeamRange() = runTest {
+        val repository = createFinalizationRepository(activeTeamCount = 10)
+        val positions = listOf(1, 2, 4, 5, 6, 7, 8, 9, 10, 12)
+
+        val result = repository.finalizeDraftMatch(
+            matchId = "match-id",
+            placements = positions.mapIndexed { index, position ->
+                MatchPlacement(teamSlotNumber = index + 1, position = position)
+            },
+            kills = (1..10).map { slotNumber ->
+                MatchKill(teamSlotNumber = slotNumber, kills = slotNumber - 1)
+            },
+        )
+
+        assertTrue(result is FinalizeMatchRepositoryResult.Finalized)
+    }
+
+    @Test
     fun finalizationRejectsInactiveParticipantSlot() = runTest {
         val repository = createFinalizationRepository(activeTeamCount = 10)
 

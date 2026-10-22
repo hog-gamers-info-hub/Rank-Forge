@@ -2955,7 +2955,7 @@ class RoomTournamentRepository @Inject constructor(
                     val participation = persistedSlots.analyzeTeamSlotParticipation(eligibleSlotNumbers)
                     val expectedTeamSlots = participation.activeSlotNumbers.toSet()
                     val positionedTeamSlots = placements.map { it.teamSlotNumber }.toSet()
-                    val expectedPlacements = (1..placements.size).toSet()
+                    val expectedPlacements = TeamSlot.SLOT_NUMBERS.toSet()
                     val finalizedParticipantResults = participantResults
                         ?: buildLegacyParticipantResults(
                             expectedTeamSlots,
@@ -2969,7 +2969,6 @@ class RoomTournamentRepository @Inject constructor(
                         placements.any { it.teamSlotNumber !in expectedTeamSlots || it.position !in expectedPlacements } ||
                         kills.any { it.teamSlotNumber !in positionedTeamSlots || it.kills < 0 } ||
                         kills.map { it.teamSlotNumber }.toSet() != positionedTeamSlots ||
-                        placements.map { it.position }.toSet() != expectedPlacements ||
                         placements.map { it.teamSlotNumber }.distinct().size != placements.size ||
                         kills.map { it.teamSlotNumber }.distinct().size != kills.size ||
                         placements.map { it.position }.distinct().size != placements.size ||
@@ -4158,7 +4157,6 @@ class RoomTournamentRepository @Inject constructor(
             } &&
             placements.map { it.teamSlotNumber }.toSet() == expectedTeamSlots &&
             kills.map { it.teamSlotNumber }.toSet() == expectedTeamSlots &&
-            placements.map { it.position }.toSet() == expectedPlacements &&
             correctionSnapshots.map { it.correctedPlacement }.toSet().size == expectedTeamSlots.size &&
             correctionSnapshots.map { it.correctedTeamSlot }.toSet().size == expectedTeamSlots.size &&
             correctionSnapshots.all { snapshot ->
@@ -4225,7 +4223,7 @@ class RoomTournamentRepository @Inject constructor(
             resultsBySlot.keys == registeredTeamSlots &&
             participated.map { it.teamSlotNumber }.toSet() == positionedTeamSlots &&
             noShows.map { it.teamSlotNumber }.toSet() == registeredTeamSlots - positionedTeamSlots &&
-            participated.mapNotNull { it.placement }.toSet() == (1..positionedTeamSlots.size).toSet() &&
+            participated.all { it.placement?.let { placement -> placement in TeamSlot.SLOT_NUMBERS } == true } &&
             participated.mapNotNull { it.placement }.distinct().size == participated.size
     }
 

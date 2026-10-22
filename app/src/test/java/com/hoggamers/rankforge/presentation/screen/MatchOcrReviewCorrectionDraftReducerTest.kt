@@ -213,15 +213,11 @@ class MatchOcrReviewCorrectionDraftReducerTest {
     }
 
     @Test
-    fun nonConsecutiveActivePlacementsRemainBlockedAfterDeletion() {
+    fun nonConsecutiveActivePlacementsRemainValidAfterDeletion() {
         val excluded = MatchOcrReviewCorrectionDraftReducer.onRowExcluded(initialDraft(), 11)
         val draft = MatchOcrReviewCorrectionDraftReducer.onPlacementChanged(excluded, 0, "12")
 
-        assertRowBlocked(
-            draft,
-            rowIndex = 0,
-            reason = MatchOcrReviewCorrectionReason.NON_CONSECUTIVE_PLACEMENT,
-        )
+        assertEquals(0, draft.blockerCount)
     }
 
     @Test

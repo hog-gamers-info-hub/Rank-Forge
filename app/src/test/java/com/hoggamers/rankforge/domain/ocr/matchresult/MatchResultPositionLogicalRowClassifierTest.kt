@@ -597,6 +597,51 @@ class MatchResultPositionLogicalRowClassifierTest {
     }
 
     @Test
+    fun positionEightMisrecognized日IsFilteredAndBothPlayerRowsRemainClassified() {
+        val result = classifyCustom(
+            position = 8,
+            cropWidth = 491,
+            cropHeight = 81,
+            center = 40.5,
+            lines = listOf(
+                line("日", 0, 35, 20, 45),
+                line("SOUMO`BHAI", 40, 10, 150, 20),
+                line("KTS NEKO", 40, 61, 150, 71),
+            ),
+        ) as MatchResultPositionLogicalRowClassification.Available
+
+        assertEquals(1, result.diagnostics.placementLinesRemoved)
+        assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2, result.diagnostics.classification)
+        assertEquals(1, result.diagnostics.upperCount)
+        assertEquals(1, result.diagnostics.lowerCount)
+        assertEquals(
+            listOf("SOUMO`BHAI", "KTS NEKO"),
+            result.blocks.flatMap { it.lines }.map { it.text },
+        )
+    }
+
+    @Test
+    fun shortUnexpectedPlacementCharactersAreFilteredWhenGeometricallyValid() {
+        listOf("日", "B", "#").forEach { token ->
+            val result = classifyCustom(
+                position = 8,
+                cropWidth = 491,
+                cropHeight = 81,
+                center = 40.5,
+                lines = listOf(
+                    line(token, 0, 35, 20, 45),
+                    line("upper player", 40, 10, 150, 20),
+                    line("lower player", 40, 61, 150, 71),
+                ),
+            ) as MatchResultPositionLogicalRowClassification.Available
+
+            assertEquals(1, result.diagnostics.placementLinesRemoved)
+            assertFalse(result.blocks.flatMap { it.lines }.any { it.text == token })
+            assertEquals(MatchResultPositionLogicalRowClassificationKind.ROW1_AND_ROW2, result.diagnostics.classification)
+        }
+    }
+
+    @Test
     fun twoRowClusteringIsUniformAcrossEveryPosition() {
         for (position in 1..12) {
             val result = classifyCustom(
@@ -638,7 +683,7 @@ class MatchResultPositionLogicalRowClassifierTest {
     }
 
     @Test
-    fun alphabeticLeftRegionTextIsNotPlacementEvidence() {
+    fun longLeftRegionTextIsNotPlacementEvidence() {
         val result = classifyResult(
             line("Alpha", 0, 10, 20, 20),
             line("Player A", 80, 10, 180, 20),

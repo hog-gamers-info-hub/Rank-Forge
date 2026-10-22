@@ -170,6 +170,23 @@ class MatchCorrectionUseCaseTest {
     }
 
     @Test
+    fun tenTeamCorrectionAcceptsNonConsecutivePlacementsWithinTwelveTeamRange() = runTest {
+        val repository = createTenTeamFinalizedRepository()
+        val rows = correctedRows(10).map { row ->
+            if (row.teamSlotNumber == 10) row.copy(placement = "12") else row
+        }
+
+        val result = SubmitMatchCorrectionUseCase(
+            repository,
+            ValidateMatchResultUseCase(),
+            SignedInTournamentTestAuthRepository(),
+            ProtectedMatchCorrectionAction { ProtectedMatchCorrectionResult.Success(2) },
+        )(SubmitMatchCorrectionInput("match-id", rows))
+
+        assertTrue(result is SubmitMatchCorrectionResult.Submitted)
+    }
+
+    @Test
     fun standardCorrectionNeverReadsIdentityContextAndKeepsExistingTenTeamBehavior() = runTest {
         val repository = createTenTeamFinalizedRepository()
         val identityRepository = RecordingIdentityContextRepository(

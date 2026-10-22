@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.data.ocr.matchresult
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.local.MatchResultScreenshotAssetRepository
 import com.hoggamers.rankforge.data.ocr.PaddleRawOcrGeometryMapper
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
@@ -34,6 +36,7 @@ import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultPositionKillFal
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotIdentity
 import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.presentation.screen.ScreenshotOwnerProvider
+import com.paddle.ocr.model.OCRRunResult
 import java.io.File
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -41,6 +44,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+
+private const val RESULT_PP_RAW_LOG_TAG = "RESULT_PP_RAW"
 
 /** Production panel/ROI PP route. */
 class AndroidMatchResultPositionOcrPreviewRunner(
@@ -162,7 +167,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
         }
         if (source !== decodedSource && !decodedSource.isRecycled) decodedSource.recycle()
         val evidence = try {
-            when (val result = positionCropGenerator.observe(source)) {
+            when (val result = positionCropGenerator.observe(source, screenshotRole = identity.role)) {
                 is MatchResultPositionCropObservationResult.Observed -> {
                     result.evidence
                 }
@@ -234,6 +239,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                     val panelResult = runPanelPpProduction(
                         inputBitmap = inputBitmap,
                         role = assignedRole,
+                        screenshotRole = prepared.identity.role,
                         inputPlan = inputPlan,
                         allowUpperPositionElevenFallback = allowUpperFallback,
                         mlKitEvidence = prepared.evidence,
@@ -387,6 +393,7 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     private suspend fun runPanelPpProduction(
         inputBitmap: Bitmap,
         role: MatchResultScreenshotRole,
+        screenshotRole: MatchResultScreenshotRole,
         inputPlan: MatchResultPpInputPlan,
         allowUpperPositionElevenFallback: Boolean,
         mlKitEvidence: MatchResultAutoCropEvidence,
@@ -394,6 +401,14 @@ class AndroidMatchResultPositionOcrPreviewRunner(
     ): PanelPpProductionResult {
         val engine = paddleEngineProvider.getOrCreate()
         val runResult = engine.recognize(inputBitmap)
+        if (BuildConfig.DEBUG) {
+            logRawPpOcr(
+                runResult = runResult,
+                screenshotRole = screenshotRole,
+                semanticRole = role,
+                inputBitmap = inputBitmap,
+            )
+        }
         val panelBlocks = PaddleRawOcrGeometryMapper.map(
             runResult = runResult,
             cropWidth = inputBitmap.width,
@@ -432,6 +447,51 @@ class AndroidMatchResultPositionOcrPreviewRunner(
                 result.semantic!!.position to result.mlKitMarkerSeenSlots
             },
         )
+    }
+
+    private fun logRawPpOcr(
+        runResult: OCRRunResult,
+        screenshotRole: MatchResultScreenshotRole,
+        semanticRole: MatchResultScreenshotRole,
+        inputBitmap: Bitmap,
+    ) {
+        try {
+            Log.d(
+                RESULT_PP_RAW_LOG_TAG,
+                "===== PP OCR RAW START ===== screenshotRole=${screenshotRole.name} " +
+                    "semanticRole=${semanticRole.name} input=${inputBitmap.width}x${inputBitmap.height}",
+            )
+            runResult.results.forEachIndexed { index, result ->
+                val points = result.box.points
+                val geometry = points.takeIf { it.isNotEmpty() }?.let { rawPoints ->
+                    val left = rawPoints.minOf { it.x }
+                    val top = rawPoints.minOf { it.y }
+                    val right = rawPoints.maxOf { it.x }
+                    val bottom = rawPoints.maxOf { it.y }
+                    val centerX = (left + right) / 2.0f
+                    val centerY = (top + bottom) / 2.0f
+                    "bbox=(left=$left,top=$top,right=$right,bottom=$bottom) " +
+                        "centerX=$centerX centerY=$centerY width=${right - left} height=${bottom - top}"
+                } ?: "bbox=null centerX=null centerY=null width=null height=null"
+                val pointText = points.joinToString(
+                    prefix = "points=[",
+                    postfix = "]",
+                ) { point -> "(${point.x},${point.y})" }
+                val text = result.text
+                    .replace("\r", "\\r")
+                    .replace("\n", "\\n")
+                Log.d(
+                    RESULT_PP_RAW_LOG_TAG,
+                    "observation=$index text=$text $geometry confidence=${result.confidence} $pointText",
+                )
+            }
+            Log.d(
+                RESULT_PP_RAW_LOG_TAG,
+                "===== PP OCR RAW END ===== observations=${runResult.results.size}",
+            )
+        } catch (_: RuntimeException) {
+            // Diagnostics must never affect the OCR result or production control flow.
+        }
     }
 
     private fun mapPanelPosition(

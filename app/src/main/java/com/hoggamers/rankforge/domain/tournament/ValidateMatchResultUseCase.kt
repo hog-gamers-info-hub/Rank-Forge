@@ -34,7 +34,7 @@ class ValidateMatchResultUseCase {
     ): MatchResultValidation {
         val errors = mutableMapOf<Int, MutableSet<MatchResultValidationError>>()
         val expectedSlots = expectedTeamSlots.toSet()
-        val expectedPlacements = 1..expectedSlots.size
+        val expectedPlacements = TeamSlot.SLOT_NUMBERS
         val rowsByTeamSlot = rows.groupBy { it.teamSlotNumber }
 
         expectedSlots
@@ -119,7 +119,7 @@ class ValidateMatchResultUseCase {
                     val placement = row.placement?.trim().orEmpty()
                     if (placement.isBlank()) {
                         errors.add(row.teamSlotNumber, MatchResultValidationError.MISSING_PLACEMENT)
-                    } else if (!placement.isWholeNumberAtLeastOne()) {
+                    } else if (!placement.isWholeNumberIn(TeamSlot.SLOT_NUMBERS)) {
                         errors.add(row.teamSlotNumber, MatchResultValidationError.INVALID_PLACEMENT)
                     }
                     val kills = row.kills?.trim().orEmpty()
@@ -132,22 +132,12 @@ class ValidateMatchResultUseCase {
             }
         }
         val participated = rows.filter { it.teamSlotNumber in expectedSlots && it.participationStatus == MatchParticipationStatus.PARTICIPATED }
-        val expectedPlacements = 1..participated.size
+        val expectedPlacements = TeamSlot.SLOT_NUMBERS
         participated.mapNotNull { row ->
             row.placement?.trim()?.toIntOrNull()?.takeIf { it in expectedPlacements }
                 ?.let { it to row.teamSlotNumber }
         }.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }
             .values.flatten().forEach { errors.add(it, MatchResultValidationError.DUPLICATE_PLACEMENT) }
-        if (participated.isNotEmpty()) {
-            val validPlacements = participated.mapNotNull { it.placement?.trim()?.toIntOrNull() }.toSet()
-            if (validPlacements != expectedPlacements.toSet()) {
-                participated.forEach { row ->
-                    if (row.placement?.trim()?.toIntOrNull() !in expectedPlacements) {
-                        errors.add(row.teamSlotNumber, MatchResultValidationError.INVALID_PLACEMENT)
-                    }
-                }
-            }
-        }
         return MatchResultValidation(errors.mapValues { it.value.toSet() })
     }
 
@@ -163,7 +153,7 @@ class ValidateMatchResultUseCase {
     ): MatchResultValidation {
         val errors = mutableMapOf<Int, MutableSet<MatchResultValidationError>>()
         val registeredSlots = registeredTeamSlots.toSet()
-        val expectedPlacements = 1..rows.size
+        val expectedPlacements = TeamSlot.SLOT_NUMBERS
         val rowsByTeamSlot = rows.groupBy { it.teamSlotNumber }
 
         rowsByTeamSlot
@@ -222,7 +212,7 @@ class ValidateMatchResultUseCase {
     ): MatchResultValidation {
         val errors = mutableMapOf<Int, MutableSet<MatchResultValidationError>>()
         val expectedSlots = expectedTeamSlots.toSet()
-        val expectedPlacements = 1..expectedSlots.size
+        val expectedPlacements = TeamSlot.SLOT_NUMBERS
         val placementsByTeamSlot = match.placements.groupBy { it.teamSlotNumber }
         val killsByTeamSlot = match.kills.groupBy { it.teamSlotNumber }
         val resultTeamSlots = placementsByTeamSlot.keys + killsByTeamSlot.keys
@@ -290,9 +280,6 @@ class ValidateMatchResultUseCase {
 
     private fun String.isWholeNumberAtLeastZero(): Boolean =
         any { it !in '0'..'9' }.not() && toIntOrNull()?.let { it >= 0 } == true
-
-    private fun String.isWholeNumberAtLeastOne(): Boolean =
-        any { it !in '0'..'9' }.not() && toIntOrNull()?.let { it >= 1 } == true
 
     private fun MutableMap<Int, MutableSet<MatchResultValidationError>>.add(
         teamSlotNumber: Int,
