@@ -1138,7 +1138,10 @@ class MatchOcrReviewViewModel @Inject constructor(
 
         val reviewedRows = buildList {
             correctionDraft.rows.forEach { row ->
-                if (row.isImplicitlyAbsent && !row.isExcluded) return@forEach
+                // A deleted, unassigned structural row is not a registered participant.
+                // Deleted rows with an assigned identity still represent explicit NO_SHOW.
+                if (row.isImplicitlyAbsent || (row.isExcluded &&
+                        row.assignedTeamSlotDraftValue.isBlank())) return@forEach
                 val lobbySlotNumber = row.assignedTeamSlotDraftValue.trim().toIntOrNull()
                     ?: return null
                 if (
