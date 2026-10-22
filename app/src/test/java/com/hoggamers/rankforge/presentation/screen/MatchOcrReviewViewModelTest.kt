@@ -68,6 +68,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftState
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationValidator
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchPersistenceSnapshot
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
@@ -302,6 +303,120 @@ class MatchOcrReviewViewModelTest {
     }
 
     @Test
+    fun uuidTwelveTeamPairingUsesContinuousPlacementsWithoutDeletion() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot((1..12).toList())
+        val existing = snapshot.teams.mapIndexed { index, team ->
+            GroupRotationMatchParticipantResult(
+                teamUUID = team.teamUUID,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = index + 1,
+                kills = index,
+            )
+        }
+
+        val result = runUuidFinalize(snapshot, existing)
+        advanceUntilIdle()
+
+        assertEquals(existing, result.draftRepository.savedParticipantResults)
+        assertEquals(existing, result.finalizationRepository.input?.participantResults)
+        assertUuidResultsPassFinalizationValidator(snapshot, existing)
+    }
+
+    @Test
+    fun uuidDeletedMiddleRowReindexesPlacementsAndPreservesIdentityData() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot((1..12).toList())
+        val existing = snapshot.teams.mapIndexed { index, team ->
+            GroupRotationMatchParticipantResult(
+                teamUUID = team.teamUUID,
+                participationStatus = MatchParticipationStatus.PARTICIPATED,
+                placement = index + 1,
+                kills = index + 10,
+                pointAdjustment = index + 100,
+            )
+        }
+
+        val result = runUuidFinalize(snapshot, existing, transform = { initial ->
+            MatchOcrReviewCorrectionDraftReducer.onRowExcluded(initial, rowIndex = 4)
+        })
+        advanceUntilIdle()
+
+        val saved = requireNotNull(result.draftRepository.savedParticipantResults)
+        assertEquals((1..11).toList(), saved
+            .filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+            .mapNotNull { it.placement })
+        assertEquals(
+            GroupRotationMatchParticipantResult(
+                teamUUID = "uuid-5",
+                participationStatus = MatchParticipationStatus.NO_SHOW,
+                placement = null,
+                kills = 0,
+                pointAdjustment = 104,
+            ),
+            saved.single { it.teamUUID == "uuid-5" },
+        )
+        assertEquals((listOf(0, 1, 2, 3) + (5..11).toList()), saved
+            .filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+            .map { it.kills })
+        assertEquals((100..111).toList(), saved.map { it.pointAdjustment })
+        assertEquals(saved, result.finalizationRepository.input?.participantResults)
+        assertUuidResultsPassFinalizationValidator(snapshot, saved)
+    }
+
+    @Test
+    fun uuidMultipleFirstMiddleAndLastDeletionsRemainContinuous() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot((1..12).toList())
+        val result = runUuidFinalize(snapshot, emptyList(), transform = { initial ->
+            initial
+                .let { MatchOcrReviewCorrectionDraftReducer.onRowExcluded(it, rowIndex = 0) }
+                .let { MatchOcrReviewCorrectionDraftReducer.onRowExcluded(it, rowIndex = 5) }
+                .let { MatchOcrReviewCorrectionDraftReducer.onRowExcluded(it, rowIndex = 11) }
+        })
+        advanceUntilIdle()
+
+        val saved = requireNotNull(result.draftRepository.savedParticipantResults)
+        assertEquals((1..9).toList(), saved
+            .filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+            .mapNotNull { it.placement })
+        assertEquals(
+            setOf("uuid-1", "uuid-6", "uuid-12"),
+            saved.filter { it.participationStatus == MatchParticipationStatus.NO_SHOW }
+                .map { it.teamUUID }
+                .toSet(),
+        )
+        assertTrue((result.finalizationRepository.input?.participantResults ?: emptyList())
+            .filter { it.participationStatus == MatchParticipationStatus.PARTICIPATED }
+            .mapNotNull { it.placement }
+            .all { it in 1..9 })
+        assertUuidResultsPassFinalizationValidator(snapshot, saved)
+    }
+
+    @Test
+    fun uuidDeletedUnassignedStructuralRowsAreIgnored() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot((1..10).toList())
+        val registeredRows = uuidCorrectionRows((1..10).toList())
+        val structuralRows = MatchResultOcrPreviewUiStateMapper.manualFallbackRows().drop(10)
+        val rows = registeredRows + structuralRows
+        val result = runUuidFinalize(
+            snapshot = snapshot,
+            existing = emptyList(),
+            rows = rows,
+            transform = { initial ->
+                initial
+                    .let { MatchOcrReviewCorrectionDraftReducer.onRowExcluded(it, rowIndex = 10) }
+                    .let { MatchOcrReviewCorrectionDraftReducer.onRowExcluded(it, rowIndex = 11) }
+            },
+        )
+        advanceUntilIdle()
+
+        val saved = requireNotNull(result.draftRepository.savedParticipantResults)
+        assertEquals(10, saved.size)
+        assertEquals((1..10).toList(), saved.mapNotNull { it.placement })
+        assertEquals((1..10).map { "uuid-$it" }, saved.map { it.teamUUID })
+        assertTrue((result.finalizationRepository.input?.participantResults ?: emptyList()).isNotEmpty())
+        assertUuidResultsPassFinalizationValidator(snapshot, saved)
+    }
+
+    @Test
     fun uuidFirstTimeManualEntryWithTenTeamsAndTwoDeletedEmptyRowsFinalizes() = runTest(dispatcher) {
         val snapshot = uuidSnapshot((1..10).toList())
         val result = runUuidFinalize(
@@ -339,6 +454,7 @@ class MatchOcrReviewViewModelTest {
         assertEquals(expected, result.draftRepository.savedParticipantResults)
         assertEquals(expected, result.finalizationRepository.input?.participantResults)
         assertTrue((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+        assertUuidResultsPassFinalizationValidator(snapshot, expected)
     }
 
     @Test
@@ -2881,9 +2997,9 @@ class MatchOcrReviewViewModelTest {
     private fun runUuidFinalize(
         snapshot: GroupRotationMatchIdentitySnapshot,
         existing: List<GroupRotationMatchParticipantResult>,
+        rows: List<MatchOcrReviewRowUiState> = uuidCorrectionRows(snapshot.teams.map { it.lobbySlotNumber }),
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },
         saveResult: GroupRotationMatchDraftMutationResult = GroupRotationMatchDraftMutationResult.SAVED,
-        rows: List<MatchOcrReviewRowUiState> = uuidCorrectionRows(snapshot.teams.map { it.lobbySlotNumber }),
     ): UuidFinalizeRecording {
         val correctionDraft = transform(
             MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
@@ -2920,6 +3036,20 @@ class MatchOcrReviewViewModelTest {
         )
         viewModel.onFinalizeOcrCorrection()
         return UuidFinalizeRecording(viewModel, draftRepository, finalizationRepository)
+    }
+
+    private fun assertUuidResultsPassFinalizationValidator(
+        snapshot: GroupRotationMatchIdentitySnapshot,
+        participantResults: List<GroupRotationMatchParticipantResult>,
+    ) {
+        val issues = GroupRotationMatchFinalizationValidator().validate(snapshot, participantResults)
+        assertTrue(issues.isEmpty())
+        assertFalse(
+            issues.any {
+                it.code == com.hoggamers.rankforge.domain.tournament
+                    .GroupRotationMatchFinalizationIssueCode.PLACEMENTS_NOT_GAP_FREE
+            },
+        )
     }
 
     private fun uuidSnapshot(
