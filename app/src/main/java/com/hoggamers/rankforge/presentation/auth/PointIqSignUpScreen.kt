@@ -1,8 +1,11 @@
 package com.hoggamers.rankforge.presentation.auth
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -40,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -62,6 +66,13 @@ private val SignUpButtonBorder = Color(0xFF4AAFF7)
 private val SignUpFieldSurface = Color(0xFF071B3E)
 private val SignUpAutofillHighlight = Color(0xFF0B2B55)
 
+internal const val POINTIQ_PRIVACY_POLICY_URL =
+    "https://hog-gamers-info-hub.github.io/Rank-Forge/privacy-policy/"
+internal const val POINTIQ_PRIVACY_POLICY_LINK_TEST_TAG = "pointiq_privacy_policy_link"
+
+internal fun buildPrivacyPolicyIntent(): Intent =
+    Intent(Intent.ACTION_VIEW, Uri.parse(POINTIQ_PRIVACY_POLICY_URL))
+
 @Composable
 internal fun PointIqSignUpScreen(
     uiState: AuthUiState,
@@ -70,14 +81,23 @@ internal fun PointIqSignUpScreen(
     onPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
     onGoogleSignIn: () -> Unit,
+    onOpenPrivacyPolicy: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     messages: @Composable () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    val openPrivacyPolicy = onOpenPrivacyPolicy ?: {
+        context.startActivity(buildPrivacyPolicyIntent())
+    }
+
     PointIqAuthShell(
         title = stringResource(R.string.auth_signup_heading),
         subtitle = stringResource(R.string.pointiq_signup_subtitle),
         modifier = modifier,
         titleModifier = Modifier.testTag(AUTH_SIGNUP_HEADING_TEST_TAG),
+        footer = {
+            PointIqPrivacyPolicyDisclosure(onClick = openPrivacyPolicy)
+        },
     ) {
         PointIqSignUpFieldLabel(text = stringResource(R.string.auth_email_label))
         Spacer(modifier = Modifier.height(6.dp))
@@ -349,6 +369,38 @@ private fun PointIqLoginPrompt(
                 fontWeight = FontWeight.SemiBold,
             )
         }
+    }
+}
+
+@Composable
+private fun PointIqPrivacyPolicyDisclosure(
+    onClick: () -> Unit,
+) {
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.pointiq_signup_privacy_policy_prefix),
+            color = SignUpSecondary,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text = stringResource(R.string.pointiq_privacy_policy),
+            color = SignUpCyan,
+            fontWeight = FontWeight.SemiBold,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            modifier = Modifier
+                .clickable(onClick = onClick)
+                .testTag(POINTIQ_PRIVACY_POLICY_LINK_TEST_TAG),
+        )
+        Text(
+            text = ".",
+            color = SignUpSecondary,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+        )
     }
 }
 

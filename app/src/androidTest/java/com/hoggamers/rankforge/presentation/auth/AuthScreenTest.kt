@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.auth
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -15,6 +17,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -23,6 +26,7 @@ import com.hoggamers.rankforge.R
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
 import com.hoggamers.rankforge.presentation.theme.RankForgeTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -171,6 +175,51 @@ class AuthScreenTest {
         composeTestRule.onAllNodesWithText("You can still use local tournaments without signing in.")
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Continue without signing in").assertCountEquals(0)
+    }
+
+    @Test
+    fun pointIqSignUpPrivacyPolicyLinkOpensThePublicPolicy() {
+        var privacyPolicyClicks = 0
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                PointIqSignUpScreen(
+                    uiState = AuthUiState(mode = AuthMode.SignUp),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onGoogleSignIn = {},
+                    onOpenPrivacyPolicy = { privacyPolicyClicks += 1 },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.pointiq_signup_privacy_policy_prefix),
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(POINTIQ_PRIVACY_POLICY_LINK_TEST_TAG)
+            .assertIsDisplayed()
+            .performClick()
+
+        val privacyPolicyBottom = composeTestRule
+            .onNodeWithTag(POINTIQ_PRIVACY_POLICY_LINK_TEST_TAG)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .bottom
+        val screenBottom = composeTestRule
+            .onRoot()
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .bottom
+        assertTrue(privacyPolicyBottom >= screenBottom - 100f)
+
+        assertEquals(1, privacyPolicyClicks)
+        assertEquals(Intent.ACTION_VIEW, buildPrivacyPolicyIntent().action)
+        assertEquals(
+            Uri.parse(POINTIQ_PRIVACY_POLICY_URL),
+            buildPrivacyPolicyIntent().data,
+        )
     }
 
     @Test

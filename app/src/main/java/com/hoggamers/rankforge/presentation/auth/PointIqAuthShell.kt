@@ -48,6 +48,7 @@ internal fun PointIqAuthShell(
     subtitle: String?,
     modifier: Modifier = Modifier,
     titleModifier: Modifier = Modifier,
+    footer: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     PointIqHomeSystemBars()
@@ -62,36 +63,45 @@ internal fun PointIqAuthShell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .imePadding()
                 .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.Start,
         ) {
-            PointIqBrandHeader(
-                icon = painterResource(R.drawable.pointiq_brand_mark),
-            )
-
-            Spacer(modifier = Modifier.height(22.dp))
-
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = PointIqHeader,
-                modifier = titleModifier,
-            )
-
-            if (!subtitle.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = PointIqSecondary,
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.Start,
+            ) {
+                PointIqBrandHeader(
+                    icon = painterResource(R.drawable.pointiq_brand_mark),
                 )
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = PointIqHeader,
+                    modifier = titleModifier,
+                )
+
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = PointIqSecondary,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(22.dp))
+                content()
             }
 
-            Spacer(modifier = Modifier.height(22.dp))
-            content()
+            footer()
         }
     }
 }

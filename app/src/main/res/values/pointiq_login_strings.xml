@@ -8,4 +8,5 @@
     <string name="pointiq_terms_service">Terms of Service</string>
     <string name="pointiq_terms_and"> and </string>
     <string name="pointiq_privacy_policy">Privacy Policy</string>
+    <string name="pointiq_signup_privacy_policy_prefix">By continuing, you acknowledge our </string>
 </resources>
