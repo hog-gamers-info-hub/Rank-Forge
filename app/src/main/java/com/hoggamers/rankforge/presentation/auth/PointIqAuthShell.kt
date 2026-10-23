@@ -83,6 +83,8 @@ internal fun PointIqAuthShell(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineLarge,
+                    fontSize = 28.sp,
+                    lineHeight = 34.sp,
                     fontWeight = FontWeight.Bold,
                     color = PointIqHeader,
                     modifier = titleModifier,
@@ -92,7 +94,7 @@ internal fun PointIqAuthShell(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = PointIqSecondary,
                     )
                 }

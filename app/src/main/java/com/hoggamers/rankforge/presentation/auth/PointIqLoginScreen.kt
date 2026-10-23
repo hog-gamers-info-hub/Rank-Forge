@@ -48,6 +48,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hoggamers.rankforge.R
 
 private val LoginText = Color(0xFFF6F8FF)
@@ -162,11 +163,17 @@ private fun PointIqEmailField(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
+            textStyle = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 16.sp,
+            ),
             singleLine = true,
             placeholder = {
                 Text(
                     text = stringResource(R.string.pointiq_email_placeholder),
                     color = LoginSecondary,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 16.sp,
+                    ),
                 )
             },
             leadingIcon = { PointIqMailIcon() },
@@ -175,6 +182,7 @@ private fun PointIqEmailField(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier
                 .fillMaxWidth()
+                .height(54.dp)
                 .testTag(AUTH_EMAIL_FIELD_TEST_TAG),
         )
     }
@@ -193,11 +201,17 @@ private fun PointIqPasswordField(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
+            textStyle = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 16.sp,
+            ),
             singleLine = true,
             placeholder = {
                 Text(
                     text = stringResource(R.string.pointiq_password_placeholder),
                     color = LoginSecondary,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 16.sp,
+                    ),
                 )
             },
             leadingIcon = { PointIqLockIcon() },
@@ -220,6 +234,7 @@ private fun PointIqPasswordField(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier
                 .fillMaxWidth()
+                .height(54.dp)
                 .testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
         )
     }
@@ -264,7 +279,7 @@ private fun PointIqPrimaryButton(
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .height(52.dp)
             .shadow(
                 elevation = 9.dp,
                 shape = shape,
@@ -277,6 +292,9 @@ private fun PointIqPrimaryButton(
         Box(modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = text,
+                style = androidx.compose.material3.MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 19.sp,
+                ),
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.align(Alignment.Center),
             )
@@ -303,6 +321,7 @@ private fun PointIqDivider() {
         Text(
             text = stringResource(R.string.auth_or_divider),
             color = LoginSecondary,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
         )
         HorizontalDivider(
             modifier = Modifier.weight(1f),
@@ -329,7 +348,7 @@ private fun PointIqGoogleButton(
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .height(52.dp)
             .testTag(AUTH_GOOGLE_SIGN_IN_ACTION_TEST_TAG),
     ) {
         Image(
@@ -340,6 +359,9 @@ private fun PointIqGoogleButton(
         Spacer(modifier = Modifier.size(12.dp))
         Text(
             text = stringResource(R.string.auth_google_continue_action),
+            style = androidx.compose.material3.MaterialTheme.typography.labelMedium.copy(
+                fontSize = 18.sp,
+            ),
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -357,12 +379,13 @@ private fun PointIqSignUpPrompt(
         Text(
             text = stringResource(R.string.pointiq_no_account_prompt),
             color = LoginSecondary,
-            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
         )
         TextButton(onClick = onSignUp) {
             Text(
                 text = stringResource(R.string.auth_signup_mode),
                 color = LoginCyan,
+                style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
             )
         }
