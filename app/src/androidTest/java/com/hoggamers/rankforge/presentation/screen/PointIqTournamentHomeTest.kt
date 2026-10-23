@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -100,7 +101,11 @@ class PointIqTournamentHomeTest {
     @Test
     fun feedbackActionIsFloatingAtBottomLeftAndUsesTheFeedbackUrl() {
         var feedbackClickCount = 0
+        var navigationBarInsetPx = 0f
         composeTestRule.setContent {
+            navigationBarInsetPx = WindowInsets.navigationBars
+                .getBottom(LocalDensity.current)
+                .toFloat()
             RankForgeTheme {
                 PointIqTournamentHomeContent(
                     uiState = TournamentListUiState(),
@@ -141,7 +146,6 @@ class PointIqTournamentHomeTest {
         )
         assertTrue(feedbackBounds.bottom <= screenBounds.bottom)
         assertTrue(feedbackBounds.bottom > screenBounds.bottom - 96f)
-        val navigationBarInsetPx = WindowInsets.navigationBars.getBottom(composeTestRule.density)
         assertTrue(
             feedbackPillBounds.bottom <= screenBounds.bottom -
                 navigationBarInsetPx -
