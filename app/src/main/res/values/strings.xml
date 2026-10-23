@@ -71,7 +71,7 @@
     <string name="auth_signed_in_message">Signed in.</string>
     <string name="auth_external_authentication_launched_message">Complete sign-in in your browser.</string>
     <string name="auth_signup_authenticated_message">Account created and signed in.</string>
-    <string name="auth_signup_confirmation_required_message">Check your email to confirm your account before signing in.</string>
+    <string name="auth_signup_confirmation_required_message">If this email is eligible for registration, check your inbox for a confirmation link. Already have an account? Log in or reset your password.</string>
     <string name="auth_signed_out_message">Signed out.</string>
     <string name="auth_logout_remote_warning">Signed out on this device. Remote session revocation could not be confirmed.</string>
     <string name="auth_restoration_network_warning">Could not verify the saved session because the network is unavailable. Sign in again when the connection is restored.</string>

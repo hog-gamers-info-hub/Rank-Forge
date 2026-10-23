@@ -483,7 +483,7 @@ class AuthScreenTest {
     }
 
     @Test
-    fun signUpOutcomesUseDistinctMessages() {
+    fun confirmationRequiredSignupUsesEligibilitySafeMessage() {
         composeTestRule.setContent {
             RankForgeTheme {
                 AuthScreen(
@@ -499,9 +499,15 @@ class AuthScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText(
-            context.getString(R.string.auth_signup_confirmation_required_message),
-        ).assertIsDisplayed()
+        val confirmationMessage = context.getString(
+            R.string.auth_signup_confirmation_required_message,
+        )
+        assertEquals(
+            "If this email is eligible for registration, check your inbox for a confirmation link. " +
+                "Already have an account? Log in or reset your password.",
+            confirmationMessage,
+        )
+        composeTestRule.onNodeWithText(confirmationMessage).assertIsDisplayed()
         composeTestRule.onNodeWithTag(AUTH_STATUS_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(AUTH_ERROR_TEST_TAG).assertCountEquals(0)
     }

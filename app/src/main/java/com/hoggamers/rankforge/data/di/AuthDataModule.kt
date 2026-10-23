@@ -10,8 +10,6 @@ import com.hoggamers.rankforge.data.auth.SupabaseAuthRemoteDataSource
 import com.hoggamers.rankforge.data.auth.SupabaseAuthRepository
 import com.hoggamers.rankforge.data.auth.SupabaseAuthSessionProbe
 import com.hoggamers.rankforge.data.auth.SupabaseClientAuthSessionProbe
-import com.hoggamers.rankforge.data.auth.SignupEmailRegistrationStatusHttpTransport
-import com.hoggamers.rankforge.data.auth.UrlConnectionSignupEmailRegistrationStatusHttpTransport
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
 import com.hoggamers.rankforge.data.auth.SupabaseAccountDeletionRepository
@@ -62,12 +60,6 @@ abstract class AuthDataBindingsModule {
     abstract fun bindAuthRemoteDataSource(
         dataSource: SupabaseAuthRemoteDataSource,
     ): AuthRemoteDataSource
-
-    @Binds
-    @Singleton
-    abstract fun bindSignupEmailRegistrationStatusHttpTransport(
-        transport: UrlConnectionSignupEmailRegistrationStatusHttpTransport,
-    ): SignupEmailRegistrationStatusHttpTransport
 
     @Binds
     @Singleton
