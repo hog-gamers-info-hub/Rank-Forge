@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.R
@@ -65,6 +66,45 @@ class AuthScreenTest {
         composeTestRule.onAllNodesWithText("You can use local tournaments without signing in.")
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Continue without signing in").assertCountEquals(0)
+    }
+
+    @Test
+    fun pointIqLoginPlaceholdersHideOnFocusAndReturnWhenEmptyLosesFocus() {
+        var uiState by mutableStateOf(AuthUiState())
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                PointIqLoginScreen(
+                    uiState = uiState,
+                    onModeSelected = {},
+                    onEmailChanged = { email -> uiState = uiState.copy(email = email) },
+                    onPasswordChanged = { password -> uiState = uiState.copy(password = password) },
+                    onSubmit = {},
+                    onGoogleSignIn = {},
+                    onBeginPasswordRecovery = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.pointiq_email_placeholder))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(context.getString(R.string.pointiq_password_placeholder))
+            .assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithText(context.getString(R.string.pointiq_email_placeholder))
+            .assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).performClick()
+        composeTestRule.onNodeWithText(context.getString(R.string.pointiq_email_placeholder))
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithText(context.getString(R.string.pointiq_password_placeholder))
+            .assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).performTextInput("a")
+        composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithText(context.getString(R.string.pointiq_password_placeholder))
+            .assertCountEquals(0)
     }
 
     @Test
@@ -223,6 +263,77 @@ class AuthScreenTest {
     }
 
     @Test
+    fun pointIqSignUpPasswordRequirementsUpdateAndGateSubmission() {
+        var uiState by mutableStateOf(AuthUiState(mode = AuthMode.SignUp))
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                PointIqSignUpScreen(
+                    uiState = uiState,
+                    onModeSelected = { mode -> uiState = uiState.copy(mode = mode) },
+                    onEmailChanged = { email -> uiState = uiState.copy(email = email) },
+                    onPasswordChanged = { password -> uiState = uiState.copy(password = password) },
+                    onSubmit = {},
+                    onGoogleSignIn = {},
+                    onOpenPrivacyPolicy = {},
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithText(context.getString(R.string.pointiq_signup_password_placeholder))
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG)
+            .performTextInput("new@example.com")
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).performClick()
+
+        composeTestRule.onNodeWithTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithText(
+            context.getString(R.string.pointiq_signup_password_placeholder),
+        ).assertCountEquals(0)
+
+        composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithText(context.getString(R.string.pointiq_signup_password_placeholder))
+            .assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG)
+            .performTextInput("Abc")
+
+        composeTestRule.onNodeWithTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_SUBMIT_ACTION_TEST_TAG).assertIsNotEnabled()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.pointiq_signup_password_requirement_digit),
+        ).assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG)
+            .performTextReplacement("Abcdefghi1")
+
+        composeTestRule.onNodeWithTag(AUTH_SUBMIT_ACTION_TEST_TAG).assertIsEnabled()
+        composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG)
+            .assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG)
+            .performTextReplacement("")
+        composeTestRule.onNodeWithTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(AUTH_SUBMIT_ACTION_TEST_TAG).assertIsNotEnabled()
+
+        composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG).performClick()
+        composeTestRule.onAllNodesWithTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithText(context.getString(R.string.pointiq_signup_password_placeholder))
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun signUpModeAcceptsCredentialsWithoutRealSupabaseCredentials() {
         var uiState by mutableStateOf(AuthUiState())
         var submitCount by mutableIntStateOf(0)
@@ -243,7 +354,7 @@ class AuthScreenTest {
         composeTestRule.onNodeWithText(context.getString(R.string.auth_signup_mode)).performClick()
         composeTestRule.onNodeWithText(context.getString(R.string.auth_create_account_action)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG).performTextInput("new@example.com")
-        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).performTextInput("password")
+        composeTestRule.onNodeWithTag(AUTH_PASSWORD_FIELD_TEST_TAG).performTextInput("Abcdefghi1")
         composeTestRule.onNodeWithTag(AUTH_SUBMIT_ACTION_TEST_TAG).performClick()
 
         assertEquals(AuthMode.SignUp, uiState.mode)
@@ -310,7 +421,7 @@ class AuthScreenTest {
                     uiState = AuthUiState(
                         mode = AuthMode.SignUp,
                         email = "new@example.com",
-                        password = "password",
+                        password = "Abcdefghi1",
                         isSubmitting = true,
                     ),
                     onModeSelected = {},

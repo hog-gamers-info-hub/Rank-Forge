@@ -25,7 +25,11 @@ data class AuthUiState(
         get() = passwordRecoveryStage != PasswordRecoveryStage.NONE
 
     val canSubmit: Boolean =
-        email.isNotBlank() && password.isNotBlank() && !isSessionLoading && !isSubmitting
+        email.isNotBlank() &&
+            password.isNotBlank() &&
+            (mode != AuthMode.SignUp || validateSignupPassword(password).isValid) &&
+            !isSessionLoading &&
+            !isSubmitting
 
     val canRequestPasswordReset: Boolean =
         email.isNotBlank() && !isSubmitting

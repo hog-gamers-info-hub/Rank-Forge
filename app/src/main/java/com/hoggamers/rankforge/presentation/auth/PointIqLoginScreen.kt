@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -158,6 +159,8 @@ private fun PointIqEmailField(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
 ) {
+    var isFocused by remember { mutableStateOf(false) }
+
     CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(LoginAutofillHighlight)) {
         OutlinedTextField(
             value = value,
@@ -167,14 +170,18 @@ private fun PointIqEmailField(
                 fontSize = 16.sp,
             ),
             singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.pointiq_email_placeholder),
-                    color = LoginSecondary,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 16.sp,
-                    ),
-                )
+            placeholder = if (!isFocused && value.isEmpty()) {
+                {
+                    Text(
+                        text = stringResource(R.string.pointiq_email_placeholder),
+                        color = LoginSecondary,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 16.sp,
+                        ),
+                    )
+                }
+            } else {
+                null
             },
             leadingIcon = { PointIqMailIcon() },
             shape = RoundedCornerShape(16.dp),
@@ -183,6 +190,7 @@ private fun PointIqEmailField(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
+                .onFocusChanged { isFocused = it.isFocused }
                 .testTag(AUTH_EMAIL_FIELD_TEST_TAG),
         )
     }
@@ -195,6 +203,7 @@ private fun PointIqPasswordField(
     enabled: Boolean,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
 
     CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(LoginAutofillHighlight)) {
         OutlinedTextField(
@@ -205,14 +214,18 @@ private fun PointIqPasswordField(
                 fontSize = 16.sp,
             ),
             singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.pointiq_password_placeholder),
-                    color = LoginSecondary,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 16.sp,
-                    ),
-                )
+            placeholder = if (!isFocused && value.isEmpty()) {
+                {
+                    Text(
+                        text = stringResource(R.string.pointiq_password_placeholder),
+                        color = LoginSecondary,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 16.sp,
+                        ),
+                    )
+                }
+            } else {
+                null
             },
             leadingIcon = { PointIqLockIcon() },
             trailingIcon = {
@@ -235,6 +248,7 @@ private fun PointIqPasswordField(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
+                .onFocusChanged { isFocused = it.isFocused }
                 .testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
         )
     }
