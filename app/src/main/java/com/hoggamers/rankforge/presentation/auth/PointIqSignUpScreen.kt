@@ -8,10 +8,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -66,10 +69,13 @@ private val SignUpButtonEnd = Color(0xFF1675F0)
 private val SignUpButtonBorder = Color(0xFF4AAFF7)
 private val SignUpFieldSurface = Color(0xFF071B3E)
 private val SignUpAutofillHighlight = Color(0xFF0B2B55)
+private val SignUpValidationSuccess = Color(0xFF63D98F)
 
 internal const val POINTIQ_PRIVACY_POLICY_URL =
     "https://hog-gamers-info-hub.github.io/Rank-Forge/privacy-policy/"
 internal const val POINTIQ_PRIVACY_POLICY_LINK_TEST_TAG = "pointiq_privacy_policy_link"
+internal const val POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG =
+    "pointiq_signup_password_requirements"
 
 internal fun buildPrivacyPolicyIntent(): Intent =
     Intent(Intent.ACTION_VIEW, Uri.parse(POINTIQ_PRIVACY_POLICY_URL))
@@ -87,6 +93,7 @@ internal fun PointIqSignUpScreen(
     messages: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
+    var isPasswordFocused by remember { mutableStateOf(false) }
     val openPrivacyPolicy = onOpenPrivacyPolicy ?: {
         context.startActivity(buildPrivacyPolicyIntent())
     }
@@ -116,7 +123,14 @@ internal fun PointIqSignUpScreen(
             value = uiState.password,
             onValueChange = onPasswordChanged,
             enabled = !uiState.isSubmitting,
+            onFocusChanged = { isFocused -> isPasswordFocused = isFocused },
         )
+
+        if (uiState.password.isNotEmpty() || isPasswordFocused) {
+            PointIqSignupPasswordRequirements(
+                requirements = validateSignupPassword(uiState.password),
+            )
+        }
 
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -162,6 +176,8 @@ private fun PointIqSignUpEmailField(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
 ) {
+    var isFocused by remember { mutableStateOf(false) }
+
     CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(SignUpAutofillHighlight)) {
         OutlinedTextField(
             value = value,
@@ -171,14 +187,18 @@ private fun PointIqSignUpEmailField(
                 fontSize = 16.sp,
             ),
             singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.pointiq_email_placeholder),
-                    color = SignUpSecondary,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 16.sp,
-                    ),
-                )
+            placeholder = if (!isFocused && value.isEmpty()) {
+                {
+                    Text(
+                        text = stringResource(R.string.pointiq_email_placeholder),
+                        color = SignUpSecondary,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 16.sp,
+                        ),
+                    )
+                }
+            } else {
+                null
             },
             leadingIcon = { PointIqSignUpMailIcon() },
             shape = RoundedCornerShape(16.dp),
@@ -187,6 +207,7 @@ private fun PointIqSignUpEmailField(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
+                .onFocusChanged { isFocused = it.isFocused }
                 .testTag(AUTH_EMAIL_FIELD_TEST_TAG),
         )
     }
@@ -197,8 +218,10 @@ private fun PointIqSignUpPasswordField(
     value: String,
     onValueChange: (String) -> Unit,
     enabled: Boolean,
+    onFocusChanged: (Boolean) -> Unit,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
 
     CompositionLocalProvider(LocalAutofillHighlightBrush provides SolidColor(SignUpAutofillHighlight)) {
         OutlinedTextField(
@@ -209,14 +232,18 @@ private fun PointIqSignUpPasswordField(
                 fontSize = 16.sp,
             ),
             singleLine = true,
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.pointiq_password_placeholder),
-                    color = SignUpSecondary,
-                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 16.sp,
-                    ),
-                )
+            placeholder = if (!isFocused && value.isEmpty()) {
+                {
+                    Text(
+                        text = stringResource(R.string.pointiq_signup_password_placeholder),
+                        color = SignUpSecondary,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 16.sp,
+                        ),
+                    )
+                }
+            } else {
+                null
             },
             leadingIcon = { PointIqSignUpLockIcon() },
             trailingIcon = {
@@ -239,7 +266,80 @@ private fun PointIqSignUpPasswordField(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
+                .onFocusChanged {
+                    isFocused = it.isFocused
+                    onFocusChanged(it.isFocused)
+                }
                 .testTag(AUTH_PASSWORD_FIELD_TEST_TAG),
+        )
+    }
+}
+
+@Composable
+private fun PointIqSignupPasswordRequirements(
+    requirements: SignupPasswordRequirements,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+            .testTag(POINTIQ_SIGNUP_PASSWORD_REQUIREMENTS_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PointIqSignupPasswordRequirement(
+                text = stringResource(R.string.pointiq_signup_password_requirement_length),
+                isMet = requirements.hasMinimumLength,
+                modifier = Modifier.weight(1f),
+            )
+            PointIqSignupPasswordRequirement(
+                text = stringResource(R.string.pointiq_signup_password_requirement_digit),
+                isMet = requirements.hasDigit,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PointIqSignupPasswordRequirement(
+                text = stringResource(R.string.pointiq_signup_password_requirement_lowercase),
+                isMet = requirements.hasLowercase,
+                modifier = Modifier.weight(1f),
+            )
+            PointIqSignupPasswordRequirement(
+                text = stringResource(R.string.pointiq_signup_password_requirement_uppercase),
+                isMet = requirements.hasUppercase,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PointIqSignupPasswordRequirement(
+    text: String,
+    isMet: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = if (isMet) "✓" else "•",
+            color = if (isMet) SignUpValidationSuccess else SignUpSecondary.copy(alpha = 0.7f),
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = text,
+            color = SignUpSecondary,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
         )
     }
 }

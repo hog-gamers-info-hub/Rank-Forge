@@ -412,7 +412,7 @@ class AuthViewModelTest {
 
         viewModel.setMode(AuthMode.SignUp)
         viewModel.onEmailChanged("new@example.com")
-        viewModel.onPasswordChanged("password")
+        viewModel.onPasswordChanged("Abcdefghi1")
         viewModel.submit()
         advanceUntilIdle()
 
@@ -430,7 +430,7 @@ class AuthViewModelTest {
 
         viewModel.setMode(AuthMode.SignUp)
         viewModel.onEmailChanged("new@example.com")
-        viewModel.onPasswordChanged("password")
+        viewModel.onPasswordChanged("Abcdefghi1")
         viewModel.submit()
         advanceUntilIdle()
 
@@ -451,7 +451,7 @@ class AuthViewModelTest {
 
         viewModel.setMode(AuthMode.SignUp)
         viewModel.onEmailChanged("new@example.com")
-        viewModel.onPasswordChanged("password")
+        viewModel.onPasswordChanged("Abcdefghi1")
         viewModel.submit()
         advanceUntilIdle()
 
@@ -461,6 +461,21 @@ class AuthViewModelTest {
             viewModel.uiState.value.errorMessage,
         )
         assertNull(viewModel.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun invalidSignupPasswordDoesNotInvokeRepository() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setMode(AuthMode.SignUp)
+        viewModel.onEmailChanged("new@example.com")
+        viewModel.onPasswordChanged("password")
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(0, repository.signUpCalls)
+        assertFalse(viewModel.uiState.value.isSignedIn)
     }
 
     @Test
@@ -1385,6 +1400,7 @@ class AuthViewModelTest {
         var signUpResult: AuthOperationResult = AuthOperationResult.Success(
             AuthSuccessOutcome.SignUpAuthenticated,
         )
+        var signUpCalls: Int = 0
         var loginResult: AuthOperationResult = AuthOperationResult.Success(AuthSuccessOutcome.SignedIn)
         var loginGate: CompletableDeferred<Unit>? = null
         var loginCalls: Int = 0
@@ -1428,7 +1444,10 @@ class AuthViewModelTest {
         override suspend fun signUp(
             email: String,
             password: String,
-        ): AuthOperationResult = signUpResult
+        ): AuthOperationResult {
+            signUpCalls += 1
+            return signUpResult
+        }
 
         override suspend fun login(
             email: String,

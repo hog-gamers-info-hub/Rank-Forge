@@ -2,6 +2,11 @@
 <resources>
     <string name="pointiq_email_placeholder">Enter your email</string>
     <string name="pointiq_password_placeholder">Enter your password</string>
+    <string name="pointiq_signup_password_placeholder">Create your password</string>
+    <string name="pointiq_signup_password_requirement_length">At least 10 characters</string>
+    <string name="pointiq_signup_password_requirement_uppercase">At least one uppercase letter (A–Z)</string>
+    <string name="pointiq_signup_password_requirement_lowercase">At least one lowercase letter (a–z)</string>
+    <string name="pointiq_signup_password_requirement_digit">At least one digit (0–9)</string>
     <string name="pointiq_no_account_prompt">Don’t have an account?</string>
     <string name="pointiq_security_message">Your data is secure with us.</string>
     <string name="pointiq_terms_prefix">By continuing, you agree to our </string>

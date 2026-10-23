@@ -317,6 +317,14 @@ class AuthViewModel @Inject constructor(
 
     fun submit() {
         val currentState = _uiState.value
+        if (
+            currentState.mode == AuthMode.SignUp &&
+            currentState.email.isNotBlank() &&
+            currentState.password.isNotBlank() &&
+            !validateSignupPassword(currentState.password).isValid
+        ) {
+            return
+        }
         if (!currentState.canSubmit) {
             _uiState.update { it.copy(errorMessage = AuthUiMessage.MissingCredentials) }
             return
