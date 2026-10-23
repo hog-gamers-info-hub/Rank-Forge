@@ -52,6 +52,17 @@ class AuthFailureMapperTest {
     }
 
     @Test
+    fun mapsSignupDuplicateFailureToNeutralCategory() {
+        assertEquals(
+            AuthFailureCategory.UnknownAuthenticationFailure,
+            AuthFailureMapper.map(
+                IllegalStateException("User already registered"),
+                AuthFailureContext.SignUp,
+            ).category,
+        )
+    }
+
+    @Test
     fun mapsEveryApprovedFailureCategoryToStableDomainCategory() {
         val cases = listOf(
             IllegalStateException("Invalid login credentials") to AuthFailureCategory.InvalidCredentials,

@@ -74,7 +74,11 @@ internal object AuthFailureMapper {
                 AuthFailure(AuthFailureCategory.WeakPassword)
             classificationText.contains("already registered") ||
                 classificationText.contains("already exists") ->
-                AuthFailure(AuthFailureCategory.AccountAlreadyRegistered)
+                if (context == AuthFailureContext.SignUp) {
+                    AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure)
+                } else {
+                    AuthFailure(AuthFailureCategory.AccountAlreadyRegistered)
+                }
             classificationText.contains("confirmation required") ||
                 classificationText.contains("confirm your email") ||
                 classificationText.contains("email not confirmed") ->

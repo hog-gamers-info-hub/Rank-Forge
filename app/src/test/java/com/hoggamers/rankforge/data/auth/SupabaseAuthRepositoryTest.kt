@@ -16,6 +16,37 @@ import org.junit.Test
 
 class SupabaseAuthRepositoryTest {
     @Test
+    fun emailSignupDelegatesToAuthRemoteDataSource() = runTest {
+        val remoteDataSource = FakeAuthRemoteDataSource()
+        val repository = SupabaseAuthRepository(remoteDataSource)
+
+        assertEquals(
+            AuthOperationResult.Success(AuthSuccessOutcome.SignUpAuthenticated),
+            repository.signUp("new@example.com", "password"),
+        )
+        assertEquals(
+            listOf("new@example.com" to "password"),
+            remoteDataSource.signUpCalls,
+        )
+    }
+
+    @Test
+    fun emailSignupDuplicateFailureUsesNeutralCategory() = runTest {
+        val repository = SupabaseAuthRepository(
+            FakeAuthRemoteDataSource(
+                signUpFailure = IllegalStateException("User already registered"),
+            ),
+        )
+
+        assertEquals(
+            AuthOperationResult.Failure(
+                AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+            ),
+            repository.signUp("existing@example.com", "password"),
+        )
+    }
+
+    @Test
     fun googleLaunchMapsToNonAuthenticatedOutcome() = runTest {
         val repository = SupabaseAuthRepository(FakeAuthRemoteDataSource())
 
@@ -96,10 +127,13 @@ class SupabaseAuthRepositoryTest {
     }
 
     private class FakeAuthRemoteDataSource(
+        private val signUpFailure: Throwable? = null,
         private val googleFailure: Throwable? = null,
         private val passwordResetFailure: Throwable? = null,
         private val passwordUpdateFailure: Throwable? = null,
     ) : AuthRemoteDataSource {
+        val signUpCalls = mutableListOf<Pair<String, String>>()
+
         override fun observeAuthState(): Flow<AuthState> = emptyFlow()
 
         override suspend fun restoreSession(): AuthRestorationResult =
@@ -108,7 +142,11 @@ class SupabaseAuthRepositoryTest {
         override suspend fun signUp(
             email: String,
             password: String,
-        ): AuthSuccessOutcome = AuthSuccessOutcome.SignUpAuthenticated
+        ): AuthSuccessOutcome {
+            signUpCalls += email to password
+            signUpFailure?.let { throw it }
+            return AuthSuccessOutcome.SignUpAuthenticated
+        }
 
         override suspend fun login(email: String, password: String) = Unit
 
