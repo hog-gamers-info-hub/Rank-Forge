@@ -3,6 +3,8 @@ package com.hoggamers.rankforge.presentation.auth
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.auth.AuthFirstLaunchStore
+import com.hoggamers.rankforge.data.auth.NoOpAuthFirstLaunchStore
 import com.hoggamers.rankforge.domain.auth.LoginUseCase
 import com.hoggamers.rankforge.domain.auth.LogoutUseCase
 import com.hoggamers.rankforge.domain.auth.ObserveAuthStateUseCase
@@ -60,10 +62,13 @@ class AuthViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val authRestorationConnectivityCoordinator: AuthRestorationConnectivityCoordinator =
         AuthRestorationConnectivityCoordinator(),
+    private val authFirstLaunchStore: AuthFirstLaunchStore = NoOpAuthFirstLaunchStore,
 ) : ViewModel() {
     private val restorationMutex = Mutex()
+    private val isFirstLaunch = authFirstLaunchStore.consumeFirstLaunch()
     private val _uiState = MutableStateFlow(
         AuthUiState(
+            mode = if (isFirstLaunch) AuthMode.SignUp else AuthMode.Login,
             isSessionLoading = true,
             accountDeletionState = when (savedStateHandle.get<String>(ACCOUNT_DELETION_STATE_KEY)) {
                 AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP.name ->
@@ -362,7 +367,10 @@ class AuthViewModel @Inject constructor(
                 when (result) {
                     is AuthOperationResult.Success ->
                         AuthUiStateReducer.finishOperation(
-                            currentState = state.copy(password = ""),
+                            currentState = state.copy(
+                                mode = AuthMode.Login,
+                                password = "",
+                            ),
                             result = result,
                         )
                     is AuthOperationResult.Failure -> state.copy(

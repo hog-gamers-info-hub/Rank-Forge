@@ -393,13 +393,17 @@ private fun PointIqSignUpPrompt(
         Text(
             text = stringResource(R.string.pointiq_no_account_prompt),
             color = LoginSecondary,
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall.copy(
+                fontSize = 14.sp,
+            ),
         )
         TextButton(onClick = onSignUp) {
             Text(
                 text = stringResource(R.string.auth_signup_mode),
                 color = LoginCyan,
-                style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                style = androidx.compose.material3.MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 14.sp,
+                ),
                 fontWeight = FontWeight.SemiBold,
             )
         }
