@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.presentation.auth
 
 import androidx.lifecycle.SavedStateHandle
+import com.hoggamers.rankforge.data.auth.AuthFirstLaunchStore
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.auth.AuthFailure
 import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
@@ -147,6 +148,51 @@ class AuthViewModelTest {
         assertFalse(viewModel.uiState.value.isSignedIn)
         assertEquals(null, viewModel.uiState.value.errorMessage)
         assertEquals(0, recoveryCalls)
+    }
+
+    @Test
+    fun firstLaunchWithoutSessionStartsInSignUpMode() = runTest {
+        repository.restoreResult = AuthRestorationResult.NoSavedSession
+
+        val viewModel = createViewModel(
+            firstLaunchStore = AuthFirstLaunchStore { true },
+        )
+        advanceUntilIdle()
+
+        assertEquals(AuthMode.SignUp, viewModel.uiState.value.mode)
+        assertFalse(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun restoredSessionTakesPriorityOverFirstLaunchMode() = runTest {
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser(id = "user-id", email = "stored@example.com"),
+        )
+
+        val viewModel = createViewModel(
+            firstLaunchStore = AuthFirstLaunchStore { true },
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isSignedIn)
+    }
+
+    @Test
+    fun logoutReturnsReturningUserToLoginMode() = runTest {
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser(id = "user-id", email = "stored@example.com"),
+        )
+
+        val viewModel = createViewModel(
+            firstLaunchStore = AuthFirstLaunchStore { true },
+        )
+        advanceUntilIdle()
+        viewModel.setMode(AuthMode.SignUp)
+        viewModel.logout()
+        advanceUntilIdle()
+
+        assertEquals(AuthMode.Login, viewModel.uiState.value.mode)
+        assertFalse(viewModel.uiState.value.isSignedIn)
     }
 
     @Test
@@ -1261,6 +1307,7 @@ class AuthViewModelTest {
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
         connectivityCoordinator: AuthRestorationConnectivityCoordinator =
             AuthRestorationConnectivityCoordinator(),
+        firstLaunchStore: AuthFirstLaunchStore = AuthFirstLaunchStore { false },
     ): AuthViewModel =
         AuthViewModel(
             observeAuthState = ObserveAuthStateUseCase(repository),
@@ -1278,6 +1325,7 @@ class AuthViewModelTest {
             accountDeletionLocalCleanupRepository = accountDeletionLocalCleanupRepository,
             savedStateHandle = savedStateHandle,
             authRestorationConnectivityCoordinator = connectivityCoordinator,
+            authFirstLaunchStore = firstLaunchStore,
         )
 
     private fun noOpReconciliation() = ReconcileLegacyTournamentOwnershipUseCase(

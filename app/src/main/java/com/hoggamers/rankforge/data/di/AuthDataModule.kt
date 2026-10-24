@@ -1,6 +1,7 @@
 package com.hoggamers.rankforge.data.di
 
 import com.hoggamers.rankforge.data.auth.AuthRemoteDataSource
+import com.hoggamers.rankforge.data.auth.AuthFirstLaunchStore
 import com.hoggamers.rankforge.data.auth.AccountDeletionAccessTokenProvider
 import com.hoggamers.rankforge.data.auth.SupabaseAccountDeletionAccessTokenProvider
 import com.hoggamers.rankforge.data.auth.AccountDeletionHttpTransport
@@ -10,6 +11,7 @@ import com.hoggamers.rankforge.data.auth.SupabaseAuthRemoteDataSource
 import com.hoggamers.rankforge.data.auth.SupabaseAuthRepository
 import com.hoggamers.rankforge.data.auth.SupabaseAuthSessionProbe
 import com.hoggamers.rankforge.data.auth.SupabaseClientAuthSessionProbe
+import com.hoggamers.rankforge.data.auth.SharedPreferencesAuthFirstLaunchStore
 import com.hoggamers.rankforge.domain.auth.AuthRepository
 import com.hoggamers.rankforge.domain.auth.AccountDeletionRepository
 import com.hoggamers.rankforge.data.auth.SupabaseAccountDeletionRepository
@@ -31,6 +33,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AuthDataBindingsModule {
+    @Binds
+    @Singleton
+    abstract fun bindAuthFirstLaunchStore(
+        store: SharedPreferencesAuthFirstLaunchStore,
+    ): AuthFirstLaunchStore
+
     @Binds
     @Singleton
     abstract fun bindSupabaseAuthSessionProbe(
