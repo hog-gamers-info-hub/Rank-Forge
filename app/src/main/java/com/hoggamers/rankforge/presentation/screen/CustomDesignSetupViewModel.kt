@@ -4,6 +4,10 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.BuildConfig
+import com.hoggamers.rankforge.data.activity.ActivityEventTracker
+import com.hoggamers.rankforge.data.activity.ActivityEventType
+import com.hoggamers.rankforge.data.activity.NoOpActivityEventTracker
+import com.hoggamers.rankforge.data.activity.recordBestEffort
 import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteAction
 import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteFailure
 import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteResult
@@ -54,6 +58,7 @@ class CustomDesignSetupViewModel @Inject constructor(
     private val customDesignRestoreAction: CustomDesignRestoreAction,
     private val customDesignDeleteAction: CustomDesignDeleteAction,
     private val customDesignSavedIdDiscoveryAction: CustomDesignSavedIdDiscoveryAction,
+    private val activityEventTracker: ActivityEventTracker = NoOpActivityEventTracker,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CustomDesignSetupUiState())
     val uiState: StateFlow<CustomDesignSetupUiState> = _uiState.asStateFlow()
@@ -169,17 +174,25 @@ class CustomDesignSetupViewModel @Inject constructor(
                 CustomDesignSaveResult.Failed(CustomDesignSaveFailure.DATABASE_INSERT)
             }
             if (generation != saveGeneration) return@launch
-            _uiState.update {
-                when (result) {
-                    is CustomDesignSaveResult.Success -> it.copy(
+            if (result is CustomDesignSaveResult.Success) {
+                _uiState.update {
+                    it.copy(
                         saveStatus = CustomDesignSaveStatus.SAVED,
                         savedCustomDesignId = result.customDesignId,
                     )
-                    is CustomDesignSaveResult.Failed -> it.copy(
-                        saveStatus = CustomDesignSaveStatus.FAILED,
-                    )
+                }
+                recordActivityEvent(ActivityEventType.CUSTOM_DESIGN_SAVED)
+            } else {
+                _uiState.update {
+                    it.copy(saveStatus = CustomDesignSaveStatus.FAILED)
                 }
             }
+        }
+    }
+
+    private fun recordActivityEvent(event: ActivityEventType) {
+        viewModelScope.launch {
+            activityEventTracker.recordBestEffort(event)
         }
     }
 

@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import com.hoggamers.rankforge.data.activity.ActivityEventType
+import com.hoggamers.rankforge.data.activity.RecordingActivityEventTracker
 import com.hoggamers.rankforge.data.cloud.CustomDesignSaveAction
 import com.hoggamers.rankforge.data.cloud.CustomDesignSaveFailure
 import com.hoggamers.rankforge.data.cloud.CustomDesignSaveRequest
@@ -236,10 +238,12 @@ class CustomDesignSetupViewModelTest {
 
     @Test
     fun saveSuccessAcknowledgementReturnsToIdleAndPreservesSavedDesign() = runTest {
+        val activityTracker = RecordingActivityEventTracker()
         val viewModel = viewModel(
             saveAction = CustomDesignSaveAction {
                 CustomDesignSaveResult.Success("saved-id", "saved-path")
             },
+            activityEventTracker = activityTracker,
         )
 
         selectImage(viewModel)
@@ -248,6 +252,7 @@ class CustomDesignSetupViewModelTest {
         advanceUntilIdle()
 
         assertEquals(CustomDesignSaveStatus.SAVED, viewModel.uiState.value.saveStatus)
+        assertEquals(listOf(ActivityEventType.CUSTOM_DESIGN_SAVED), activityTracker.events)
         viewModel.onSaveSuccessMessageHandled()
 
         assertEquals(CustomDesignSaveStatus.IDLE, viewModel.uiState.value.saveStatus)
@@ -1184,6 +1189,8 @@ class CustomDesignSetupViewModelTest {
         discoveryAction: CustomDesignSavedIdDiscoveryAction = CustomDesignSavedIdDiscoveryAction {
             CustomDesignSavedIdDiscoveryResult.None
         },
+        activityEventTracker: com.hoggamers.rankforge.data.activity.ActivityEventTracker =
+            com.hoggamers.rankforge.data.activity.NoOpActivityEventTracker,
     ) = CustomDesignSetupViewModel(
         imageCandidateValidator = ImageCandidateValidator(readResult),
         customDesignOcrRunner = runner,
@@ -1193,6 +1200,7 @@ class CustomDesignSetupViewModelTest {
         customDesignRestoreAction = restoreAction,
         customDesignDeleteAction = deleteAction,
         customDesignSavedIdDiscoveryAction = discoveryAction,
+        activityEventTracker = activityEventTracker,
     )
 
     private fun selectImage(

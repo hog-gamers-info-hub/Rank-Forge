@@ -2,6 +2,10 @@ package com.hoggamers.rankforge.presentation.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hoggamers.rankforge.data.activity.ActivityEventTracker
+import com.hoggamers.rankforge.data.activity.ActivityEventType
+import com.hoggamers.rankforge.data.activity.NoOpActivityEventTracker
+import com.hoggamers.rankforge.data.activity.recordBestEffort
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsSharePublicationResult
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareRemoteDataSource
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
@@ -29,6 +33,7 @@ class TournamentStandingsViewModel @Inject constructor(
     private val cumulativeStandings: CumulativeTournamentStandingsEngine,
     private val tieBreakRules: TieBreakRules,
     private val shareRemoteDataSource: TournamentStandingsShareRemoteDataSource,
+    private val activityEventTracker: ActivityEventTracker = NoOpActivityEventTracker,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TournamentStandingsUiState())
     val uiState: StateFlow<TournamentStandingsUiState> = _uiState.asStateFlow()
@@ -83,10 +88,12 @@ class TournamentStandingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 when (val result = shareRemoteDataSource.publish(tournamentId, rows)) {
-                    is TournamentStandingsSharePublicationResult.Success ->
+                    is TournamentStandingsSharePublicationResult.Success -> {
+                        recordActivityEvent(ActivityEventType.STANDINGS_SHARE_INITIATED)
                         shareEventsChannel.send(
                             TournamentStandingsShareEvent.ShareUrl(result.publicUrl),
                         )
+                    }
 
                     is TournamentStandingsSharePublicationResult.Failure ->
                         shareEventsChannel.send(TournamentStandingsShareEvent.ShareFailed)
@@ -94,6 +101,12 @@ class TournamentStandingsViewModel @Inject constructor(
             } finally {
                 _uiState.update { it.copy(isPublishing = false) }
             }
+        }
+    }
+
+    private fun recordActivityEvent(event: ActivityEventType) {
+        viewModelScope.launch {
+            activityEventTracker.recordBestEffort(event)
         }
     }
 }
