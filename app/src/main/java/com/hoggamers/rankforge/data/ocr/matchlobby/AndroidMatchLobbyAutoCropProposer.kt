@@ -2,9 +2,12 @@ package com.hoggamers.rankforge.data.ocr.matchlobby
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Rect
+import android.util.Log
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.data.ocr.MlKitTextRecognizerFactory
 import com.hoggamers.rankforge.data.ocr.toRawOcrBlocks
 import com.hoggamers.rankforge.data.ocr.preprocessing.AndroidOcrImageEnhancer
@@ -31,6 +34,8 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+
+private const val LOBBY_MLKIT_RAW_LOG_TAG = "LOBBY_MLKIT_RAW"
 
 @Singleton
 class AndroidMatchLobbyAutoCropProposer @Inject constructor(
@@ -123,7 +128,7 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
         }
         val recognizedText = try {
             try {
-                recognizer.process(inputImage).awaitText()
+                recognizer.process(inputImage).awaitText().also(::logRawMlKitText)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Throwable) {
@@ -137,6 +142,35 @@ class AndroidMatchLobbyAutoCropProposer @Inject constructor(
             AutoCropDecision.RetryWithEnhancement -> AutoCropAttempt.RetryWithEnhancement
             AutoCropDecision.NoProposal -> AutoCropAttempt.CompletedNoProposal
         }
+    }
+
+    private fun logRawMlKitText(recognizedText: Text) {
+        if (!BuildConfig.DEBUG) return
+        try {
+            recognizedText.textBlocks.forEach { block ->
+                logRawMlKitObservation(block.text, block.boundingBox)
+                block.lines.forEach { line ->
+                    logRawMlKitObservation(line.text, line.boundingBox)
+                    line.elements.forEach { element ->
+                        logRawMlKitObservation(element.text, element.boundingBox)
+                    }
+                }
+            }
+        } catch (_: RuntimeException) {
+            // Diagnostics must never affect the OCR result or production control flow.
+        }
+    }
+
+    private fun logRawMlKitObservation(
+        text: String,
+        boundingBox: Rect?,
+    ) {
+        val escapedText = text.replace("\r", "\\r").replace("\n", "\\n")
+        Log.d(
+            LOBBY_MLKIT_RAW_LOG_TAG,
+            "text=$escapedText left=${boundingBox?.left} top=${boundingBox?.top} " +
+                "right=${boundingBox?.right} bottom=${boundingBox?.bottom}",
+        )
     }
 
     private fun calculateDecision(
