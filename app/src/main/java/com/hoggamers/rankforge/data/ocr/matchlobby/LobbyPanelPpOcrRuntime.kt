@@ -2,6 +2,8 @@ package com.hoggamers.rankforge.data.ocr.matchlobby
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
+import com.hoggamers.rankforge.BuildConfig
 import com.hoggamers.rankforge.domain.ocr.extraction.RawOcrBoundingBox
 import com.paddle.ocr.PaddleOCR
 import com.paddle.ocr.model.OCRRunResult
@@ -10,6 +12,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+private const val LOBBY_PP_RAW_LOG_TAG = "LOBBY_PP_RAW"
 
 data class LobbyPanelPpOcrRecognition(
     val fragments: List<LobbyPanelPpFragment>,
@@ -78,6 +82,7 @@ class AndroidLobbyPanelPpOcrRuntime @Inject constructor(
             "Whole-panel PP-OCR input must be a valid bitmap."
         }
         val result = engineSession.recognize(panelBitmap)
+        logRawPpOcrResult(result)
         val recognition = LobbyPanelPpOcrRecognition(
             fragments = result.results.mapIndexedNotNull { index, item ->
                 val points = item.box.points
@@ -98,6 +103,26 @@ class AndroidLobbyPanelPpOcrRuntime @Inject constructor(
             },
         )
         return recognition
+    }
+
+    private fun logRawPpOcrResult(result: OCRRunResult) {
+        if (!BuildConfig.DEBUG) return
+        try {
+            result.results.forEach { item ->
+                val points = item.box.points
+                val left = points.minOfOrNull { it.x }
+                val top = points.minOfOrNull { it.y }
+                val right = points.maxOfOrNull { it.x }
+                val bottom = points.maxOfOrNull { it.y }
+                val escapedText = item.text.replace("\r", "\\r").replace("\n", "\\n")
+                Log.d(
+                    LOBBY_PP_RAW_LOG_TAG,
+                    "text=$escapedText left=$left top=$top right=$right bottom=$bottom",
+                )
+            }
+        } catch (_: RuntimeException) {
+            // Diagnostics must never affect the OCR result or production control flow.
+        }
     }
 }
 
