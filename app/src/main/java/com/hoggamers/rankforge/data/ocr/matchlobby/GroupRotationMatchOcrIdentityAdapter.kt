@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.data.ocr.matchlobby
 
+import com.hoggamers.rankforge.domain.matching.ResultLobbySlotAssignmentEvaluator
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionReason
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionStatus
 import com.hoggamers.rankforge.domain.matching.ResultLobbySlotMatcher
@@ -202,29 +203,26 @@ internal object GroupRotationMatchOcrIdentityAdapter {
                     playerNames = team.playerNames,
                 )
             }
-        val usedAutomaticTeamUuids = mutableSetOf<String>()
+        val matchResultsByPosition = resultRows
+            .map { resultRow ->
+                resultRow.position to ResultLobbySlotMatcher.rank(
+                    ResultLobbySlotMatchInput(
+                        resultPosition = resultRow.position,
+                        resultPlayerNames = resultPlayerNames(resultRow),
+                        lobbyCandidates = candidates,
+                    ),
+                )
+            }
+            .toMap()
+        val assignmentsByPosition = ResultLobbySlotAssignmentEvaluator
+            .evaluate(matchResultsByPosition.values.toList())
+            .rows
+            .associateBy { it.resultPosition }
         val suggestions = resultRows.sortedBy { it.position }.map { resultRow ->
-            val match = ResultLobbySlotMatcher.rank(
-                ResultLobbySlotMatchInput(
-                    resultPosition = resultRow.position,
-                    resultPlayerNames = resultPlayerNames(resultRow),
-                    lobbyCandidates = candidates,
-                ),
-            )
-            val proposedTeam = match.proposedTeamSlot?.let(teamsByLobbySlot::get)
-            val automaticTeam = match.automaticAssignedTeamSlot?.let(teamsByLobbySlot::get)
-            val duplicateAutomatic = automaticTeam != null &&
-                !usedAutomaticTeamUuids.add(automaticTeam.teamUUID)
-            val decisionStatus = if (duplicateAutomatic) {
-                ResultLobbySlotDecisionStatus.MANUAL
-            } else {
-                match.decisionStatus
-            }
-            val decisionReason = if (duplicateAutomatic) {
-                ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
-            } else {
-                match.decisionReason
-            }
+            val match = matchResultsByPosition.getValue(resultRow.position)
+            val assignment = assignmentsByPosition.getValue(resultRow.position)
+            val proposedTeam = assignment.proposedTeamSlot?.let(teamsByLobbySlot::get)
+            val automaticTeam = assignment.automaticAssignedTeamSlot?.let(teamsByLobbySlot::get)
             GroupRotationMatchOcrRowSuggestion(
                 resultPosition = resultRow.position,
                 resultPlayerNames = match.resultPlayerNames,
@@ -232,17 +230,14 @@ internal object GroupRotationMatchOcrIdentityAdapter {
                 proposedTeamUUID = proposedTeam?.teamUUID,
                 proposedTeamDisplayName = proposedTeam?.displayName,
                 automaticLobbySlotNumber = automaticTeam
-                    ?.takeUnless { duplicateAutomatic }
                     ?.lobbySlotNumber,
                 automaticTeamUUID = automaticTeam
-                    ?.takeUnless { duplicateAutomatic }
                     ?.teamUUID,
                 automaticTeamDisplayName = automaticTeam
-                    ?.takeUnless { duplicateAutomatic }
                     ?.displayName,
-                winningVotePercent = match.winningVotePercent,
-                decisionStatus = decisionStatus,
-                decisionReason = decisionReason,
+                winningVotePercent = assignment.winningVotePercent,
+                decisionStatus = assignment.decisionStatus,
+                decisionReason = assignment.decisionReason,
                 rankedCandidates = match.rankedCandidates.suggestions.mapNotNull { suggestion ->
                     val candidate = teamsByLobbySlot[suggestion.teamCandidateScore.candidateTeamSlot]
                         ?: return@mapNotNull null

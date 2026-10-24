@@ -1,5 +1,7 @@
 package com.hoggamers.rankforge.data.ocr.matchlobby
 
+import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionReason
+import com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionStatus
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrField
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldType
@@ -200,12 +202,115 @@ class GroupRotationMatchOcrIdentityAdapterTest {
             resultRow(1, listOf("TWO1", "TWO2", "TWO3", "TWO4")),
             resultRow(2, listOf("TWO1", "TWO2", "TWO3", "TWO4")),
         )
-        assertEquals("uuid-two", suggestions.first().automaticTeamUUID)
+        assertNull(suggestions.first().automaticTeamUUID)
         assertNull(suggestions[1].automaticTeamUUID)
-        assertEquals(
-            com.hoggamers.rankforge.domain.matching.ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS,
-            suggestions[1].decisionReason,
+        assertTrue(suggestions.all { suggestion ->
+            suggestion.decisionStatus == ResultLobbySlotDecisionStatus.MANUAL &&
+                suggestion.decisionReason == ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
+        })
+    }
+
+    @Test
+    fun strongerLaterPositionWinsDuplicateLobbyUuidAssignmentRegardlessOfInputOrder() {
+        val projection = loadedProjection(
+            snapshot = snapshot(team(lobbySlot = 5, teamUUID = "uuid-five", name = "Five")),
+            lobbyOcr = lobbyResult(
+                5 to listOf("Alpha5", "Bravo5", "Charlie5", "Delta5"),
+            ),
         )
+        val weakerRow = resultRow(9, listOf("Alpha5", null, null, null))
+        val strongerRow = resultRow(11, listOf("Alpha5", "Bravo5", "Charlie5", null))
+
+        val forward = loadedSuggestions(projection, weakerRow, strongerRow)
+        val reversed = loadedSuggestions(projection, strongerRow, weakerRow)
+        assertEquals(forward, reversed)
+
+        val positionNine = forward.single { it.resultPosition == 9 }
+        val positionEleven = forward.single { it.resultPosition == 11 }
+        assertEquals(5, positionNine.proposedLobbySlotNumber)
+        assertEquals("uuid-five", positionNine.proposedTeamUUID)
+        assertEquals(25, positionNine.winningVotePercent)
+        assertNull(positionNine.automaticTeamUUID)
+        assertEquals(ResultLobbySlotDecisionStatus.MANUAL, positionNine.decisionStatus)
+        assertEquals(ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS, positionNine.decisionReason)
+        assertEquals(5, positionEleven.proposedLobbySlotNumber)
+        assertEquals("uuid-five", positionEleven.proposedTeamUUID)
+        assertEquals(75, positionEleven.winningVotePercent)
+        assertEquals("uuid-five", positionEleven.automaticTeamUUID)
+        assertEquals(ResultLobbySlotDecisionStatus.AUTOMATIC, positionEleven.decisionStatus)
+        assertEquals(ResultLobbySlotDecisionReason.UNIQUE_VOTE_WINNER, positionEleven.decisionReason)
+    }
+
+    @Test
+    fun equalStrengthDuplicateLobbyUuidClaimsRemainManual() {
+        val projection = loadedProjection(
+            snapshot = snapshot(team(lobbySlot = 5, teamUUID = "uuid-five", name = "Five")),
+            lobbyOcr = lobbyResult(
+                5 to listOf("Alpha5", "Bravo5", "Charlie5", "Delta5"),
+            ),
+        )
+
+        val suggestions = loadedSuggestions(
+            projection,
+            resultRow(9, listOf("Alpha5", "Bravo5", null, null)),
+            resultRow(11, listOf("Alpha5", "Bravo5", null, null)),
+        )
+
+        assertTrue(suggestions.all { suggestion ->
+            suggestion.proposedLobbySlotNumber == 5 &&
+                suggestion.proposedTeamUUID == "uuid-five" &&
+                suggestion.automaticTeamUUID == null &&
+                suggestion.decisionStatus == ResultLobbySlotDecisionStatus.MANUAL &&
+                suggestion.decisionReason == ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
+        })
+    }
+
+    @Test
+    fun threeWayDuplicateLobbyUuidClaimsKeepOnlyUniqueStrongestWinner() {
+        val projection = loadedProjection(
+            snapshot = snapshot(team(lobbySlot = 5, teamUUID = "uuid-five", name = "Five")),
+            lobbyOcr = lobbyResult(
+                5 to listOf("Alpha5", "Bravo5", "Charlie5", "Delta5"),
+            ),
+        )
+
+        val suggestions = loadedSuggestions(
+            projection,
+            resultRow(9, listOf("Alpha5", null, null, null)),
+            resultRow(10, listOf("Alpha5", "Bravo5", null, null)),
+            resultRow(11, listOf("Alpha5", "Bravo5", "Charlie5", null)),
+        )
+
+        assertEquals("uuid-five", suggestions.single { it.resultPosition == 11 }.automaticTeamUUID)
+        assertTrue(suggestions.filter { it.resultPosition != 11 }.all { suggestion ->
+            suggestion.automaticTeamUUID == null &&
+                suggestion.decisionStatus == ResultLobbySlotDecisionStatus.MANUAL &&
+                suggestion.decisionReason == ResultLobbySlotDecisionReason.DUPLICATE_SLOT_ACROSS_RESULT_ROWS
+        })
+    }
+
+    @Test
+    fun differentLobbyUuidsAreAssignedIndependentlyWithoutDuplicateAutomaticAssignments() {
+        val projection = loadedProjection(
+            snapshot = snapshot(
+                team(lobbySlot = 5, teamUUID = "uuid-five", name = "Five"),
+                team(lobbySlot = 8, teamUUID = "uuid-eight", name = "Eight"),
+            ),
+            lobbyOcr = lobbyResult(
+                5 to listOf("FIVE_ASTRAL", "FIVE_BREEZE", "FIVE_CINDER", "FIVE_DUSK"),
+                8 to listOf("EIGHT_QUARTZ", "EIGHT_RIVER", "EIGHT_SABLE", "EIGHT_TUNDRA"),
+            ),
+        )
+
+        val suggestions = loadedSuggestions(
+            projection,
+            resultRow(9, listOf("FIVE_ASTRAL", "FIVE_BREEZE", "FIVE_CINDER", "FIVE_DUSK")),
+            resultRow(11, listOf("EIGHT_QUARTZ", "EIGHT_RIVER", "EIGHT_SABLE", "EIGHT_TUNDRA")),
+        )
+        val automaticUuids = suggestions.mapNotNull { it.automaticTeamUUID }
+
+        assertEquals(setOf("uuid-five", "uuid-eight"), automaticUuids.toSet())
+        assertEquals(automaticUuids.distinct(), automaticUuids)
     }
 
     @Test
