@@ -3,6 +3,10 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareFailureReason
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsSharePublicationResult
 import com.hoggamers.rankforge.data.cloud.TournamentStandingsShareRemoteDataSource
+import com.hoggamers.rankforge.data.activity.ActivityEventTracker
+import com.hoggamers.rankforge.data.activity.ActivityEventType
+import com.hoggamers.rankforge.data.activity.NoOpActivityEventTracker
+import com.hoggamers.rankforge.data.activity.RecordingActivityEventTracker
 import com.hoggamers.rankforge.data.tournament.InMemoryTournamentRepository
 import com.hoggamers.rankforge.domain.tournament.CumulativeTournamentStandingsEngine
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
@@ -298,10 +302,12 @@ class TournamentStandingsViewModelTest {
     @Test
     fun successfulPublicationEmitsExactlyOneShareUrlEvent() = runTest {
         createFinalizedStandings()
+        val activityTracker = RecordingActivityEventTracker()
         val viewModel = standingsViewModel(
             FakeShareRemoteDataSource(
                 result = TournamentStandingsSharePublicationResult.Success(TEST_PUBLIC_URL),
             ),
+            activityEventTracker = activityTracker,
         )
         viewModel.load("tournament-id")
         advanceUntilIdle()
@@ -315,6 +321,7 @@ class TournamentStandingsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf(TournamentStandingsShareEvent.ShareUrl(TEST_PUBLIC_URL)), events)
+        assertEquals(listOf(ActivityEventType.STANDINGS_SHARE_INITIATED), activityTracker.events)
         assertFalse(viewModel.uiState.value.isPublishing)
         collectJob.cancel()
     }
@@ -412,12 +419,14 @@ class TournamentStandingsViewModelTest {
     private fun standingsViewModel(
         shareRemoteDataSource: TournamentStandingsShareRemoteDataSource =
             FakeShareRemoteDataSource(),
+        activityEventTracker: ActivityEventTracker = NoOpActivityEventTracker,
     ) = TournamentStandingsViewModel(
         observeMatches = ObserveMatchesUseCase(repository),
         observeTournamentSlots = ObserveTournamentSlotsUseCase(repository),
         cumulativeStandings = CumulativeTournamentStandingsEngine(),
         tieBreakRules = TieBreakRules(),
         shareRemoteDataSource = shareRemoteDataSource,
+        activityEventTracker = activityEventTracker,
     )
 
     private suspend fun createFinalizedStandings() {

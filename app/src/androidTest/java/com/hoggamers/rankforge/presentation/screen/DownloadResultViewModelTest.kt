@@ -2,8 +2,11 @@ package com.hoggamers.rankforge.presentation.screen
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hoggamers.rankforge.data.activity.ActivityEventTracker
+import com.hoggamers.rankforge.data.activity.ActivityEventType
 import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteAction
 import com.hoggamers.rankforge.data.cloud.CustomDesignDeleteResult
 import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreAction
@@ -68,6 +71,46 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class DownloadResultViewModelTest {
+    @Test
+    fun successfullySavedResultRecordsOneActivityEvent() = runBlocking {
+        val recordedEvent = CompletableDeferred<ActivityEventType>()
+        val tracker = object : ActivityEventTracker {
+            override suspend fun record(event: ActivityEventType) {
+                recordedEvent.complete(event)
+            }
+        }
+        val coordinator = object : ResultDownloadCoordinator {
+            override suspend fun execute(
+                request: ResultDownloadRequest,
+                format: com.hoggamers.rankforge.data.export.ResultExportFileFormat,
+                onSaving: suspend () -> Unit,
+            ): ResultDownloadExecutionResult = ResultDownloadExecutionResult.Saved(
+                uri = Uri.parse("content://test/result.pdf"),
+                format = format,
+                displayName = "result.pdf",
+            )
+        }
+        val viewModel = createViewModel(
+            resultCoordinator = coordinator,
+            activityEventTracker = tracker,
+        )
+
+        viewModel.load("tournament-id")
+        viewModel.requestDownload(
+            tournamentId = "tournament-id",
+            result = DownloadResultSelection.Overall,
+            design = DownloadResultDesignType.IMAGE,
+        )
+
+        withTimeout(TimeUnit.SECONDS.toMillis(3)) {
+            viewModel.downloadState.first { it == DownloadResultDownloadState.Success }
+        }
+        assertEquals(
+            ActivityEventType.RESULT_DOWNLOADED,
+            withTimeout(TimeUnit.SECONDS.toMillis(3)) { recordedEvent.await() },
+        )
+    }
+
     @Test
     fun pointTableDateOverridesFreeDesignPreviewAndApplyRefreshesIt() = runBlocking {
         val repository = FakePointTableDetailsRepository()
@@ -1289,6 +1332,8 @@ class DownloadResultViewModelTest {
         tournament: Tournament = tournament(),
         matches: List<Match> = listOf(match()),
         teamSlots: List<TeamSlot> = teamSlots(),
+        activityEventTracker: ActivityEventTracker =
+            com.hoggamers.rankforge.data.activity.NoOpActivityEventTracker,
     ): DownloadResultViewModel {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val logoResolver = pointTableLogoRenderResolver ?: PointTableLogoRenderResolver(
@@ -1322,6 +1367,7 @@ class DownloadResultViewModelTest {
             pointTableLogoImageStore = pointTableLogoImageStore,
             pointTableLogoRenderResolver = logoResolver,
             groupRotationV4OverallImageInputReader = groupRotationV4OverallImageInputReader,
+            activityEventTracker = activityEventTracker,
         )
     }
 

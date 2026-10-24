@@ -91,6 +91,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.activity.ActivityEventTracker
+import com.hoggamers.rankforge.data.activity.ActivityEventType
+import com.hoggamers.rankforge.data.activity.NoOpActivityEventTracker
+import com.hoggamers.rankforge.data.activity.recordBestEffort
 import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreAction
 import com.hoggamers.rankforge.data.cloud.CustomDesignRestoreResult
 import com.hoggamers.rankforge.data.cloud.CustomDesignSavedIdDiscoveryAction
@@ -321,6 +325,7 @@ class DownloadResultViewModel @Inject constructor(
     private val pointTableLogoRenderResolver: PointTableLogoRenderResolver,
     private val groupRotationV4OverallImageInputReader: GroupRotationV4OverallImageInputReader =
         GroupRotationV4OverallImageInputReader.LegacyOnly,
+    private val activityEventTracker: ActivityEventTracker = NoOpActivityEventTracker,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadResultUiState())
     val uiState: StateFlow<DownloadResultUiState> = _uiState.asStateFlow()
@@ -853,6 +858,7 @@ class DownloadResultViewModel @Inject constructor(
             when (outcome) {
                 is ResultDownloadExecutionResult.Saved -> {
                     _downloadState.value = DownloadResultDownloadState.Success
+                    recordActivityEvent(ActivityEventType.RESULT_DOWNLOADED)
                     shareEventsChannel.send(
                         ResultShareRequest(
                             uri = outcome.uri,
@@ -892,6 +898,7 @@ class DownloadResultViewModel @Inject constructor(
             when (val writeResult = resultDocumentWriter.write(uri, document.bytes)) {
                 is ResultDocumentWriteResult.Success -> {
                     _downloadState.value = DownloadResultDownloadState.Success
+                    recordActivityEvent(ActivityEventType.RESULT_DOWNLOADED)
                     shareEventsChannel.send(
                         ResultShareRequest(
                             uri = writeResult.uri,
@@ -904,6 +911,12 @@ class DownloadResultViewModel @Inject constructor(
                     _downloadState.value = DownloadResultDownloadState.Failure
                 }
             }
+        }
+    }
+
+    private fun recordActivityEvent(event: ActivityEventType) {
+        viewModelScope.launch {
+            activityEventTracker.recordBestEffort(event)
         }
     }
 
