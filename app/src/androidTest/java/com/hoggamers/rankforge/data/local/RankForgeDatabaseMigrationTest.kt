@@ -86,7 +86,7 @@ class RankForgeDatabaseMigrationTest {
 
             openedDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(36, cursor.getInt(0))
+                assertEquals(37, cursor.getInt(0))
             }
             openedDatabase.query(
                 "SELECT payload FROM rank_forge_state WHERE id = 1",
@@ -568,6 +568,7 @@ class RankForgeDatabaseMigrationTest {
                 "(tournament_id, pairing_key, first_group, second_group) " +
                 "VALUES ('migration-27', 'A:B', 'A', 'B')",
         )
+        migrated.execSQL("PRAGMA foreign_keys = ON")
         migrated.execSQL("DELETE FROM tournaments WHERE id = 'migration-27'")
         migrated.query(
             "SELECT tournament_id FROM tournament_group_pairings WHERE tournament_id = 'migration-27'",
@@ -604,8 +605,35 @@ class RankForgeDatabaseMigrationTest {
             assertTrue(cursor.moveToFirst())
             assertTrue(cursor.isNull(0))
         }
-        assertTrue(migrated.hasIndex("index_matches_tournament_id_group_pairing_key"))
+        assertTrue(migrated.hasIndex("index_matches_tournament_id"))
+        assertTrue(!migrated.hasIndex("index_matches_tournament_id_group_pairing_key"))
         migrated.close()
+    }
+
+    @Test
+    fun migrationFromVersion36RemovesLegacyMatchPairingIndexWithoutChangingExistingRows() {
+        createVersion36Database(includeLegacyMatchPairingIndex = true)
+
+        val migratedWithLegacyIndex = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            37,
+            true,
+            RankForgeDatabase.MIGRATION_36_37,
+        )
+        assertVersion36DataPreserved(migratedWithLegacyIndex)
+        migratedWithLegacyIndex.close()
+
+        context.deleteDatabase(MIGRATION_DATABASE_NAME)
+        createVersion36Database(includeLegacyMatchPairingIndex = false)
+
+        val migratedWithoutLegacyIndex = migrationTestHelper().runMigrationsAndValidate(
+            MIGRATION_DATABASE_NAME,
+            37,
+            true,
+            RankForgeDatabase.MIGRATION_36_37,
+        )
+        assertVersion36DataPreserved(migratedWithoutLegacyIndex)
+        migratedWithoutLegacyIndex.close()
     }
 
     @Test
@@ -856,6 +884,7 @@ class RankForgeDatabaseMigrationTest {
             assertTrue(cursor.moveToFirst())
             assertEquals("  Raw  Team  ", cursor.getString(0))
         }
+        migrated.execSQL("PRAGMA foreign_keys = ON")
         migrated.execSQL(
             "DELETE FROM tournament_group_pairings WHERE tournament_id = 'rotation-30' AND pairing_key = 'A:C'",
         )
@@ -2743,6 +2772,90 @@ class RankForgeDatabaseMigrationTest {
         query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?", arrayOf(indexName)).use { cursor ->
             cursor.moveToFirst()
         }
+
+    private fun createVersion36Database(includeLegacyMatchPairingIndex: Boolean) {
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 36).use { database ->
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order, format) " +
+                    "VALUES ('migration-36', 'Migration Cup', 'Stage One', '123', 'CONFIRMED', 10, 'STANDARD')",
+            )
+            database.execSQL(
+                "INSERT INTO team_slots (tournament_id, slot_number, team_name) " +
+                    "VALUES ('migration-36', 1, 'Team One')",
+            )
+            database.execSQL(
+                "INSERT INTO roster_players " +
+                    "(tournament_id, slot_number, roster_position, display_name) " +
+                    "VALUES ('migration-36', 1, 1, 'Player One')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('migration-match-36', 'migration-36', 1, '2026-10-15', 'Bermuda', 'DRAFT')",
+            )
+            database.execSQL(
+                "INSERT INTO match_placements (match_id, team_slot_number, position) " +
+                    "VALUES ('migration-match-36', 1, 1)",
+            )
+            database.execSQL(
+                "INSERT INTO match_kills (match_id, team_slot_number, kills) " +
+                    "VALUES ('migration-match-36', 1, 17)",
+            )
+            if (includeLegacyMatchPairingIndex) {
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id_group_pairing_key` " +
+                        "ON `matches` (`tournament_id`, `group_pairing_key`)",
+                )
+            }
+        }
+    }
+
+    private fun assertVersion36DataPreserved(database: SupportSQLiteDatabase) {
+        assertTrue(database.hasIndex("index_matches_tournament_id"))
+        assertTrue(!database.hasIndex("index_matches_tournament_id_group_pairing_key"))
+        database.query(
+            "SELECT name FROM tournaments WHERE id = 'migration-36'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Migration Cup", cursor.getString(0))
+        }
+        database.query(
+            "SELECT team_name FROM team_slots WHERE tournament_id = 'migration-36' AND slot_number = 1",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Team One", cursor.getString(0))
+        }
+        database.query(
+            "SELECT display_name FROM roster_players " +
+                "WHERE tournament_id = 'migration-36' AND slot_number = 1 AND roster_position = 1",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Player One", cursor.getString(0))
+        }
+        database.query(
+            "SELECT status, group_pairing_key FROM matches WHERE id = 'migration-match-36'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("DRAFT", cursor.getString(0))
+            assertTrue(cursor.isNull(1))
+        }
+        database.query(
+            "SELECT position FROM match_placements WHERE match_id = 'migration-match-36' AND team_slot_number = 1",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+        }
+        database.query(
+            "SELECT kills FROM match_kills WHERE match_id = 'migration-match-36' AND team_slot_number = 1",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(17, cursor.getInt(0))
+        }
+        database.query("PRAGMA foreign_key_check").use { cursor ->
+            assertEquals(0, cursor.count)
+        }
+    }
 
     private class ProductionMigrationDatabaseContext(
         baseContext: Context,

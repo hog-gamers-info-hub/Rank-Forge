@@ -142,7 +142,11 @@ class MatchCreationScreenTest {
         }
 
         composeTestRule.onNodeWithText("Maximum of 18 matches reached.").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Match 1 - In Progress").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match 1").performScrollTo().assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(MATCH_STATUS_TEST_TAG_PREFIX + "1", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
         composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(CREATE_MATCH_ACTION_TEST_TAG).assertCountEquals(0)
     }

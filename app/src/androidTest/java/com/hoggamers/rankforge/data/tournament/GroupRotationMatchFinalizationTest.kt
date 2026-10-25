@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
 import com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
@@ -254,6 +255,16 @@ class GroupRotationMatchFinalizationTest {
         pairing: GroupPairing,
         vararg teams: Pair<Int, GroupRotationMatchTeamIdentity>,
     ) {
+        database.groupRotationPairingTeamIdentityAssignmentDao().upsertAll(
+            teams.map { (lobbySlot, team) ->
+                GroupRotationPairingTeamIdentityAssignmentEntity(
+                    tournamentId = TOURNAMENT_ID,
+                    pairingKey = pairing.canonicalKey,
+                    lobbySlotNumber = lobbySlot,
+                    teamUUID = team.teamUUID,
+                )
+            },
+        )
         val match = Match(
             id = matchId,
             tournamentId = TOURNAMENT_ID,

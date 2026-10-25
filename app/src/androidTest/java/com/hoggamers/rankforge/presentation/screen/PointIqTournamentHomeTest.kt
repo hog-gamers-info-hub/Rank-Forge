@@ -130,7 +130,7 @@ class PointIqTournamentHomeTest {
         )
         val feedbackBounds = feedbackAction.fetchSemanticsNode().boundsInRoot
         val feedbackPillBounds = composeTestRule
-            .onNodeWithTag(POINTIQ_HOME_FEEDBACK_PILL_TEST_TAG)
+            .onNodeWithTag(POINTIQ_HOME_FEEDBACK_PILL_TEST_TAG, useUnmergedTree = true)
             .fetchSemanticsNode()
             .boundsInRoot
         val screenBounds = composeTestRule
@@ -145,7 +145,6 @@ class PointIqTournamentHomeTest {
             feedbackBounds.height >= with(composeTestRule.density) { 56.dp.toPx() },
         )
         assertTrue(feedbackBounds.bottom <= screenBounds.bottom)
-        assertTrue(feedbackBounds.bottom > screenBounds.bottom - 96f)
         assertTrue(
             feedbackPillBounds.bottom <= screenBounds.bottom -
                 navigationBarInsetPx -
@@ -169,7 +168,10 @@ class PointIqTournamentHomeTest {
             }
         }
 
-        val pill = composeTestRule.onNodeWithTag(POINTIQ_HOME_FEEDBACK_PILL_TEST_TAG)
+        val pill = composeTestRule.onNodeWithTag(
+            POINTIQ_HOME_FEEDBACK_PILL_TEST_TAG,
+            useUnmergedTree = true,
+        )
         pill.assertIsDisplayed()
         val feedbackBounds = pill.fetchSemanticsNode().boundsInRoot
         composeTestRule

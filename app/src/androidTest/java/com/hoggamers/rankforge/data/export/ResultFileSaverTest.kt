@@ -118,7 +118,7 @@ class ResultFileSaverTest {
             assertEquals(expectedDisplayName, cursor.getString(0))
             assertEquals(expectedMimeType, cursor.getString(1))
             assertEquals(
-                "${Environment.DIRECTORY_DOWNLOADS}/Rank Forge",
+                "${Environment.DIRECTORY_DOWNLOADS}/PointIQ",
                 cursor.getString(2).trimEnd('/'),
             )
             assertEquals(0, cursor.getInt(3))

@@ -159,9 +159,18 @@ class GroupRotationTeamIdentityRepositoryTest {
         )
         assertTrue(oneCleared is GroupRotationTeamIdentityWriteResult.Saved)
         val afterOne = loaded()
-        assertEquals(listOf(2, 3, 4, 5, 6), afterOne.assignments
+        val afterOnePairingAssignments = afterOne.assignments
             .filter { it.pairingKey == pairing("A:C") }
-            .map { it.lobbySlotNumber })
+        assertEquals(
+            listOf(2, 3, 4, 5, 6),
+            afterOnePairingAssignments.filterNot { it.nameCleared }.map { it.lobbySlotNumber },
+        )
+        assertEquals(listOf(1, 2, 3, 4, 5, 6), afterOnePairingAssignments.map { it.lobbySlotNumber })
+        assertTrue(afterOnePairingAssignments.single { it.lobbySlotNumber == 1 }.nameCleared)
+        assertEquals(
+            before.teams.map { it.teamUUID },
+            afterOne.teams.map { it.teamUUID },
+        )
         assertEquals(
             before.assignments.filter { it.pairingKey == pairing("A:B") },
             afterOne.assignments.filter { it.pairingKey == pairing("A:B") },
@@ -174,8 +183,28 @@ class GroupRotationTeamIdentityRepositoryTest {
         )
         assertTrue(allCleared is GroupRotationTeamIdentityWriteResult.Saved)
         val afterAll = loaded()
-        assertTrue(afterAll.assignments.none { it.pairingKey == pairing("A:C") })
-        assertEquals(before.teams, afterAll.teams)
+        val afterAllPairingAssignments = afterAll.assignments
+            .filter { it.pairingKey == pairing("A:C") }
+        assertEquals(listOf(1, 2, 3, 4, 5, 6), afterAllPairingAssignments.map { it.lobbySlotNumber })
+        assertTrue(afterAllPairingAssignments.all { it.nameCleared })
+        assertEquals(before.teams.map { it.teamUUID }, afterAll.teams.map { it.teamUUID })
+        val pairingAbTeamUuids = before.assignments
+            .filter { it.pairingKey == pairing("A:B") }
+            .map { it.teamUUID }
+            .toSet()
+        assertEquals(
+            before.teams.filter { it.teamUUID in pairingAbTeamUuids },
+            afterAll.teams.filter { it.teamUUID in pairingAbTeamUuids },
+        )
+        val pairingAcOnlyTeamUuids = before.assignments
+            .filter { it.pairingKey == pairing("A:C") }
+            .map { it.teamUUID }
+            .toSet() - pairingAbTeamUuids
+        assertTrue(
+            afterAll.teams
+                .filter { it.teamUUID in pairingAcOnlyTeamUuids }
+                .all { it.displayName.isBlank() },
+        )
         assertEquals(
             before.assignments.filter { it.pairingKey == pairing("A:B") },
             afterAll.assignments.filter { it.pairingKey == pairing("A:B") },
@@ -289,7 +318,7 @@ class GroupRotationTeamIdentityRepositoryTest {
         database.teamSlotDao().upsertAll(
             listOf(TeamSlotEntity(TOURNAMENT_ID, 1, "Legacy Alpha")),
         )
-        database.groupRotationPairingLobbySlotDao().upsertAll(
+        database.groupRotationPairingLobbySlotDao().insertAll(
             listOf(GroupRotationPairingLobbySlotEntity(TOURNAMENT_ID, "A:B", 0, 1)),
         )
 

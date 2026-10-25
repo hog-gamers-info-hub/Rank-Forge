@@ -83,7 +83,7 @@ class ContactUsScreenTest {
         val whatsAppUrl = "https://whatsapp.com/channel/0029VbAWtjZ9mrGaqlCXna24"
 
         assertEquals(Intent.ACTION_SENDTO, emailIntent.action)
-        assertEquals(Uri.parse("mailto:pointiq.officials@gmail.com"), emailIntent.data)
+        assertEquals(Uri.parse("mailto:team@point-iq.com"), emailIntent.data)
         assertEquals(
             Uri.parse(instagramUrl),
             buildSocialAppIntent(instagramUrl, "com.instagram.android").data,

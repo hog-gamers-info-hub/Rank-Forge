@@ -13,6 +13,7 @@ import io.github.jan.supabase.auth.status.SessionSource
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.auth.user.UserSession
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.logging.LogLevel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -144,6 +145,7 @@ class SupabaseTournamentCloudRestorationRemoteDataSourceTest {
                 supabaseUrl = "https://supabase.test",
                 supabaseKey = "publishable-key",
             ) {
+                defaultLogLevel = LogLevel.NONE
                 install(Auth) {
                     autoLoadFromStorage = false
                     autoSaveToStorage = false

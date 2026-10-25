@@ -37,8 +37,22 @@ class OwnerScopedMatchFinalizationCorrectionUseCasesTest {
         val finalized = RecordingRepository(OWNER_A, MatchStatus.FINALIZED)
         assertEquals(FinalizeMatchGlobalError.MATCH_NOT_DRAFT, (finalize(finalized, auth(OWNER_A))(FinalizeMatchInput(MATCH_ID, rows())) as FinalizeMatchResult.Invalid).globalError)
         val invalid = RecordingRepository(OWNER_A, MatchStatus.DRAFT)
-        assertTrue(finalize(invalid, auth(OWNER_A))(FinalizeMatchInput(MATCH_ID, rows().drop(1))) is FinalizeMatchResult.Invalid)
+        val duplicatePlacementRows = rows().map { row ->
+            if (row.teamSlotNumber == 12) row.copy(placement = "1") else row
+        }
+        assertTrue(finalize(invalid, auth(OWNER_A))(FinalizeMatchInput(MATCH_ID, duplicatePlacementRows)) is FinalizeMatchResult.Invalid)
         assertEquals(0, invalid.finalizeCalls)
+
+        val sparse = RecordingRepository(OWNER_A, MatchStatus.DRAFT)
+        assertTrue(finalize(sparse, auth(OWNER_A))(FinalizeMatchInput(MATCH_ID, rows().dropLast(1))) is FinalizeMatchResult.Finalized)
+        val sparseParticipants = sparse.finalizedParticipantResults.orEmpty()
+        assertEquals((1..12).toList(), sparseParticipants.map { it.teamSlotNumber })
+        assertTrue(sparseParticipants.take(11).all { it.participationStatus == MatchParticipationStatus.PARTICIPATED })
+        val noShow = sparseParticipants.single { it.teamSlotNumber == 12 }
+        assertEquals(MatchParticipationStatus.NO_SHOW, noShow.participationStatus)
+        assertEquals(null, noShow.placement)
+        assertEquals(0, noShow.kills)
+
         val evidence = evidence()
         val ocr = RecordingRepository(OWNER_A, MatchStatus.DRAFT)
         finalize(ocr, auth(OWNER_A))(FinalizeMatchInput(MATCH_ID, rows(), evidence))
@@ -100,6 +114,7 @@ class OwnerScopedMatchFinalizationCorrectionUseCasesTest {
         private val tournament = Tournament(TOURNAMENT_ID, "Cup", "Org", "1", TournamentStatus.CONFIRMED, owner)
         private val match = Match(MATCH_ID, TOURNAMENT_ID, 1, LocalDate.of(2026, 1, 1), "Map", status, participantResults = if (status == MatchStatus.FINALIZED) (1..12).map { MatchParticipantResult(it, MatchParticipationStatus.PARTICIPATED, it, 0) } else emptyList())
         var finalizeCalls = 0; var ocrFinalizeCalls = 0; var submitCalls = 0; var confirmCalls = 0; var evidence: PreservedMatchOcrEvidence? = null
+        var finalizedParticipantResults: List<MatchParticipantResult>? = null
         override suspend fun create(tournament: Tournament) = Unit
         override fun observeAll() = flowOf(listOf(tournament))
         override fun observeById(tournamentId: String): Flow<Tournament?> = error("unscoped tournament")
@@ -113,7 +128,7 @@ class OwnerScopedMatchFinalizationCorrectionUseCasesTest {
         override fun observeMatchById(matchId: String): Flow<Match?> = error("unscoped match")
         override fun observeMatchByIdAndOwner(matchId: String, ownerUserId: String) = flowOf(match.takeIf { matchId == MATCH_ID && ownerUserId == owner })
         override suspend fun finalizeDraftMatch(matchId: String, placements: List<MatchPlacement>, kills: List<MatchKill>, participantResults: List<MatchParticipantResult>?) = error("unscoped finalize") as FinalizeMatchRepositoryResult
-        override suspend fun finalizeDraftMatchByOwner(matchId: String, ownerUserId: String, placements: List<MatchPlacement>, kills: List<MatchKill>, participantResults: List<MatchParticipantResult>?): FinalizeMatchRepositoryResult { if (ownerUserId != owner) return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND); finalizeCalls++; return FinalizeMatchRepositoryResult.Finalized(match.copy(status = MatchStatus.FINALIZED)) }
+        override suspend fun finalizeDraftMatchByOwner(matchId: String, ownerUserId: String, placements: List<MatchPlacement>, kills: List<MatchKill>, participantResults: List<MatchParticipantResult>?): FinalizeMatchRepositoryResult { if (ownerUserId != owner) return FinalizeMatchRepositoryResult.Rejected(FinalizeMatchFailure.MATCH_NOT_FOUND); finalizeCalls++; finalizedParticipantResults = participantResults; return FinalizeMatchRepositoryResult.Finalized(match.copy(status = MatchStatus.FINALIZED, participantResults = participantResults.orEmpty())) }
         override suspend fun finalizeDraftMatchWithOcrEvidence(matchId: String, placements: List<MatchPlacement>, kills: List<MatchKill>, participantResults: List<MatchParticipantResult>?, evidence: PreservedMatchOcrEvidence) = error("unscoped OCR finalize") as FinalizeMatchRepositoryResult
         override suspend fun finalizeDraftMatchWithOcrEvidenceByOwner(tournamentId: String, matchId: String, ownerUserId: String, placements: List<MatchPlacement>, kills: List<MatchKill>, participantResults: List<MatchParticipantResult>?, evidence: PreservedMatchOcrEvidence): FinalizeMatchRepositoryResult { ocrFinalizeCalls++; this.evidence = evidence; return FinalizeMatchRepositoryResult.Finalized(match.copy(status = MatchStatus.FINALIZED)) }
         override suspend fun readLocalRevisionState(tournamentId: String) = LocalRevisionState(2, CloudRevision(2))

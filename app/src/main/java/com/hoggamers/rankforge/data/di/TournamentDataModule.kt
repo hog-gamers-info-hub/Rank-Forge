@@ -322,6 +322,7 @@ object TournamentDataProvidersModule {
         RankForgeDatabase.MIGRATION_33_34,
         RankForgeDatabase.MIGRATION_34_35,
         RankForgeDatabase.MIGRATION_35_36,
+        RankForgeDatabase.MIGRATION_36_37,
     ).build()
 
     @Provides

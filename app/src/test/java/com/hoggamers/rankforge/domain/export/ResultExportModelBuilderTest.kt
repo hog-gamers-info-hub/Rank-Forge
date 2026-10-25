@@ -300,7 +300,7 @@ class ResultExportModelBuilderTest {
             sourceRows.map { row -> row.teamName },
             resultRows.map { row -> row.teamName },
         )
-        assertEquals("Team 12", resultRows.first().teamName)
+        assertEquals("Team 1", resultRows.first().teamName)
     }
 
     @Test

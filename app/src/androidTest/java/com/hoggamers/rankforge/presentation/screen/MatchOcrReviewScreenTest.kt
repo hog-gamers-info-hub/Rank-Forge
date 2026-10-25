@@ -1,5 +1,6 @@
 package com.hoggamers.rankforge.presentation.screen
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -9,6 +10,9 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -169,8 +173,8 @@ class MatchOcrReviewScreenTest {
         composeTestRule.onNodeWithText("OCR review").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("No OCR evidence").assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - Not matched | Team name - Not matched")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Not matched")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(11)).assertIsNotDisplayed()
         repeat(4) {
             composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.EMPTY_CONTENT)
@@ -198,9 +202,7 @@ class MatchOcrReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
-            .assertTextEquals("Position - 1")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - 5 | Team name - ETR ESPORTS")
+            .assertTextEquals("ETR ESPORTS")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 1))
             .assertTextEquals("1. Player One - [2]")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 3))
@@ -253,6 +255,7 @@ class MatchOcrReviewScreenTest {
             },
         )
         val correctionDraft = MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows)
+        val currentCorrectionDraft = mutableStateOf(correctionDraft)
         var playerKillChange: Triple<Int, Int, String>? = null
 
         composeTestRule.setContent {
@@ -260,33 +263,52 @@ class MatchOcrReviewScreenTest {
                 MatchOcrReviewScreen(
                     uiState = readyState(
                         rows = rows,
-                        correctionDraft = correctionDraft,
+                        correctionDraft = currentCorrectionDraft.value,
                         preview = preview,
                     ),
                     onBack = {},
                     onPlayerKillsChanged = { rowIndex, playerSlot, value ->
                         playerKillChange = Triple(rowIndex, playerSlot, value)
+                        currentCorrectionDraft.value = MatchOcrReviewCorrectionDraftReducer.onPlayerKillsChanged(
+                            draft = currentCorrectionDraft.value,
+                            rowIndex = rowIndex,
+                            playerSlot = playerSlot,
+                            value = value,
+                        )
                     },
                 )
             }
         }
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
-            .assertTextEquals("Position - 1")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - 1 | Team name - Not named")
+            .assertTextEquals("Not named")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2)).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 1))
-            .assertTextContains("1. Player One")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 3))
-            .assertTextContains("3. [")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 4))
-            .assertTextContains("4. [")
+        composeTestRule.onNode(
+            hasText("1. Player One - ", substring = true) and
+                hasAnyAncestor(
+                    hasTestTag(MatchOcrReviewTestTags.compactPlayer(1, 1)),
+                ),
+        )
+            .assertIsDisplayed()
+        composeTestRule.onNode(
+            hasText("3. ", substring = true) and
+                hasAnyAncestor(
+                    hasTestTag(MatchOcrReviewTestTags.compactPlayer(1, 3)),
+                ),
+        )
+            .assertIsDisplayed()
+        composeTestRule.onNode(
+            hasText("4. ", substring = true) and
+                hasAnyAncestor(
+                    hasTestTag(MatchOcrReviewTestTags.compactPlayer(1, 4)),
+                ),
+        )
+            .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerKillInput(1, 3))
             .performTextReplacement("9")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(1, 3))
-            .assertTextContains("3. [9]")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerKillInput(1, 3))
+            .assertTextEquals("9")
         composeTestRule.onAllNodesWithText("_").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Not detected").assertCountEquals(0)
 
@@ -396,9 +418,7 @@ class MatchOcrReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
-            .assertTextEquals("Position - 1")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - 1 | Team name - Not named")
+            .assertTextEquals("Not named")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 1)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayerRow(1, 2)).assertIsDisplayed()
         listOf(1 to "3", 2 to "2", 3 to "5", 4 to "4").forEach { (playerSlot, kills) ->
@@ -627,12 +647,11 @@ class MatchOcrReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(6))
             .performScrollTo()
-            .assertTextEquals("Position - 6")
+            .assertTextEquals("Not named")
     }
 
     @Test
-    fun eligibleDeleteKeepsExistingResetActionAvailable() {
-        var resetRowIndex: Int? = null
+    fun eligibleDeleteDoesNotExposeRemovedResetAction() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchOcrReviewScreen(
@@ -642,7 +661,7 @@ class MatchOcrReviewScreenTest {
                     ),
                     onBack = {},
                     onExcludeRow = {},
-                    onResetRowCorrection = { resetRowIndex = it },
+                    onResetRowCorrection = {},
                 )
             }
         }
@@ -650,13 +669,8 @@ class MatchOcrReviewScreenTest {
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.deleteRow(0))
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(0))
-            .performScrollTo()
-            .assertIsDisplayed()
-            .performClick()
-        composeTestRule.runOnIdle {
-            assertEquals(0, resetRowIndex)
-        }
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.resetRow(0))
+            .assertCountEquals(0)
     }
 
     @Test
@@ -794,15 +808,12 @@ class MatchOcrReviewScreenTest {
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(11))
             .performScrollTo()
-            .assertTextEquals("Position - 11")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 1))
-            .assertTextEquals("1. [?]")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 3))
-            .assertTextEquals("3. [?]")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 2))
-            .assertTextEquals("2. [?]")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(11, 4))
-            .assertTextEquals("4. [?]")
+            .assertTextEquals("Not matched")
+        (1..4).forEach { playerSlot ->
+            composeTestRule.onAllNodesWithTag(
+                MatchOcrReviewTestTags.compactPlayer(11, playerSlot),
+            ).assertCountEquals(0)
+        }
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(10))
             .performScrollTo()
             .run {
@@ -813,15 +824,12 @@ class MatchOcrReviewScreenTest {
             }
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(12))
             .performScrollTo()
-            .assertTextEquals("Position - 12")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 1))
-            .assertTextEquals("1. [?]")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 3))
-            .assertTextEquals("3. [?]")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 2))
-            .assertTextEquals("2. [?]")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlayer(12, 4))
-            .assertTextEquals("4. [?]")
+            .assertTextEquals("Not matched")
+        (1..4).forEach { playerSlot ->
+            composeTestRule.onAllNodesWithTag(
+                MatchOcrReviewTestTags.compactPlayer(12, playerSlot),
+            ).assertCountEquals(0)
+        }
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(11))
             .performScrollTo()
             .run {
@@ -856,12 +864,12 @@ class MatchOcrReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - 5 | Team name - Not named")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(2))
-            .assertTextEquals("Slot - 5 | Team name - Not named")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(3))
-            .assertTextEquals("Slot - Not matched | Team name - Not matched")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Not named")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(2))
+            .assertTextEquals("Not named")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(3))
+            .assertTextEquals("Not matched")
     }
 
     @Test
@@ -894,8 +902,8 @@ class MatchOcrReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - Lobby 02 · Beta | Team name - Lobby 02 · Beta")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Lobby 02 · Beta")
     }
 
     @Test
@@ -925,8 +933,8 @@ class MatchOcrReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - Not matched | Team name - Not matched")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Not matched")
     }
 
     @Test
@@ -959,8 +967,8 @@ class MatchOcrReviewScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactTeam(1))
-            .assertTextEquals("Slot - 1 | Team name - Alpha")
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactPlacement(1))
+            .assertTextEquals("Alpha")
     }
 
     @Test
@@ -991,7 +999,7 @@ class MatchOcrReviewScreenTest {
         composeTestRule.onNodeWithText("Lobby Players").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1)).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1))
-            .assertTextEquals("Slot - 1 | Team Name - ABC ESPORTS")
+            .assertTextEquals("ABC ESPORTS")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 1))
             .assertTextEquals("1. Player One")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbyPlayer(1, 3))
@@ -1028,9 +1036,9 @@ class MatchOcrReviewScreenTest {
         }
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(1))
-            .assertTextContains("Slot - 1 | Team Name - ETR ESPORTS")
+            .assertTextContains("ETR ESPORTS")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(2))
-            .assertTextContains("Slot - 2 | Team Name - Not named")
+            .assertTextContains("Slot 2")
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
     }
 
@@ -1234,29 +1242,26 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
-    fun resetRowAndResetAllCallbacksFire() {
-        var resetRowIndex: Int? = null
+    fun resetAllCallbackFiresWhileRemovedRowResetActionStaysHidden() {
         var resetAllCount = 0
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchOcrReviewScreen(
                     uiState = readyState(correctionDraft = correctionDraft()),
                     onBack = {},
-                    onResetRowCorrection = { resetRowIndex = it },
+                    onResetRowCorrection = {},
                     onResetAllCorrections = { resetAllCount += 1 },
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.resetRow(0))
-            .performScrollTo()
-            .performClick()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.resetRow(0))
+            .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.RESET_ALL)
             .performScrollTo()
             .performClick()
 
         composeTestRule.runOnIdle {
-            assertEquals(0, resetRowIndex)
             assertEquals(1, resetAllCount)
         }
     }
@@ -1292,7 +1297,7 @@ class MatchOcrReviewScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Finalize corrected match").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Finalize Match").assertIsDisplayed()
     }
 
     @Test
@@ -1358,9 +1363,7 @@ class MatchOcrReviewScreenTest {
     }
 
     @Test
-    fun warningConfirmationDialogIsVisibleAndActionsFire() {
-        var confirmCount = 0
-        var dismissCount = 0
+    fun warningConfirmationDialogIsNotRenderedAfterItsRemoval() {
         val warningDraft = correctionDraft { draft ->
             MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
         }
@@ -1372,23 +1375,25 @@ class MatchOcrReviewScreenTest {
                         finalization = MatchOcrReviewFinalizationUiState(showWarningConfirmation = true),
                     ),
                     onBack = {},
-                    onConfirmFinalizeWarnings = { confirmCount += 1 },
-                    onDismissFinalizeWarnings = { dismissCount += 1 },
+                    onConfirmFinalizeWarnings = {},
+                    onDismissFinalizeWarnings = {},
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS).performClick()
-        composeTestRule.runOnIdle {
-            assertEquals(1, confirmCount)
-            assertEquals(0, dismissCount)
-        }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_DIALOG)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.CONFIRM_FINALIZE_WARNINGS)
+            .assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS)
+            .assertCountEquals(0)
     }
 
     @Test
-    fun dismissWarningConfirmationActionFires() {
-        var dismissCount = 0
+    fun warningConfirmationDismissActionIsNotRenderedAfterItsRemoval() {
         val warningDraft = correctionDraft { draft ->
             MatchOcrReviewCorrectionDraftReducer.onKillsChanged(draft, 0, "9")
         }
@@ -1400,15 +1405,16 @@ class MatchOcrReviewScreenTest {
                         finalization = MatchOcrReviewFinalizationUiState(showWarningConfirmation = true),
                     ),
                     onBack = {},
-                    onDismissFinalizeWarnings = { dismissCount += 1 },
+                    onDismissFinalizeWarnings = {},
                 )
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS).performClick()
-        composeTestRule.runOnIdle {
-            assertEquals(1, dismissCount)
-        }
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_WARNING_COUNT)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.DISMISS_FINALIZE_WARNINGS)
+            .assertCountEquals(0)
     }
 
     @Test

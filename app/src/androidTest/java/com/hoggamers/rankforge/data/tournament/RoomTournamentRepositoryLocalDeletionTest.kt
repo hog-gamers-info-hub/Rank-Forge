@@ -77,6 +77,7 @@ class RoomTournamentRepositoryLocalDeletionTest {
             repository.create(owned)
             repository.create(foreign)
             repository.create(ownerless)
+            repository.saveTeamNames(owned.id, mapOf(1 to "Owned Team"))
             val ownedMatch = Match(
                 id = "account-owned-match",
                 tournamentId = owned.id,

@@ -29,7 +29,7 @@ class ResultCanvasRendererTest {
 
             assertEquals("Champions Cup 2026", canvas.texts[0].text)
             assertEquals("HOG Gamers", canvas.texts[1].text)
-            assertEquals("Current match - Match 4 -- 03 Sep 2026", canvas.texts[2].text)
+            assertEquals("Current match - Match 4", canvas.texts[2].text)
             assertEquals(listOf("Point", "IQ"), canvas.texts.takeLast(2).map { it.text })
             assertFalse(canvas.texts.any { it.text == "RANK FORGE" })
             assertFalse(canvas.texts.any { it.text.contains("Bermuda") })
@@ -46,7 +46,7 @@ class ResultCanvasRendererTest {
 
             assertEquals("Champions Cup 2026", canvas.texts[0].text)
             assertEquals("HOG Gamers", canvas.texts[1].text)
-            assertEquals("Overall standings -- 03 Sep 2026", canvas.texts[2].text)
+            assertEquals("Overall standings", canvas.texts[2].text)
             assertEquals(listOf("Point", "IQ"), canvas.texts.takeLast(2).map { it.text })
             assertFalse(canvas.texts.any { it.text.contains("Finalized Matches") })
         } finally {

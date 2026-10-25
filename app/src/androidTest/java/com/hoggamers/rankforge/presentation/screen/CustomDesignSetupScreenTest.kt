@@ -66,7 +66,6 @@ class CustomDesignSetupScreenTest {
         }
         val uploadAction = composeTestRule
             .onNodeWithTag(CUSTOM_DESIGN_UPLOAD_ACTION_TEST_TAG)
-            .performScrollTo()
             .assertIsDisplayed()
             .assertIsEnabled()
         uploadAction.performClick()
@@ -299,6 +298,8 @@ class CustomDesignSetupScreenTest {
                         positionPointsLabel = "POS.",
                         totalPointsLabel = "TOTAL",
                         selectedImageReference = "content://selected",
+                        sourceImageWidth = 1080,
+                        sourceImageHeight = 1350,
                         ocrStatus = CustomDesignOcrStatus.FAILED,
                         editableGridGeometry = CustomDesignEditableGridInitializer.initialize(
                             sourceWidth = 1080,
@@ -413,7 +414,7 @@ class CustomDesignSetupScreenTest {
                         saveStatus = CustomDesignSaveStatus.SAVED,
                         restoreStatus = CustomDesignRestoreStatus.IDLE,
                     ),
-                    onSaveSuccessAcknowledged = { acknowledged++ },
+                    onSaveSuccessConfirmed = { acknowledged++ },
                 )
             }
         }
@@ -422,7 +423,8 @@ class CustomDesignSetupScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("Custom Design Saved").assertIsDisplayed()
         composeTestRule.onNodeWithText(
-            "You can now download your result using “My Custom Design” from Result Format.",
+            "Your custom design has been saved.\n" +
+                "You can now download your result using My Design.",
         ).assertIsDisplayed()
         composeTestRule.onNodeWithTag(CUSTOM_DESIGN_SAVE_SUCCESS_OK_TEST_TAG)
             .performClick()
@@ -514,7 +516,6 @@ class CustomDesignSetupScreenTest {
             composeTestRule.onNodeWithTag(CUSTOM_DESIGN_IMAGE_PREVIEW_TEST_TAG)
                 .assertIsDisplayed()
             composeTestRule.onNodeWithTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG)
-                .performScrollTo()
                 .assertIsDisplayed()
 
             listOf(
@@ -557,7 +558,6 @@ class CustomDesignSetupScreenTest {
             }
         }
         composeTestRule.onNodeWithTag(CUSTOM_DESIGN_DELETE_ACTION_TEST_TAG)
-            .performScrollTo()
             .assertIsNotEnabled()
         assertEquals(
             0,
@@ -716,7 +716,6 @@ class CustomDesignSetupScreenTest {
                 composeTestRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
             }
             composeTestRule.onNodeWithTag(CUSTOM_DESIGN_SAVE_ACTION_TEST_TAG)
-                .performScrollTo()
                 .assertIsDisplayed()
         } finally {
             imageFile.delete()

@@ -375,7 +375,11 @@ class GroupRotationTeamSetupRepositoryTest {
         localRepository.create(tournament)
 
         assertEquals(
-            GroupRotationTeamSetupReadResult.NoSavedSetup(tournament),
+            GroupRotationTeamSetupReadResult.NoSavedSetup(
+                tournament.copy(
+                    selectedGroupPairings = tournament.selectedGroupPairings.sortedBy { it.canonicalKey },
+                ),
+            ),
             RoomGroupRotationTeamSetupReadRepository(database)
                 .readGroupRotationTeamSetup(TOURNAMENT_ID, OWNER_ID),
         )

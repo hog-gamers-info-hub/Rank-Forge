@@ -3,11 +3,15 @@ package com.hoggamers.rankforge.data.tournament
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hoggamers.rankforge.data.local.DeletionIntentEntity
 import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
 import com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.domain.tournament.ConfirmedRosterReplacementCandidate
+import com.hoggamers.rankforge.domain.tournament.DeletionIntentPhase
+import com.hoggamers.rankforge.domain.tournament.DeletionTargetType
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.LocalDeletionResult
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchKill
 import com.hoggamers.rankforge.domain.tournament.MatchPlacement
@@ -70,6 +74,7 @@ class TournamentSummaryRepositoryTest {
             GroupPairing.of(TournamentGroup.A, TournamentGroup.D),
             GroupPairing.of(TournamentGroup.B, TournamentGroup.C),
         )
+        val persistedGroupThreePairings = groupThreePairings.sortedBy { it.canonicalKey }
         withRepository(
             initialTournament = groupRotationTournament(
                 id = TOURNAMENT_ID,
@@ -92,14 +97,14 @@ class TournamentSummaryRepositoryTest {
             val groupFourSummary = summaries.single { it.tournament.id == "group-four" }
             assertEquals(TournamentFormat.GROUP_ROTATION, groupThreeSummary.tournament.format)
             assertEquals(3, groupThreeSummary.tournament.groupCount)
-            assertEquals(groupThreePairings, groupThreeSummary.tournament.selectedGroupPairings)
+            assertEquals(persistedGroupThreePairings, groupThreeSummary.tournament.selectedGroupPairings)
             assertEquals(4, groupFourSummary.tournament.groupCount)
             assertEquals(groupFourPairings, groupFourSummary.tournament.selectedGroupPairings)
 
             val ownerASummaries = repository.observeSummariesByOwner("owner-a")
                 .first { it.size == 1 }
             assertEquals(listOf(TOURNAMENT_ID), ownerASummaries.map { it.tournament.id })
-            assertEquals(groupThreePairings, ownerASummaries.single().tournament.selectedGroupPairings)
+            assertEquals(persistedGroupThreePairings, ownerASummaries.single().tournament.selectedGroupPairings)
 
             val ownerBSummaries = repository.observeSummariesByOwner("owner-b")
                 .first { it.size == 1 }
@@ -264,13 +269,16 @@ class TournamentSummaryRepositoryTest {
                     withTimeout(5_000L) { emissions.receive() }.map { it.tournament.id },
                 )
 
-                database.tournamentDao().upsert(
-                    groupRotationTournament(
-                        id = "malformed-group",
-                        groupCount = 3,
-                        pairings = emptyList(),
-                    ).toEntity(creationOrder = 2L),
+                val validGroupRotation = groupRotationTournament(
+                    id = "malformed-group",
+                    groupCount = 3,
+                    pairings = listOf(GroupPairing.of(TournamentGroup.A, TournamentGroup.B)),
                 )
+                database.tournamentDao().upsert(validGroupRotation.toEntity(creationOrder = 2L))
+                database.tournamentGroupPairingDao().upsertAll(
+                    validGroupRotation.selectedGroupPairings.map { it.toEntity(validGroupRotation.id) },
+                )
+                database.tournamentGroupPairingDao().deleteByTournamentId(validGroupRotation.id)
 
                 val afterMalformed = withTimeout(5_000L) { emissions.receive() }
                 assertEquals(listOf(TOURNAMENT_ID), afterMalformed.map { it.tournament.id })
@@ -296,6 +304,7 @@ class TournamentSummaryRepositoryTest {
             groupCount = 3,
             pairings = pairings,
         )
+        val persistedPairings = pairings.sortedBy { it.canonicalKey }
         try {
             val database = Room.databaseBuilder(context, RankForgeDatabase::class.java, databaseName)
                 .build()
@@ -303,7 +312,7 @@ class TournamentSummaryRepositoryTest {
             val repository = RoomTournamentRepository(database)
             repository.create(groupTournament)
             assertEquals(
-                pairings,
+                persistedPairings,
                 repository.observeSummaries().first { it.size == 1 }
                     .single().tournament.selectedGroupPairings,
             )
@@ -318,7 +327,7 @@ class TournamentSummaryRepositoryTest {
             val reopenedSummary = reopenedRepository.observeSummaries().first { it.size == 1 }.single()
             assertEquals(TournamentFormat.GROUP_ROTATION, reopenedSummary.tournament.format)
             assertEquals(3, reopenedSummary.tournament.groupCount)
-            assertEquals(pairings, reopenedSummary.tournament.selectedGroupPairings)
+            assertEquals(persistedPairings, reopenedSummary.tournament.selectedGroupPairings)
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -327,7 +336,8 @@ class TournamentSummaryRepositoryTest {
 
     @Test
     fun effectiveAndRejectedMutationsRespectLastUpdatedContract() = runBlocking {
-        withRepository { repository, database, clock ->
+        val ownerUserId = "owner"
+        withRepository(initialTournament = tournament().copy(ownerUserId = ownerUserId)) { repository, database, clock ->
             val createdAt = database.tournamentDao().observeById(TOURNAMENT_ID).first()!!.lastUpdatedEpochMillis
             assertEquals(1_000L, createdAt)
 
@@ -366,7 +376,31 @@ class TournamentSummaryRepositoryTest {
             assertEquals(6_000L, lastUpdated(database))
 
             clock.setMillis(7_000L)
-            repository.deleteMatchLocally("match-1")
+            assertEquals(
+                LocalDeletionResult.NotFound,
+                repository.deleteMatchLocallyByOwner("match-1", "foreign-owner"),
+            )
+            assertEquals(6_000L, lastUpdated(database))
+            assertEquals(
+                LocalDeletionResult.CleanupClaimLost,
+                repository.deleteMatchLocallyByOwner("match-1", ownerUserId),
+            )
+            assertEquals(6_000L, lastUpdated(database))
+
+            database.deletionIntentDao().insertIfAbsent(
+                DeletionIntentEntity(
+                    targetType = DeletionTargetType.MATCH.name,
+                    targetId = "match-1",
+                    tournamentId = TOURNAMENT_ID,
+                    ownerUserId = ownerUserId,
+                    phase = DeletionIntentPhase.REMOTE_DELETED_LOCAL_CLEANUP_PENDING.name,
+                    updatedAtEpochMillis = 6_000L,
+                ),
+            )
+            assertEquals(
+                LocalDeletionResult.Deleted,
+                repository.deleteMatchLocallyByOwner("match-1", ownerUserId),
+            )
             assertEquals(7_000L, lastUpdated(database))
             assertEquals(0, repository.observeSummaries().first().single().totalMatches)
         }

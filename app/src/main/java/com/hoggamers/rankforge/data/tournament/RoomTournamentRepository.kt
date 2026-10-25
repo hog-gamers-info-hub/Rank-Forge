@@ -1061,7 +1061,7 @@ class RoomTournamentRepository @Inject constructor(
                     snapshot.tournament.selectedGroupPairings.map { it.toEntity(snapshot.tournament.id) },
                 )
                 database.rosterPlayerDao().upsertAll(snapshot.players.map { it.toEntity() })
-                database.groupRotationPairingLobbySlotDao().upsertAll(
+                database.groupRotationPairingLobbySlotDao().insertAll(
                     snapshot.pairingLobbySlots.map { it.toEntity() },
                 )
                 database.groupRotationPairingTeamEntryDraftDao()
@@ -1189,7 +1189,7 @@ class RoomTournamentRepository @Inject constructor(
                         .map { it.toEntity(tournamentId) },
                 )
                 database.rosterPlayerDao().upsertAll(snapshot.parent.players.map { it.toEntity() })
-                database.groupRotationPairingLobbySlotDao().upsertAll(
+                database.groupRotationPairingLobbySlotDao().insertAll(
                     snapshot.parent.pairingLobbySlots.map { it.toEntity() },
                 )
                 reconcileRestoredMatchRows(

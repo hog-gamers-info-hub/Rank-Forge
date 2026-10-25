@@ -286,13 +286,20 @@ class FinalizedMatchCloudSyncMapperTest {
     @Test
     fun rejectsParticipantAwareResultShapeFailures() {
         val tenTeamSlots = namedTeamSlots(10)
-        val cases = listOf(
-            finalizedMatch((1..10).toList(), placements = (1..9).toList() + 11),
+        val sparseResult = FinalizedMatchCloudSyncMapper.map(
+            snapshot(
+                teamSlots = tenTeamSlots,
+                match = finalizedMatch((1..10).toList(), placements = (1..9).toList() + 11),
+            ),
+        ) as FinalizedMatchCloudSyncMappingResult.Success
+        assertEquals((1..9).toList() + 11, sparseResult.payloads.matchResults.mapNotNull { it.placement })
+
+        val invalidCases = listOf(
             finalizedMatch((1..10).toList(), placements = listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 9)),
             finalizedMatch((1..10).toList(), kills = (0..8).toList() + -1),
         )
 
-        cases.forEach { match ->
+        invalidCases.forEach { match ->
             assertEquals(
                 FinalizedMatchCloudSyncMappingResult.Invalid,
                 FinalizedMatchCloudSyncMapper.map(snapshot(teamSlots = tenTeamSlots, match = match)),

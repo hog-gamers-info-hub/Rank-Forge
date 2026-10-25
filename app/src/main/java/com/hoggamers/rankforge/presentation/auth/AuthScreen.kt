@@ -126,13 +126,15 @@ fun AuthScreen(
     onExitPasswordRecovery: () -> Unit = {},
     onDeleteAccountConfirmed: () -> Unit = {},
 ) {
-    if (uiState.isSignedIn) {
+    val isCriticalAccountDeletionRecovery =
+        uiState.accountDeletionState == AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP ||
+            uiState.accountDeletionState == AccountDeletionUiState.RECOVERY_REQUIRED
+
+    if (uiState.isSignedIn && (!uiState.isPasswordRecoveryActive || isCriticalAccountDeletionRecovery)) {
         PointIqAccountScreenContainer(
             modifier = Modifier.testTag(AUTH_SCREEN_TEST_TAG),
         ) {
-            if (uiState.accountDeletionState == AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP ||
-                uiState.accountDeletionState == AccountDeletionUiState.RECOVERY_REQUIRED
-            ) {
+            if (isCriticalAccountDeletionRecovery) {
                 AccountDeletionPendingLocalCleanupContent(uiState.accountDeletionState)
             } else {
                 SignedInAuthContent(
@@ -152,9 +154,7 @@ fun AuthScreen(
             horizontalAlignment = Alignment.Start,
             verticalArrangement = Arrangement.Top,
         ) {
-            if (uiState.accountDeletionState == AccountDeletionUiState.REMOTE_DELETED_PENDING_LOCAL_CLEANUP ||
-                uiState.accountDeletionState == AccountDeletionUiState.RECOVERY_REQUIRED
-            ) {
+            if (isCriticalAccountDeletionRecovery) {
                 AccountDeletionPendingLocalCleanupContent(uiState.accountDeletionState)
             } else if (uiState.passwordRecoveryStage == PasswordRecoveryStage.REQUEST_EMAIL) {
                 PasswordRecoveryRequestContent(
