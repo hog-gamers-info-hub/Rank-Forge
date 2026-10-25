@@ -64,7 +64,7 @@ interface RankForgeStateDao {
         PointTableDetailsEntity::class,
         PointTableLogoPlacementEntity::class,
     ],
-    version = 36,
+    version = 37,
     exportSchema = true,
 )
 abstract class RankForgeDatabase : RoomDatabase() {
@@ -934,10 +934,6 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE `matches` ADD COLUMN `group_pairing_key` TEXT",
                 )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_matches_tournament_id_group_pairing_key` " +
-                        "ON `matches` (`tournament_id`, `group_pairing_key`)",
-                )
             }
         }
 
@@ -1188,6 +1184,14 @@ abstract class RankForgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_group_rotation_team_identities_tournament_id_normalized_name` " +
                         "ON `group_rotation_team_identities` (`tournament_id`, `normalized_name`)",
+                )
+            }
+        }
+
+        val MIGRATION_36_37 = object : Migration(36, 37) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "DROP INDEX IF EXISTS `index_matches_tournament_id_group_pairing_key`",
                 )
             }
         }

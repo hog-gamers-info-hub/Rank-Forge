@@ -538,7 +538,7 @@ fun playerUpdateInvokesSlotAndRowCallback() {
                 "Cloud rejected the reviewed roster as invalid. The local roster was kept.",
             TournamentRosterCloudReplacementResult.AuthorizationFailure to
                 "Cloud authorization denied the reviewed roster. The local roster was kept.",
-            TournamentRosterCloudReplacementResult.Conflict(RevisionConflict.MissingRevision) to
+            TournamentRosterCloudReplacementResult.Conflict(RevisionConflict.FinalizedMatchHistory) to
                 "Cloud data changed before synchronization. The local roster was kept.",
             TournamentRosterCloudReplacementResult.BlockedByExistingMatches to
                 "Cloud synchronization is blocked by existing matches. The local roster was kept.",

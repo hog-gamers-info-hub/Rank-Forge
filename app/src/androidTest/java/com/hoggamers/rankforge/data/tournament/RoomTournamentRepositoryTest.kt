@@ -13,6 +13,14 @@ import com.hoggamers.rankforge.data.local.MatchPlacementEntity
 import com.hoggamers.rankforge.data.local.GroupRotationPairingLobbySlotEntity
 import com.hoggamers.rankforge.data.local.RosterPlayerEntity
 import com.hoggamers.rankforge.data.local.TeamSlotEntity
+import com.hoggamers.rankforge.domain.auth.AuthFailure
+import com.hoggamers.rankforge.domain.auth.AuthFailureCategory
+import com.hoggamers.rankforge.domain.auth.AuthOperationResult
+import com.hoggamers.rankforge.domain.auth.AuthRepository
+import com.hoggamers.rankforge.domain.auth.AuthRestorationResult
+import com.hoggamers.rankforge.domain.auth.AuthState
+import com.hoggamers.rankforge.domain.auth.AuthSuccessOutcome
+import com.hoggamers.rankforge.domain.auth.AuthUser
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchDraftFieldValues
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
@@ -78,7 +86,9 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -183,6 +193,7 @@ class RoomTournamentRepositoryTest {
 
             val beforeTournament = database.tournamentDao().observeById("legacy-a").first()!!
             val beforeSlots = database.teamSlotDao().observeByTournamentId("legacy-a").first()
+            val beforeObservedSlots = repository.observeSlotsByTournamentId("legacy-a").first()
             val beforeRoster = database.rosterPlayerDao().observeByTournamentAndSlot("legacy-a", 1).first()
             val beforeRevision = repository.readLocalRevisionState("legacy-a")
             val beforeMirror = database.stateDao().readPayload()!!
@@ -197,10 +208,10 @@ class RoomTournamentRepositoryTest {
             assertEquals(beforeSlots, database.teamSlotDao().observeByTournamentId("legacy-a").first())
             assertEquals(beforeRoster, database.rosterPlayerDao().observeByTournamentAndSlot("legacy-a", 1).first())
             assertEquals(beforeRevision, repository.readLocalRevisionState("legacy-a"))
-            assertTrue(beforeMirror.contains("\"ownerUserId\":null"))
+            assertTrue(!beforeMirror.contains("\"ownerUserId\""))
             assertTrue(database.stateDao().readPayload()!!.contains("\"ownerUserId\":\"user-a\""))
             assertEquals(
-                beforeSlots,
+                beforeObservedSlots,
                 repository.observeSlotsByTournamentIdAndOwner("legacy-a", "user-a").first(),
             )
 
@@ -400,6 +411,7 @@ class RoomTournamentRepositoryTest {
             val slots = repository.observeSlotsByTournamentId(tournament.id).first()
             assertEquals(18, slots.size)
             assertEquals((1..6).toList(), slots.filter { it.group == TournamentGroup.A }.map { it.slotNumber })
+            assertEquals((7..12).toList(), slots.filter { it.group == TournamentGroup.B }.map { it.slotNumber })
             assertEquals((13..18).toList(), slots.filter { it.group == TournamentGroup.C }.map { it.slotNumber })
             assertEquals(tournament, repository.observeById(tournament.id).first())
             assertEquals(
@@ -409,6 +421,63 @@ class RoomTournamentRepositoryTest {
                     .first()
                     .map { it.pairingKey },
             )
+
+            databases.last().close()
+            val reopenedDatabase = openDatabase(context, databaseName, databases)
+            val reopenedRepository = RoomTournamentRepository(reopenedDatabase)
+            assertEquals(tournament, reopenedRepository.observeById(tournament.id).first())
+            assertEquals(slots, reopenedRepository.observeSlotsByTournamentId(tournament.id).first())
+            assertEquals(
+                listOf("A:C"),
+                reopenedDatabase.tournamentGroupPairingDao()
+                    .observeByTournamentId(tournament.id)
+                    .first()
+                    .map { it.pairingKey },
+            )
+        } finally {
+            databases.forEach { if (it.isOpen) it.close() }
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun legacyGroupRotationNullGroupsRemainReadableWithoutHistoricalRewrite() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "room-repository-group-rotation-legacy-null-groups.db"
+        context.deleteDatabase(databaseName)
+        val databases = mutableListOf<RankForgeDatabase>()
+        try {
+            val database = openDatabase(context, databaseName, databases)
+            val repository = RoomTournamentRepository(database)
+            val tournament = Tournament(
+                id = "legacy-group-rotation",
+                name = "Legacy Group Cup",
+                stageName = "Organizer",
+                organizerContactNumber = "123",
+                status = TournamentStatus.DRAFT,
+                format = TournamentFormat.GROUP_ROTATION,
+                groupCount = 3,
+                selectedGroupPairings = listOf(GroupPairing.of(TournamentGroup.A, TournamentGroup.C)),
+            )
+            repository.create(tournament)
+            database.teamSlotDao().upsertAll(
+                (1..18).map { slotNumber ->
+                    TeamSlotEntity(
+                        tournamentId = tournament.id,
+                        slotNumber = slotNumber,
+                        teamName = "Legacy Team $slotNumber",
+                        group = null,
+                    )
+                },
+            )
+            val persistedBeforeRead = database.teamSlotDao().readByTournamentId(tournament.id)
+
+            val loadedSlots = repository.observeSlotsByTournamentId(tournament.id).first()
+
+            assertEquals(18, loadedSlots.size)
+            assertTrue(loadedSlots.all { it.group == null })
+            assertEquals(persistedBeforeRead, database.teamSlotDao().readByTournamentId(tournament.id))
+            assertEquals(tournament, repository.observeById(tournament.id).first())
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
             context.deleteDatabase(databaseName)
@@ -444,7 +513,7 @@ class RoomTournamentRepositoryTest {
                 tournamentId,
                 canonicalSlots.associateWith { slot -> "Team $slot" },
             )
-            database.groupRotationPairingLobbySlotDao().upsertAll(
+            database.groupRotationPairingLobbySlotDao().insertAll(
                 canonicalSlots.mapIndexed { index, teamSlotNumber ->
                     GroupRotationPairingLobbySlotEntity(
                         tournamentId = tournamentId,
@@ -478,7 +547,7 @@ class RoomTournamentRepositoryTest {
                     "7",
                 ),
             )
-            database.groupRotationPairingLobbySlotDao().upsertAll(
+            database.groupRotationPairingLobbySlotDao().insertAll(
                 canonicalSlots.mapIndexed { index, teamSlotNumber ->
                     GroupRotationPairingLobbySlotEntity(
                         tournamentId = tournamentId,
@@ -567,7 +636,7 @@ class RoomTournamentRepositoryTest {
                 tournamentId,
                 canonicalSlots.associateWith { slot -> "Team $slot" },
             )
-            database.groupRotationPairingLobbySlotDao().upsertAll(
+            database.groupRotationPairingLobbySlotDao().insertAll(
                 canonicalSlots.mapIndexed { index, teamSlotNumber ->
                     GroupRotationPairingLobbySlotEntity(
                         tournamentId = tournamentId,
@@ -954,6 +1023,11 @@ class RoomTournamentRepositoryTest {
             assertTrue(correctionAfter[4] != correctionBefore[4])
 
             val ocrEvidence = preservedEvidence("owner-a-ocr", "owner-a-ocr-match", (0 until 1).toList())
+                .let { evidence ->
+                    evidence.copy(rows = evidence.rows.map { row ->
+                        row.copy(originalSuggestedTeamSlot = row.rowIndex.takeIf { it == 0 }?.plus(1))
+                    })
+                }
             assertTrue(
                 repository.finalizeDraftMatchWithOcrEvidenceByOwner(
                     "owner-a-ocr",
@@ -1118,15 +1192,17 @@ class RoomTournamentRepositoryTest {
         try {
             val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
             val tournamentId = "roster-workflow-tournament"
-            repository.create(tournament(tournamentId, TournamentStatus.DRAFT))
+            val ownerUserId = "roster-workflow-owner"
+            val authRepository = SignedInTestAuthRepository(ownerUserId)
+            repository.create(tournament(tournamentId, TournamentStatus.DRAFT, ownerUserId))
 
             assertEquals(12, repository.observeSlotsByTournamentId(tournamentId).first().size)
 
-            SaveTeamSlotNamesUseCase(repository)(
+            SaveTeamSlotNamesUseCase(repository, authRepository)(
                 tournamentId = tournamentId,
                 teamNamesBySlotNumber = (1..12).associateWith { slotNumber -> "Roster Team $slotNumber" },
             )
-            val saveRoster = SaveRosterUseCase(repository)
+            val saveRoster = SaveRosterUseCase(repository, authRepository)
             (1..12).forEach { slotNumber ->
                 saveRoster(
                     tournamentId = tournamentId,
@@ -1144,7 +1220,11 @@ class RoomTournamentRepositoryTest {
             val validateRoster = ValidateTournamentRosterUseCase(repository, RosterValidator())
             assertTrue(validateRoster(tournamentId).issues.isEmpty())
 
-            val confirmation = ConfirmTournamentRosterUseCase(repository, validateRoster)(tournamentId)
+            val confirmation = ConfirmTournamentRosterUseCase(
+                repository,
+                validateRoster,
+                authRepository,
+            )(tournamentId)
             assertTrue(confirmation is ConfirmTournamentRosterResult.Confirmed)
             assertEquals(
                 TournamentStatus.CONFIRMED,
@@ -1547,12 +1627,14 @@ class RoomTournamentRepositoryTest {
         try {
             val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
             val tournamentId = "match-workflow-tournament"
-            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED))
+            val ownerUserId = "match-workflow-owner"
+            val authRepository = SignedInTestAuthRepository(ownerUserId)
+            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED, ownerUserId))
             nameTeams(repository, tournamentId, 12)
             assertTrue(repository.confirmTournament(tournamentId))
             assertEquals(12, repository.observeSlotsByTournamentId(tournamentId).first().size)
 
-            val created = CreateMatchUseCase(repository)(
+            val created = CreateMatchUseCase(repository, authRepository)(
                 CreateMatchInput(
                     tournamentId = tournamentId,
                     matchNumber = "1",
@@ -1565,12 +1647,12 @@ class RoomTournamentRepositoryTest {
             val placements = (1..12).associateWith { slotNumber -> slotNumber.toString() }
             val kills = (1..12).associateWith { slotNumber -> (slotNumber - 1).toString() }
             assertTrue(
-                SaveMatchPlacementsUseCase(repository)(
+                SaveMatchPlacementsUseCase(repository, authRepository)(
                     SaveMatchPlacementsInput(matchId, placements),
                 ) is SaveMatchPlacementsResult.Saved,
             )
             assertTrue(
-                SaveMatchKillsUseCase(repository)(
+                SaveMatchKillsUseCase(repository, authRepository)(
                     SaveMatchKillsInput(matchId, kills),
                 ) is SaveMatchKillsResult.Saved,
             )
@@ -1585,7 +1667,7 @@ class RoomTournamentRepositoryTest {
             val validateMatch = ValidateMatchResultUseCase()
             assertTrue(validateMatch(rows).isValid)
 
-            val finalization = FinalizeMatchUseCase(repository, validateMatch)(
+            val finalization = FinalizeMatchUseCase(repository, validateMatch, authRepository)(
                 FinalizeMatchInput(matchId = matchId, rows = rows),
             )
             assertTrue(finalization is FinalizeMatchResult.Finalized)
@@ -1602,7 +1684,11 @@ class RoomTournamentRepositoryTest {
             assertEquals((1..12).toList(), reopenedMatch.placements.map { it.position })
             assertEquals((0..11).toList(), reopenedMatch.kills.map { it.kills })
 
-            val protectedFinalization = FinalizeMatchUseCase(reopenedRepository, validateMatch)(
+            val protectedFinalization = FinalizeMatchUseCase(
+                reopenedRepository,
+                validateMatch,
+                authRepository,
+            )(
                 FinalizeMatchInput(matchId = matchId, rows = rows),
             )
             assertTrue(
@@ -1625,7 +1711,9 @@ class RoomTournamentRepositoryTest {
             val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
             val tournamentId = "ocr-workflow-tournament"
             val matchId = "ocr-workflow-match"
-            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED))
+            val ownerUserId = "ocr-workflow-owner"
+            val authRepository = SignedInTestAuthRepository(ownerUserId)
+            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED, ownerUserId))
             nameTeams(repository, tournamentId, 12)
             repository.createDraftMatch(draftMatch(tournamentId, matchId, 1))
 
@@ -1646,7 +1734,12 @@ class RoomTournamentRepositoryTest {
             }
             val finalization = FinalizeOcrCorrectionMatchUseCase(
                 repository = repository,
-                finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+                finalizeMatch = FinalizeMatchUseCase(
+                    repository,
+                    ValidateMatchResultUseCase(),
+                    authRepository,
+                ),
+                authRepository = authRepository,
                 clock = Clock.fixed(Instant.parse("2026-07-31T00:00:00Z"), ZoneOffset.UTC),
             )(
                 FinalizeOcrCorrectionMatchInput(
@@ -1778,7 +1871,10 @@ class RoomTournamentRepositoryTest {
                 participantResults = participantResults,
             ) as FinalizeMatchRepositoryResult.Finalized
 
-            assertEquals(participantResults, result.match.participantResults)
+            assertEquals(
+                participantResults.sortedBy { it.teamSlotNumber },
+                result.match.participantResults.sortedBy { it.teamSlotNumber },
+            )
             assertEquals(listOf(7, 10), result.match.participantResults.filter {
                 it.participationStatus == MatchParticipationStatus.NO_SHOW
             }.map { it.teamSlotNumber })
@@ -1790,8 +1886,11 @@ class RoomTournamentRepositoryTest {
             val reopenedRepository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
             val reopenedMatch = reopenedRepository.observeMatchById("participant-snapshot-match")
                 .first { it != null }!!
-            assertEquals(participantResults, reopenedMatch.participantResults)
-            assertEquals(positionedSlots.sorted(), reopenedMatch.placements.map { it.teamSlotNumber })
+            assertEquals(
+                participantResults.sortedBy { it.teamSlotNumber },
+                reopenedMatch.participantResults.sortedBy { it.teamSlotNumber },
+            )
+            assertEquals(positionedSlots, reopenedMatch.placements.map { it.teamSlotNumber })
             assertEquals((1..10).toList(), reopenedMatch.placements.map { it.position }.sorted())
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
@@ -1857,7 +1956,7 @@ class RoomTournamentRepositoryTest {
             assertInvalidFinalization(
                 repository,
                 wrongPlacementMatch,
-                (1..10).map { slot -> MatchPlacement(slot, if (slot == 10) 11 else slot) },
+                (1..10).map { slot -> MatchPlacement(slot, if (slot == 10) 13 else slot) },
                 (1..10).map { slot -> MatchKill(slot, 0) },
             )
             val nineRowResult = repository.finalizeDraftMatch(
@@ -1929,7 +2028,9 @@ class RoomTournamentRepositoryTest {
             val repository = RoomTournamentRepository(openDatabase(context, databaseName, databases))
             val tournamentId = "ten-team-ocr-tournament"
             val matchId = "ten-team-ocr-match"
-            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED))
+            val ownerUserId = "ten-team-ocr-owner"
+            val authRepository = SignedInTestAuthRepository(ownerUserId)
+            repository.create(tournament(tournamentId, TournamentStatus.CONFIRMED, ownerUserId))
             nameTeams(repository, tournamentId, 10)
             repository.confirmTournament(tournamentId)
             assertTrue(
@@ -1946,13 +2047,18 @@ class RoomTournamentRepositoryTest {
                     originalOcrText = "Sanitized OCR row $rowIndex",
                     originalPlacement = rowIndex + 1,
                     originalKills = rowIndex,
-                    originalSuggestedTeamSlot = rowIndex + 1,
+                    originalSuggestedTeamSlot = if (rowIndex < 10) rowIndex + 1 else null,
                     isExcluded = rowIndex >= 10,
                 )
             }
             val finalization = FinalizeOcrCorrectionMatchUseCase(
                 repository = repository,
-                finalizeMatch = FinalizeMatchUseCase(repository, ValidateMatchResultUseCase()),
+                finalizeMatch = FinalizeMatchUseCase(
+                    repository,
+                    ValidateMatchResultUseCase(),
+                    authRepository,
+                ),
+                authRepository = authRepository,
                 clock = Clock.fixed(Instant.parse("2026-08-01T00:00:00Z"), ZoneOffset.UTC),
             )(
                 FinalizeOcrCorrectionMatchInput(
@@ -2643,14 +2749,15 @@ class RoomTournamentRepositoryTest {
                     (1..12).map { slot -> MatchKill(slot, 0) },
                 ),
             )
-            assertEquals(
-                SubmitMatchCorrectionRepositoryResult.Rejected(MatchCorrectionFailure.INVALID_DATA),
-                repository.submitMatchCorrection(
-                    "match-1",
-                    listOf(MatchPlacement(1, 1)),
-                    listOf(MatchKill(1, -1)),
-                ),
-            )
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.submitMatchCorrection(
+                        "match-1",
+                        listOf(MatchPlacement(1, 1)),
+                        listOf(MatchKill(1, -1)),
+                    )
+                }
+            }
             assertEquals(standingsBeforeRejectedWrites, regenerateStandings(repository, "tournament-1"))
         } finally {
             databases.forEach { if (it.isOpen) it.close() }
@@ -3570,4 +3677,24 @@ class RoomTournamentRepositoryTest {
             }
         },
     )
+
+    private class SignedInTestAuthRepository(
+        private val userId: String,
+    ) : AuthRepository {
+        override fun observeAuthState(): Flow<AuthState> =
+            flowOf(AuthState.SignedIn(AuthUser(userId, "$userId@example.test")))
+
+        override suspend fun restoreSession(): AuthRestorationResult = AuthRestorationResult.NoSavedSession
+
+        override suspend fun signUp(email: String, password: String): AuthOperationResult = failure()
+
+        override suspend fun login(email: String, password: String): AuthOperationResult = failure()
+
+        override suspend fun logout(): AuthOperationResult =
+            AuthOperationResult.Success(AuthSuccessOutcome.SignedOutLocally)
+
+        private fun failure(): AuthOperationResult = AuthOperationResult.Failure(
+            AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+        )
+    }
 }

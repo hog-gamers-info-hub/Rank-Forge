@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -56,9 +57,11 @@ class TeamEntryScreenTest {
                 .performScrollTo()
                 .assertIsDisplayed()
             composeTestRule
-                .onNodeWithText(context.getString(R.string.team_name_slot_label, slotNumber))
+                .onNodeWithTag(TEAM_ENTRY_SLOT_INPUT_TEST_TAG_PREFIX + slotNumber)
                 .performScrollTo()
-                .assertIsDisplayed()
+                .assertContentDescriptionEquals(
+                    context.getString(R.string.team_name_slot_label, slotNumber),
+                )
         }
     }
 

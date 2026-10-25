@@ -142,8 +142,10 @@ class CreateTournamentUseCaseTest {
         assertEquals(TournamentFormat.GROUP_ROTATION, created.format)
         assertEquals(3, created.groupCount)
         assertEquals(defaultGroupPairings(3), created.selectedGroupPairings)
-        assertEquals(18, repository.slotsByTournamentId.getValue(created.id).size)
-        assertEquals(TournamentGroup.C, repository.slotsByTournamentId.getValue(created.id).single { it.slotNumber == 13 }.group)
+        val slots = repository.slotsByTournamentId.getValue(created.id)
+        assertEquals(18, slots.size)
+        assertEquals((1..18).toList(), slots.map { it.slotNumber })
+        assertTrue(slots.all { it.group == null })
     }
 
     private fun validInput() = CreateTournamentInput(

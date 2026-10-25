@@ -1,9 +1,10 @@
 package com.hoggamers.rankforge.data.local
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -42,8 +43,8 @@ interface GroupRotationPairingLobbySlotDao {
         pairingKey: String,
     ): List<GroupRotationPairingLobbySlotEntity>
 
-    @Upsert
-    suspend fun upsertAll(assignments: List<GroupRotationPairingLobbySlotEntity>)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(assignments: List<GroupRotationPairingLobbySlotEntity>)
 
     @Query(
         "DELETE FROM tournament_group_pairing_lobby_slots " +
@@ -70,7 +71,7 @@ interface GroupRotationPairingLobbySlotDao {
         }
         deleteByTournamentAndPairing(tournamentId, pairingKey)
         if (assignments.isNotEmpty()) {
-            upsertAll(assignments)
+            insertAll(assignments)
         }
     }
 }

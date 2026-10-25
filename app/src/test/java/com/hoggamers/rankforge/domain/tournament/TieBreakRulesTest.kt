@@ -61,6 +61,29 @@ class TieBreakRulesTest {
     }
 
     @Test
+    fun higherTotalKillsRankBeforeHigherWinsWhenTotalPointsAreEqual() {
+        val result = tieBreakRules(
+            listOf(
+                standing(
+                    teamSlotNumber = 1,
+                    totalPoints = 100,
+                    totalKillPoints = 8,
+                    firstPlaceFinishes = 1,
+                ),
+                standing(
+                    teamSlotNumber = 2,
+                    totalPoints = 100,
+                    totalKillPoints = 5,
+                    firstPlaceFinishes = 2,
+                ),
+            ),
+        )
+
+        assertEquals(listOf(1, 2), teamSlots(result))
+        assertFalse(result.any { it.isCompleteTie })
+    }
+
+    @Test
     fun equalEarlierCriteriaAreResolvedByHigherTotalPositionPoints() {
         val result = tieBreakRules(
             listOf(
@@ -269,7 +292,7 @@ class TieBreakRulesTest {
             ),
         )
 
-        assertEquals(listOf(4, 3, 2, 1, 5), teamSlots(result))
+        assertEquals(listOf(4, 3, 1, 2, 5), teamSlots(result))
         assertFalse(result.any { it.isCompleteTie })
     }
 

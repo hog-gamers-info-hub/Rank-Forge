@@ -994,7 +994,7 @@ class RoomTournamentCloudRestorationTest {
         tournament: Tournament,
         mappingTeamSlots: List<Int>,
     ) {
-        database.groupRotationPairingLobbySlotDao().upsertAll(
+        database.groupRotationPairingLobbySlotDao().insertAll(
             mappingTeamSlots.mapIndexed { index, teamSlotNumber ->
                 GroupRotationPairingLobbySlotEntity(
                     tournamentId = tournament.id,

@@ -17,8 +17,8 @@ class TieBreakRules {
         return standings
             .sortedWith(
                 compareByDescending<CumulativeTournamentStanding> { it.totalPoints }
-                    .thenByDescending { it.firstPlaceFinishes }
                     .thenByDescending { it.totalKillPoints }
+                    .thenByDescending { it.firstPlaceFinishes }
                     .thenByDescending { it.totalPositionPoints }
                     .thenBy { it.teamSlotNumber },
             )

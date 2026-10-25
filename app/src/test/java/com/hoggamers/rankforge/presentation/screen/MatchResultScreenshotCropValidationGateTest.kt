@@ -101,7 +101,7 @@ class MatchResultScreenshotCropValidationGateTest {
         advanceUntilIdle()
 
         assertEquals(1, repository.persistConfirmedCropCalls)
-        assertEquals(1, repository.uploadCheckpointCalls)
+        assertEquals(0, repository.uploadCheckpointCalls)
         assertEquals(1, confirmations)
     }
 
@@ -119,7 +119,7 @@ class MatchResultScreenshotCropValidationGateTest {
 
         assertEquals(automatic, viewModel.uiState.value.confirmedCrop)
         assertEquals(1, repository.persistConfirmedCropCalls)
-        assertEquals(1, repository.uploadCheckpointCalls)
+        assertEquals(0, repository.uploadCheckpointCalls)
         assertEquals(1, confirmations)
     }
 

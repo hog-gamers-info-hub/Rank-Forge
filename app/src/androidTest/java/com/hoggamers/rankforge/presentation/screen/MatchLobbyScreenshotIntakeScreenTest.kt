@@ -261,7 +261,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
             MATCH_LOBBY_TEAM_CROP_DATA_TEST_TAG_PREFIX + "slot_1",
         ).assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue(dataBounds.top > cropBounds.bottom)
-        composeTestRule.onNodeWithText("Slot - 1 | Team Name - APX").assertExists()
+        composeTestRule.onNodeWithText("APX").assertExists()
         LobbyPlayerRow.entries.forEach { row ->
             composeTestRule.onNodeWithTag(
                 MATCH_LOBBY_TEAM_CROP_PLAYER_NAME_TEST_TAG_PREFIX +
@@ -311,7 +311,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 1,
             ),
         ).assertIsDisplayed()
@@ -359,7 +359,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 1,
             ),
         ).assertIsDisplayed()
@@ -402,7 +402,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsDisplayed()
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 2,
             ),
         ).assertIsDisplayed()
@@ -440,7 +440,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
 
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 3,
             ),
         ).performClick()
@@ -505,7 +505,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
 
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 2,
             ),
         ).performClick()
@@ -544,7 +544,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
 
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 2,
             ),
         ).performClick()
@@ -580,7 +580,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsNotEnabled()
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 1,
             ),
         ).assertIsDisplayed()
@@ -605,9 +605,8 @@ class MatchLobbyScreenshotIntakeScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
-            .assertIsDisplayed()
-            .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -642,7 +641,6 @@ class MatchLobbyScreenshotIntakeScreenTest {
                     onSelect = { selectedIndexes += it },
                     onCrop = { cropIndexes += it },
                     onRemove = { removeIndexes += it },
-                    compactActions = true,
                 )
             }
         }
@@ -792,7 +790,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
                     uiState = MatchLobbyScreenshotIntakeUiState(
                         isLoading = false,
                         isAvailable = true,
-                        status = MatchStatus.FINALIZED,
+                        status = MatchStatus.DRAFT,
                         isLobbySavedForNextMatches = true,
                     ),
                     onSelect = {},
@@ -873,10 +871,9 @@ class MatchLobbyScreenshotIntakeScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Save Lobby").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
-            .assertIsOff()
-            .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithText("Save Lobby").assertCountEquals(0)
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SAVE_TEMPLATE_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -911,7 +908,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
 
         composeTestRule.runOnIdle {
             uiState = uiState.copy(
-                status = MatchStatus.FINALIZED,
+                status = MatchStatus.DRAFT,
                 isLobbySavedForNextMatches = true,
                 lobbyTemplateSaveStatus = MatchLobbyTemplateSaveStatus.SAVED,
             )
@@ -1036,7 +1033,7 @@ class MatchLobbyScreenshotIntakeScreenTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText(
             composeTestRule.activity.getString(
-                R.string.match_lobby_screenshot_select_index_action,
+                R.string.pointiq_match_review_upload_lobby_screenshots,
                 2,
             ),
         ).assertIsDisplayed()
@@ -1097,8 +1094,9 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + 1)
             .assertCountEquals(0)
-        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
-            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
+            .assertIsDisplayed()
+            .assertIsEnabled()
 
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
             .performClick()
@@ -1137,10 +1135,8 @@ class MatchLobbyScreenshotIntakeScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
-            .assertIsDisplayed()
-            .performClick()
-            .assertIsSelected()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 1)
+            .assertCountEquals(0)
         composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_PREVIEW_TEST_TAG_PREFIX + 1)
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + 1)
@@ -1149,8 +1145,8 @@ class MatchLobbyScreenshotIntakeScreenTest {
             .assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_REMOVE_TEST_TAG_PREFIX + 1)
             .assertCountEquals(0)
-        composeTestRule.onNodeWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
-            .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SLOT_TEST_TAG_PREFIX + 2)
+            .assertCountEquals(0)
     }
 
     @Test

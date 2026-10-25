@@ -1093,13 +1093,15 @@ private fun LobbyScreenshotActions(
                 modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_SELECT_TEST_TAG_PREFIX + slot.index),
                 label = stringResource(R.string.match_lobby_screenshot_replace_action),
             )
-            LobbyScreenshotActionButton(
-                compactActions = compactActions,
-                onClick = { onCrop(slot.index) },
-                enabled = interactionsEnabled && !isFinalized && !slot.isMutationBusy,
-                modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index),
-                label = stringResource(R.string.match_lobby_screenshot_crop_action),
-            )
+            if (!slot.isLocalFileMissing) {
+                LobbyScreenshotActionButton(
+                    compactActions = compactActions,
+                    onClick = { onCrop(slot.index) },
+                    enabled = interactionsEnabled && !isFinalized && !slot.isMutationBusy,
+                    modifier = Modifier.testTag(MATCH_LOBBY_SCREENSHOT_INTAKE_CROP_TEST_TAG_PREFIX + slot.index),
+                    label = stringResource(R.string.match_lobby_screenshot_crop_action),
+                )
+            }
             LobbyScreenshotActionButton(
                 compactActions = compactActions,
                 onClick = { onRemove(slot.index) },

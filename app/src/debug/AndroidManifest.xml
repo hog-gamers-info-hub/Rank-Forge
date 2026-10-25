@@ -6,6 +6,12 @@
         <activity
             android:name="com.hoggamers.rankforge.presentation.navigation.RankForgeRecreationActivity"
             android:exported="false" />
+        <activity
+            android:name="com.hoggamers.rankforge.presentation.navigation.HiltComposeTestActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.hoggamers.rankforge.presentation.navigation.HiltRecreationTestActivity"
+            android:exported="true" />
     </application>
 
 </manifest>

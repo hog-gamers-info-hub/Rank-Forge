@@ -64,7 +64,7 @@ class GroupRotationPairingLobbySlotDaoTest {
     @Test
     fun observesTournamentAndPairingAssignmentsInTheirRequiredOrder() = runBlocking {
         val dao = database.groupRotationPairingLobbySlotDao()
-        dao.upsertAll(
+        dao.insertAll(
             listOf(
                 assignment("B:C", lobbySlot = 2, teamSlot = 14),
                 assignment("A:C", lobbySlot = 7, teamSlot = 17),
@@ -91,7 +91,7 @@ class GroupRotationPairingLobbySlotDaoTest {
 
     @Test
     fun allowsDistinctTeamsForDistinctLobbySlotsWithinOnePairing() = runBlocking {
-        database.groupRotationPairingLobbySlotDao().upsertAll(
+        database.groupRotationPairingLobbySlotDao().insertAll(
             listOf(
                 assignment("A:C", lobbySlot = 1, teamSlot = 13),
                 assignment("A:C", lobbySlot = 2, teamSlot = 14),
@@ -111,7 +111,7 @@ class GroupRotationPairingLobbySlotDaoTest {
     fun rejectsTheSameTeamTwiceWithinOnePairing() {
         assertThrows(Exception::class.java) {
             runBlocking {
-                database.groupRotationPairingLobbySlotDao().upsertAll(
+                database.groupRotationPairingLobbySlotDao().insertAll(
                     listOf(
                         assignment("A:C", lobbySlot = 1, teamSlot = 13),
                         assignment("A:C", lobbySlot = 2, teamSlot = 13),
@@ -122,9 +122,59 @@ class GroupRotationPairingLobbySlotDaoTest {
     }
 
     @Test
+    fun duplicateBatchLeavesExistingMappingsUnchanged() {
+        val dao = database.groupRotationPairingLobbySlotDao()
+        runBlocking {
+            dao.insertAll(listOf(assignment("A:C", lobbySlot = 1, teamSlot = 13)))
+        }
+
+        assertThrows(Exception::class.java) {
+            runBlocking {
+                dao.insertAll(
+                    listOf(
+                        assignment("A:C", lobbySlot = 2, teamSlot = 14),
+                        assignment("A:C", lobbySlot = 3, teamSlot = 14),
+                    ),
+                )
+            }
+        }
+
+        assertEquals(
+            listOf("A:C:1:13"),
+            runBlocking {
+                dao.readByTournamentAndPairing(TOURNAMENT_ID, "A:C")
+                    .map { it.asIdentity() }
+            },
+        )
+    }
+
+    @Test
+    fun duplicateBatchDoesNotPartiallyPersistValidRows() {
+        val dao = database.groupRotationPairingLobbySlotDao()
+
+        assertThrows(Exception::class.java) {
+            runBlocking {
+                dao.insertAll(
+                    listOf(
+                        assignment("A:C", lobbySlot = 1, teamSlot = 13),
+                        assignment("A:C", lobbySlot = 2, teamSlot = 14),
+                        assignment("A:C", lobbySlot = 3, teamSlot = 14),
+                    ),
+                )
+            }
+        }
+
+        assertTrue(
+            runBlocking {
+                dao.readByTournamentAndPairing(TOURNAMENT_ID, "A:C").isEmpty()
+            },
+        )
+    }
+
+    @Test
     fun allowsTheSamePermanentTeamInDifferentPairings() = runBlocking {
         val dao = database.groupRotationPairingLobbySlotDao()
-        dao.upsertAll(
+        dao.insertAll(
             listOf(
                 assignment("A:C", lobbySlot = 1, teamSlot = 13),
                 assignment("B:C", lobbySlot = 1, teamSlot = 13),
@@ -138,14 +188,14 @@ class GroupRotationPairingLobbySlotDaoTest {
     fun rejectsMissingPairingOrTeamParent() {
         assertThrows(Exception::class.java) {
             runBlocking {
-                database.groupRotationPairingLobbySlotDao().upsertAll(
+                database.groupRotationPairingLobbySlotDao().insertAll(
                     listOf(assignment("A:D", lobbySlot = 1, teamSlot = 13)),
                 )
             }
         }
         assertThrows(Exception::class.java) {
             runBlocking {
-                database.groupRotationPairingLobbySlotDao().upsertAll(
+                database.groupRotationPairingLobbySlotDao().insertAll(
                     listOf(assignment("A:C", lobbySlot = 1, teamSlot = 25)),
                 )
             }
@@ -155,7 +205,7 @@ class GroupRotationPairingLobbySlotDaoTest {
     @Test
     fun replacingOnePairingDoesNotTouchAnotherPairing() = runBlocking {
         val dao = database.groupRotationPairingLobbySlotDao()
-        dao.upsertAll(
+        dao.insertAll(
             listOf(
                 assignment("A:C", lobbySlot = 1, teamSlot = 13),
                 assignment("B:C", lobbySlot = 1, teamSlot = 14),
@@ -178,7 +228,7 @@ class GroupRotationPairingLobbySlotDaoTest {
     fun replacementRejectsAssignmentsFromAnotherPairingBeforeDeletingExistingMapping() {
         val dao = database.groupRotationPairingLobbySlotDao()
         runBlocking {
-            dao.upsertAll(listOf(assignment("A:B", lobbySlot = 1, teamSlot = 1)))
+            dao.insertAll(listOf(assignment("A:B", lobbySlot = 1, teamSlot = 1)))
         }
 
         val exception = assertThrows(IllegalArgumentException::class.java) {
@@ -206,9 +256,43 @@ class GroupRotationPairingLobbySlotDaoTest {
     }
 
     @Test
+    fun failedReplacementRollsBackDeletedMappings() {
+        val dao = database.groupRotationPairingLobbySlotDao()
+        runBlocking {
+            dao.insertAll(
+                listOf(
+                    assignment("A:C", lobbySlot = 1, teamSlot = 13),
+                    assignment("A:C", lobbySlot = 2, teamSlot = 14),
+                ),
+            )
+        }
+
+        assertThrows(Exception::class.java) {
+            runBlocking {
+                dao.replaceForTournamentAndPairing(
+                    tournamentId = TOURNAMENT_ID,
+                    pairingKey = "A:C",
+                    assignments = listOf(
+                        assignment("A:C", lobbySlot = 5, teamSlot = 18),
+                        assignment("A:C", lobbySlot = 6, teamSlot = 18),
+                    ),
+                )
+            }
+        }
+
+        assertEquals(
+            listOf("A:C:1:13", "A:C:2:14"),
+            runBlocking {
+                dao.readByTournamentAndPairing(TOURNAMENT_ID, "A:C")
+                    .map { it.asIdentity() }
+            },
+        )
+    }
+
+    @Test
     fun deletingTournamentCascadesPairingLobbyAssignments() = runBlocking {
         val dao = database.groupRotationPairingLobbySlotDao()
-        dao.upsertAll(listOf(assignment("A:C", lobbySlot = 1, teamSlot = 13)))
+        dao.insertAll(listOf(assignment("A:C", lobbySlot = 1, teamSlot = 13)))
 
         database.tournamentDao().deleteById(TOURNAMENT_ID)
 
@@ -233,8 +317,8 @@ class GroupRotationPairingLobbySlotDaoTest {
         database.tournamentGroupPairingDao().upsertAll(
             listOf(TournamentGroupPairingEntity("other-tournament", "A:B", "A", "B")),
         )
-        dao.upsertAll(listOf(assignment("A:C", lobbySlot = 1, teamSlot = 13)))
-        dao.upsertAll(
+        dao.insertAll(listOf(assignment("A:C", lobbySlot = 1, teamSlot = 13)))
+        dao.insertAll(
             listOf(
                 GroupRotationPairingLobbySlotEntity("other-tournament", "A:B", 1, 1),
             ),

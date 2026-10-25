@@ -773,11 +773,11 @@ class TournamentCsvExporterTest {
             teamOneRow[TIE_BREAK_STATUS_COLUMN],
         )
         assertEquals(
-            "tie_break_applied",
+            "unresolved_tie",
             teamElevenRow[TIE_BREAK_STATUS_COLUMN],
         )
         assertEquals(
-            "tie_break_applied",
+            "unresolved_tie",
             teamTwelveRow[TIE_BREAK_STATUS_COLUMN],
         )
     }

@@ -87,7 +87,7 @@ class RankForgeRecreationTest {
     }
 
     @get:Rule
-    val composeTestRule = createAndroidComposeRule<RankForgeRecreationActivity>()
+    val composeTestRule = createAndroidComposeRule<HiltRecreationTestActivity>()
 
     @After
     fun tearDown() {
@@ -141,14 +141,14 @@ class RankForgeRecreationTest {
 
         assertMatchReviewRoute(tournament.id, match.id)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Review Match ${match.matchNumber}").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match ${match.matchNumber}").assertIsDisplayed()
 
         composeTestRule.activityRule.scenario.recreate()
         composeTestRule.waitForIdle()
 
         assertMatchReviewRoute(tournament.id, match.id)
         composeTestRule.onNodeWithTag(MATCH_REVIEW_SCREEN_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Review Match ${match.matchNumber}").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Match ${match.matchNumber}").assertIsDisplayed()
 
         pressBack()
         assertDetailsRoute(tournament.id)

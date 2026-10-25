@@ -69,6 +69,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -612,7 +613,16 @@ class RosterOcrReviewViewModelTest {
                 override suspend fun readCloudUploadSnapshotByOwner(
                     tournamentId: String,
                     ownerUserId: String,
-                ): TournamentCloudUploadSnapshot? = null
+                ): TournamentCloudUploadSnapshot? {
+                    val tournament = repository.observeByIdAndOwner(tournamentId, ownerUserId).first()
+                        ?: return null
+                    return TournamentCloudUploadSnapshot(
+                        tournament = tournament,
+                        slots = repository.observeSlotsByTournamentIdAndOwner(tournamentId, ownerUserId).first(),
+                        rosters = repository.observeRosterByTournamentIdAndOwner(tournamentId, ownerUserId).first(),
+                        expectedCloudRevision = repository.readLocalRevisionState(tournamentId).expectedCloudRevision,
+                    )
+                }
             },
             authRepository = FakeAuthRepository(),
             cloudReplacementRepository = cloudRepository,

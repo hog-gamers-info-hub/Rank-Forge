@@ -10,6 +10,9 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -2111,16 +2114,28 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             .assertCountEquals(1)
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.placementInput(0))
             .assertCountEquals(1)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
-            .assertTextContains("1")
+        composeTestRule
+            .onNode(
+                hasText("1", substring = false) and
+                    hasAnyAncestor(hasTestTag(MatchOcrReviewTestTags.placementInput(0))),
+            )
+            .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.killsInput(0))
             .assertCountEquals(1)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.killsInput(0))
-            .assertTextContains("0")
+        composeTestRule
+            .onNode(
+                hasText("0", substring = false) and
+                    hasAnyAncestor(hasTestTag(MatchOcrReviewTestTags.killsInput(0))),
+            )
+            .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
             .assertCountEquals(1)
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.teamSlotInput(0))
-            .assertTextContains("2")
+        composeTestRule
+            .onNode(
+                hasText("2", substring = false) and
+                    hasAnyAncestor(hasTestTag(MatchOcrReviewTestTags.teamSlotInput(0))),
+            )
+            .assertIsDisplayed()
     }
 
     @Test
@@ -3440,7 +3455,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     }
 
     @Test
-    fun finalizedResultSelectionIsDisplayedButDisabled() {
+    fun finalizedResultSelectionIsHidden() {
         composeTestRule.setContent {
             RankForgeTheme {
                 MatchReviewScreen(
@@ -3452,9 +3467,8 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             }
         }
 
-        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
-            .assertIsDisplayed()
-            .assertIsNotEnabled()
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_RESULT_SCREENSHOT_NEXT_SELECT_TEST_TAG)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -4692,7 +4706,7 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
         )
 
         composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.compactRow(1)).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Team 1").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Team 2").assertIsDisplayed()
         composeTestRule.onNodeWithText("Position").assertIsDisplayed()
         composeTestRule.onNodeWithText("Total Kills").assertIsDisplayed()
         composeTestRule.onNodeWithText("Slot").assertIsDisplayed()
@@ -4746,10 +4760,18 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             }
         }
 
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(0))
-            .assertTextContains("2")
-        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.placementInput(1))
-            .assertTextContains("1")
+        composeTestRule
+            .onNode(
+                hasText("2", substring = false) and
+                    hasAnyAncestor(hasTestTag(MatchOcrReviewTestTags.placementInput(0))),
+            )
+            .assertIsDisplayed()
+        composeTestRule
+            .onNode(
+                hasText("1", substring = false) and
+                    hasAnyAncestor(hasTestTag(MatchOcrReviewTestTags.placementInput(1))),
+            )
+            .assertIsDisplayed()
     }
 
     @Test

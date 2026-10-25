@@ -55,10 +55,10 @@ class TournamentListAndDetailsScreenTest {
         }
 
         composeTestRule
-            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
+            .onNodeWithText(context.getString(R.string.pointiq_home_recent_title))
             .assertIsDisplayed()
         composeTestRule
-            .onNodeWithText(context.getString(R.string.open_tournament_creation))
+            .onNodeWithText(context.getString(R.string.pointiq_home_create_title))
             .assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(TOURNAMENT_LIST_EMPTY_TEST_TAG)
@@ -81,9 +81,17 @@ class TournamentListAndDetailsScreenTest {
         }
 
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Stage: Alex").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Status: DRAFT").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Free Fire MAX  •  Squad").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(
+                R.string.pointiq_home_summary_line,
+                context.getString(R.string.pointiq_home_team_count_many, 0),
+                context.getString(R.string.pointiq_home_match_count_many, 0),
+            ),
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Date: 24 Jul 2026").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Stage: Alex").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Contact: 123").assertCountEquals(0)
     }
 
@@ -146,10 +154,10 @@ class TournamentListAndDetailsScreenTest {
 
         composeTestRule.onNodeWithTag(LOGGED_IN_HOME_MENU_BUTTON_TEST_TAG).assertIsDisplayed()
         composeTestRule
-            .onNodeWithText(context.getString(R.string.open_tournament_creation))
+            .onNodeWithText(context.getString(R.string.pointiq_home_create_title))
             .assertIsDisplayed()
         composeTestRule
-            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
+            .onNodeWithText(context.getString(R.string.pointiq_home_recent_title))
             .assertIsDisplayed()
         composeTestRule
             .onAllNodesWithText(context.getString(R.string.tournament_list_title))
@@ -317,7 +325,7 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule.waitForIdle()
 
         composeTestRule
-            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
+            .onNodeWithText(context.getString(R.string.pointiq_home_recent_title))
             .assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
@@ -348,7 +356,7 @@ class TournamentListAndDetailsScreenTest {
         composeTestRule.waitForIdle()
 
         composeTestRule
-            .onNodeWithText(context.getString(R.string.recent_tournaments_heading))
+            .onNodeWithText(context.getString(R.string.pointiq_home_recent_title))
             .assertIsDisplayed()
         composeTestRule
             .onNodeWithTag(LOGGED_IN_HOME_DRAWER_TEST_TAG)
@@ -560,7 +568,10 @@ class TournamentListAndDetailsScreenTest {
             .assertIsDisplayed()
 
         composeTestRule.onNodeWithText("Summer Cup").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Date: 24 Jul 2026").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            context.getString(R.string.tournament_details_game_mode_presentation),
+        ).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("24 Jul 2026").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Stage: Alex").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Contact: 123").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Status: DRAFT").assertCountEquals(0)
@@ -609,11 +620,18 @@ class TournamentListAndDetailsScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_details_no_teams_saved)).assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(TOURNAMENT_MATCH_LIST_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText(context.getString(R.string.tournament_details_no_matches_message))
+            .performScrollTo()
+            .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(TOURNAMENT_SLOT_ITEM_TEST_TAG_PREFIX + "1").assertCountEquals(0)
-
-        composeTestRule.onNodeWithText(context.getString(R.string.tournament_details_slot_list_title)).assertIsDisplayed()
-        composeTestRule.onAllNodesWithText(context.getString(R.string.enter_teams_action)).assertCountEquals(1)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_details_no_teams_saved)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.tournament_details_slot_list_title)).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(context.getString(R.string.enter_teams_action)).assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Team name").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Player").assertCountEquals(0)
         composeTestRule.onAllNodesWithText("Edit").assertCountEquals(0)
@@ -649,17 +667,9 @@ class TournamentListAndDetailsScreenTest {
         }
 
         composeTestRule
-            .onNodeWithText("Slot 1 - Alpha")
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Slot 2 - HOG").performScrollTo().assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Slot 10 - Team 10").assertCountEquals(0)
-        composeTestRule.onAllNodesWithText("Slot 12 - Titan").assertCountEquals(0)
-
-        composeTestRule
-            .onNodeWithText(context.getString(R.string.enter_teams_action))
-            .performScrollTo()
+            .onNodeWithTag(TOURNAMENT_OVERFLOW_ACTION_TEST_TAG)
             .performClick()
+        composeTestRule.onNodeWithTag(EDIT_TEAMS_ACTION_TEST_TAG).performClick()
 
         composeTestRule.runOnIdle {
             assertEquals("stable-id", entryTournamentId)
@@ -698,7 +708,11 @@ class TournamentListAndDetailsScreenTest {
         }
 
         composeTestRule
-            .onNodeWithText("Match 1 - In Progress")
+            .onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "1")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(MATCH_STATUS_TEST_TAG_PREFIX + "1", useUnmergedTree = true)
             .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(MATCH_VALIDATION_ISSUES_TEST_TAG_PREFIX + "1").assertCountEquals(0)
@@ -749,14 +763,8 @@ class TournamentListAndDetailsScreenTest {
             }
         }
 
-        composeTestRule
-            .onNodeWithTag(MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX + "1", useUnmergedTree = true)
-            .performScrollTo()
-            .assertIsDisplayed()
-        composeTestRule
-            .onNodeWithTag(MATCH_ITEM_CHEVRON_TEST_TAG_PREFIX + "2", useUnmergedTree = true)
-            .performScrollTo()
-            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "2").assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "1").performClick()
         composeTestRule.onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "2").performClick()
 
@@ -804,10 +812,13 @@ class TournamentListAndDetailsScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("MATCHES").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Match 1 - Completed").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_PROCESSING_SECTION_TEST_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_ITEM_TEST_TAG_PREFIX + "1").performScrollTo().assertIsDisplayed()
         composeTestRule
-            .onNodeWithText(context.getString(R.string.calculate_points_action))
+            .onNodeWithTag(MATCH_STATUS_TEST_TAG_PREFIX + "1", useUnmergedTree = true)
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(CREATE_MATCH_ACTION_TEST_TAG)
             .performScrollTo()
             .performClick()
 
@@ -832,10 +843,10 @@ class TournamentListAndDetailsScreenTest {
                         tournament = tournamentDetailsItem(
                             slots = (1..8).map { TeamSlotUiState(it, "Team $it") },
                         ),
-                        pendingTeamCountConfirmation = TeamCountConfirmationUiState(8, 4),
                     ),
                     onBackToList = {},
                     onEnterTeams = {},
+                    pendingTeamCountConfirmation = TeamCountConfirmationUiState(8, 4),
                     onUseEnteredTeams = { usedTeams = true },
                     onUseDefaults = { usedDefaults = true },
                     onCancelTeamCountConfirmation = { cancelled = true },

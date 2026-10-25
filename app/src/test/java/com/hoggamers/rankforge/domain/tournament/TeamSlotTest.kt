@@ -17,7 +17,7 @@ class TeamSlotTest {
     @Test
     fun invalidSlotNumbersAreRejected() {
         assertInvalidSlotNumber(0)
-        assertInvalidSlotNumber(13)
+        assertInvalidSlotNumber(25)
     }
 
     @Test
@@ -28,7 +28,7 @@ class TeamSlotTest {
         )
 
         try {
-            slot.copy(slotNumber = 13)
+            slot.copy(slotNumber = 25)
             fail("Expected copied invalid slot number to be rejected.")
         } catch (_: IllegalArgumentException) {
             // Expected.

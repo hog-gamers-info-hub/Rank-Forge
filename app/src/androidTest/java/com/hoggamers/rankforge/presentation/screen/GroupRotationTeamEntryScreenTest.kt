@@ -11,6 +11,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
 import com.hoggamers.rankforge.domain.tournament.GroupRotationTeamSetupIssue
@@ -46,6 +49,10 @@ class GroupRotationTeamEntryScreenTest {
         composeTestRule
             .onNodeWithTag(GROUP_ROTATION_TEAM_ENTRY_PAIRING_TEST_TAG_PREFIX + "A:B")
             .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(GROUP_ROTATION_TEAM_ENTRY_PAIRING_TEST_TAG_PREFIX + "A:B")
+            .assertTextContains("A × B", substring = true)
+            .assertTextContains("1/12", substring = true)
         (1..12).forEach { lobbySlotNumber ->
             composeTestRule
                 .onNodeWithTag(
@@ -57,8 +64,6 @@ class GroupRotationTeamEntryScreenTest {
         composeTestRule
             .onNodeWithTag(GROUP_ROTATION_TEAM_ENTRY_UNIQUE_COUNT_TEST_TAG)
             .assertTextContains("Unique teams: 1 / 18")
-        composeTestRule.onNodeWithText("A × B  1/12").assertIsDisplayed()
-        composeTestRule.onNodeWithText("A × B").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("A:B").assertCountEquals(0)
         composeTestRule.onNodeWithText("01").assertIsDisplayed()
         composeTestRule.onNodeWithText("12").performScrollTo().assertIsDisplayed()
@@ -142,18 +147,33 @@ class GroupRotationTeamEntryScreenTest {
             }
         }
 
+        composeTestRule.waitForIdle()
+        composeTestRule
+            .onNodeWithTag(GROUP_ROTATION_TEAM_ENTRY_VALIDATION_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
         composeTestRule.onNodeWithText("All 12 names for A × B must be filled.").assertIsDisplayed()
+        composeTestRule
+            .onNodeWithTag(GROUP_ROTATION_TEAM_ENTRY_SAVE_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
         composeTestRule.onNodeWithText("This tournament has protected history.").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Team setup was saved locally, but the cloud retry could not be queued.")
+        composeTestRule
+            .onNodeWithTag(GROUP_ROTATION_TEAM_ENTRY_CLOUD_ERROR_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule
+            .onNodeWithText("Team setup was saved locally, but the cloud retry could not be queued.")
             .assertIsDisplayed()
     }
 
     @Test
     fun loadingAndInvalidDraftStatesAreBackOnly() {
+        var uiState by mutableStateOf(GroupRotationTeamEntryUiState())
         composeTestRule.setContent {
             RankForgeTheme {
                 GroupRotationTeamEntryScreen(
-                    uiState = GroupRotationTeamEntryUiState(),
+                    uiState = uiState,
                     onBackToDetails = {},
                     onPairingSelected = {},
                     onTeamNameChanged = { _, _, _ -> },
@@ -164,21 +184,13 @@ class GroupRotationTeamEntryScreenTest {
         }
         composeTestRule.onNodeWithText("Loading team slots").assertIsDisplayed()
 
-        composeTestRule.setContent {
-            RankForgeTheme {
-                GroupRotationTeamEntryScreen(
-                    uiState = GroupRotationTeamEntryUiState(
-                        isLoading = false,
-                        loadError = GroupRotationTeamEntryLoadError.InvalidStoredDraft,
-                    ),
-                    onBackToDetails = {},
-                    onPairingSelected = {},
-                    onTeamNameChanged = { _, _, _ -> },
-                    onBulkTeamNamesApplied = {},
-                    onSave = {},
-                )
-            }
+        composeTestRule.runOnIdle {
+            uiState = GroupRotationTeamEntryUiState(
+                isLoading = false,
+                loadError = GroupRotationTeamEntryLoadError.InvalidStoredDraft,
+            )
         }
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag(GROUP_ROTATION_TEAM_ENTRY_LOAD_ERROR_TEST_TAG).assertIsDisplayed()
         composeTestRule.onAllNodesWithTag(GROUP_ROTATION_TEAM_ENTRY_SCREEN_TEST_TAG).assertCountEquals(0)
         composeTestRule.onAllNodesWithTag(GROUP_ROTATION_TEAM_ENTRY_SAVE_TEST_TAG).assertCountEquals(0)

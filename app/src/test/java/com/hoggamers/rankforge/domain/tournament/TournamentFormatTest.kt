@@ -25,10 +25,18 @@ class TournamentFormatTest {
         ).formatDerivedSlots()
 
         assertEquals(18, slots.size)
-        assertEquals((1..6).toList(), slots.filter { it.group == TournamentGroup.A }.map { it.slotNumber })
-        assertEquals((7..12).toList(), slots.filter { it.group == TournamentGroup.B }.map { it.slotNumber })
-        assertEquals((13..18).toList(), slots.filter { it.group == TournamentGroup.C }.map { it.slotNumber })
-        assertTrue(slots.none { it.group == TournamentGroup.D })
+        assertEquals(
+            listOf((1..6).toList(), (7..12).toList(), (13..18).toList()),
+            slots.chunked(MAX_TEAMS_PER_GROUP).map { chunk -> chunk.map { it.slotNumber } },
+        )
+        assertEquals(
+            listOf(
+                TournamentGroup.A,
+                TournamentGroup.B,
+                TournamentGroup.C,
+            ),
+            slots.chunked(MAX_TEAMS_PER_GROUP).map { chunk -> chunk.map { it.group }.distinct().single() },
+        )
     }
 
     @Test
@@ -39,7 +47,19 @@ class TournamentFormatTest {
         ).formatDerivedSlots()
 
         assertEquals(24, slots.size)
-        assertEquals((19..24).toList(), slots.filter { it.group == TournamentGroup.D }.map { it.slotNumber })
+        assertEquals(
+            listOf((1..6).toList(), (7..12).toList(), (13..18).toList(), (19..24).toList()),
+            slots.chunked(MAX_TEAMS_PER_GROUP).map { chunk -> chunk.map { it.slotNumber } },
+        )
+        assertEquals(
+            listOf(
+                TournamentGroup.A,
+                TournamentGroup.B,
+                TournamentGroup.C,
+                TournamentGroup.D,
+            ),
+            slots.chunked(MAX_TEAMS_PER_GROUP).map { chunk -> chunk.map { it.group }.distinct().single() },
+        )
     }
 
     @Test

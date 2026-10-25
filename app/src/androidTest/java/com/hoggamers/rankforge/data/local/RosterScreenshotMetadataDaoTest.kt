@@ -138,13 +138,19 @@ class RosterScreenshotMetadataDaoTest {
                 repository.readByTournamentAndIndexAndOwner("tournament-a", 1, "owner-a"),
             )
 
-            assertEquals(listOf(ownerA), repository.observeByTournamentIdAndOwner("tournament-a", "owner-a").first())
+            assertEquals(
+                listOf(ownerAReplacement),
+                repository.observeByTournamentIdAndOwner("tournament-a", "owner-a").first(),
+            )
             assertTrue(repository.observeByTournamentIdAndOwner("tournament-b", "owner-a").first().isEmpty())
             assertTrue(repository.observeByTournamentIdAndOwner("tournament-legacy", "owner-a").first().isEmpty())
-            assertEquals(ownerA, repository.readByTournamentAndIndexAndOwner("tournament-a", 1, "owner-a"))
+            assertEquals(ownerAReplacement, repository.readByTournamentAndIndexAndOwner("tournament-a", 1, "owner-a"))
             assertNull(repository.readByTournamentAndIndexAndOwner("tournament-b", 1, "owner-a"))
             assertNull(repository.findDuplicateFingerprintAndOwner("tournament-b", ownerB.sha256, 2, "owner-a"))
-            assertEquals(ownerA, repository.findDuplicateFingerprintAndOwner("tournament-a", ownerA.sha256, 2, "owner-a"))
+            assertEquals(
+                ownerAReplacement,
+                repository.findDuplicateFingerprintAndOwner("tournament-a", ownerA.sha256, 2, "owner-a"),
+            )
 
             assertEquals(
                 RosterScreenshotAssociationSaveResult.TournamentNotFound,

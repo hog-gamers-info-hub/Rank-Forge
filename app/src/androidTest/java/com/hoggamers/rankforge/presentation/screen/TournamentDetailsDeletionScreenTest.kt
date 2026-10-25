@@ -85,9 +85,8 @@ class TournamentDetailsDeletionScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_DIALOG_TEST_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("Delete Tournament?").assertIsDisplayed()
         composeTestRule.onNodeWithText(
@@ -120,15 +119,14 @@ class TournamentDetailsDeletionScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_ACTION_TEST_TAG)
-            .performScrollTo()
-            .performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_OVERFLOW_ACTION_TEST_TAG).performClick()
+        composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_ACTION_TEST_TAG).performClick()
         composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_CONFIRM_ACTION_TEST_TAG).performClick()
         composeTestRule.runOnIdle {
             assertEquals(1, deleteCalls)
         }
         composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_PROGRESS_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_ACTION_TEST_TAG).assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(TOURNAMENT_OVERFLOW_ACTION_TEST_TAG).assertIsNotEnabled()
     }
 
     @Test
@@ -145,7 +143,7 @@ class TournamentDetailsDeletionScreenTest {
         }
 
         composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_PROGRESS_TEST_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithTag(TOURNAMENT_DELETE_ACTION_TEST_TAG).assertIsNotEnabled()
+        composeTestRule.onNodeWithTag(TOURNAMENT_OVERFLOW_ACTION_TEST_TAG).assertIsNotEnabled()
         composeTestRule.onNodeWithTag(TOURNAMENT_DETAILS_SCREEN_TEST_TAG).assertIsDisplayed()
     }
 

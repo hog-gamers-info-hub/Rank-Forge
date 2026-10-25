@@ -592,6 +592,34 @@ class AuthScreenTest {
     }
 
     @Test
+    fun criticalAccountDeletionRecoveryPrecedesActivePasswordRecovery() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                AuthScreen(
+                    uiState = AuthUiState(
+                        isSignedIn = true,
+                        accountEmail = "user@example.com",
+                        accountDeletionState = AccountDeletionUiState.RECOVERY_REQUIRED,
+                        passwordRecoveryStage = PasswordRecoveryStage.VERIFYING_LINK,
+                    ),
+                    onModeSelected = {},
+                    onEmailChanged = {},
+                    onPasswordChanged = {},
+                    onSubmit = {},
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(AUTH_DELETE_ACCOUNT_PENDING_LOCAL_CLEANUP_TEST_TAG)
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(AUTH_ACCOUNT_EMAIL_TEST_TAG).assertCountEquals(0)
+        composeTestRule.onAllNodesWithText(
+            context.getString(R.string.auth_verifying_password_reset_link),
+        ).assertCountEquals(0)
+    }
+
+    @Test
     fun restorationWarningIsDisplayedWithoutSignedInState() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -714,11 +742,12 @@ class AuthScreenTest {
 
     @Test
     fun forgotPasswordActionIsShownOnlyInLoginMode() {
+        var uiState by mutableStateOf(AuthUiState())
         composeTestRule.setContent {
             RankForgeTheme {
                 AuthScreen(
-                    uiState = AuthUiState(),
-                    onModeSelected = {},
+                    uiState = uiState,
+                    onModeSelected = { uiState = uiState.copy(mode = it) },
                     onEmailChanged = {},
                     onPasswordChanged = {},
                     onSubmit = {},
@@ -729,18 +758,8 @@ class AuthScreenTest {
 
         composeTestRule.onNodeWithTag(AUTH_FORGOT_PASSWORD_ACTION_TEST_TAG).assertIsDisplayed()
 
-        composeTestRule.setContent {
-            RankForgeTheme {
-                AuthScreen(
-                    uiState = AuthUiState(mode = AuthMode.SignUp),
-                    onModeSelected = {},
-                    onEmailChanged = {},
-                    onPasswordChanged = {},
-                    onSubmit = {},
-                    onLogout = {},
-                )
-            }
-        }
+        composeTestRule.runOnIdle { uiState = AuthUiState(mode = AuthMode.SignUp) }
+        composeTestRule.waitForIdle()
 
         composeTestRule.onAllNodesWithTag(AUTH_FORGOT_PASSWORD_ACTION_TEST_TAG).assertCountEquals(0)
     }
@@ -768,8 +787,7 @@ class AuthScreenTest {
 
         composeTestRule.onNodeWithText(context.getString(R.string.auth_forgot_password_heading))
             .assertIsDisplayed()
-        composeTestRule.onNodeWithTag(AUTH_EMAIL_FIELD_TEST_TAG)
-            .assertTextEquals("user@example.com")
+        composeTestRule.onNodeWithText("user@example.com").assertIsDisplayed()
     }
 
     @Test
