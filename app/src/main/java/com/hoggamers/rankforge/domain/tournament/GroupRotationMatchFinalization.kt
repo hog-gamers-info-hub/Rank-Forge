@@ -117,7 +117,7 @@ class GroupRotationMatchFinalizationValidator {
             teams.any {
                 it.lobbySlotNumber !in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS ||
                     it.teamUUID.isBlank() ||
-                    (requireDisplayNames && it.displayName.isBlank())
+                    (requireDisplayNames && (it.displayName.isBlank() || it.nameCleared))
             } ||
             teams.groupBy { it.lobbySlotNumber }.any { it.value.size > 1 } ||
             teams.groupBy { it.teamUUID }.any { it.value.size > 1 }

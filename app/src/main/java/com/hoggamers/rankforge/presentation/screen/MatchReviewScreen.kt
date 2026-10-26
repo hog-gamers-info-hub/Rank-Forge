@@ -148,6 +148,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.TeamSlot
+import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.presentation.component.PointIqConfirmationDialog
 import com.hoggamers.rankforge.presentation.component.RankForgeScreenContainer
 import com.hoggamers.rankforge.presentation.theme.RankForgeSpacing
@@ -1694,6 +1695,16 @@ private fun MatchReviewContent(
     onCompactAddTeam: () -> Unit,
     onSaveTeamPointAdjustment: (Int, Int) -> Unit,
 ) {
+    val shouldUseCurrentTeamNamesForFinalization =
+        uiState.isUuidBackedGroupRotation ||
+            uiState.tournamentFormat == TournamentFormat.STANDARD ||
+            uiState.tournamentFormat == TournamentFormat.GROUP_ROTATION
+    val finalizationTournamentFormat = uiState.tournamentFormat
+        ?: if (uiState.isUuidBackedGroupRotation) TournamentFormat.GROUP_ROTATION else null
+    val currentTeamNamesBySlotForFinalization = uiState.rows.associate { row ->
+        row.teamSlotNumber to if (row.isCurrentTeamNameCleared) "" else row.teamName
+    }
+
     val reviewInteractionsEnabled = !shouldLockMatchReviewInteractions(
         lobbySlots = lobbyUiState.slots,
         resultSlots = uiState.resultScreenshots,
@@ -1899,6 +1910,12 @@ private fun MatchReviewContent(
             } else if (shouldShowInlineOcrDetails && !manualModeOpened) {
                 MatchReviewResultOcrDetailsContent(
                     uiState = ocrUiState,
+                    teamNamesBySlotForFinalization = if (shouldUseCurrentTeamNamesForFinalization) {
+                        currentTeamNamesBySlotForFinalization
+                    } else {
+                        (ocrUiState as? MatchOcrReviewUiState.Ready)?.teamNamesBySlot.orEmpty()
+                    },
+                    tournamentFormat = finalizationTournamentFormat,
                     onPlacementChanged = onOcrPlacementChanged,
                     onKillsChanged = onOcrKillsChanged,
                     onPlayerKillsChanged = onOcrPlayerKillsChanged,
@@ -2009,6 +2026,12 @@ private fun MatchReviewContent(
                 ) {
                     MatchReviewResultOcrDetailsContent(
                         uiState = ocrUiState,
+                        teamNamesBySlotForFinalization = if (shouldUseCurrentTeamNamesForFinalization) {
+                            currentTeamNamesBySlotForFinalization
+                        } else {
+                            (ocrUiState as? MatchOcrReviewUiState.Ready)?.teamNamesBySlot.orEmpty()
+                        },
+                        tournamentFormat = finalizationTournamentFormat,
                         onPlacementChanged = onOcrPlacementChanged,
                         onKillsChanged = onOcrKillsChanged,
                         onPlayerKillsChanged = onOcrPlayerKillsChanged,
@@ -2579,6 +2602,11 @@ private fun MatchReviewContent(
             -> Unit
         }
         val readyOcrUiState = ocrUiState as? MatchOcrReviewUiState.Ready
+        val finalizationTeamNamesBySlot = if (shouldUseCurrentTeamNamesForFinalization) {
+            currentTeamNamesBySlotForFinalization
+        } else {
+            readyOcrUiState?.teamNamesBySlot.orEmpty()
+        }
         if (!showLegacyManualReviewContent &&
             uiState.status != MatchStatus.FINALIZED &&
             shouldShowInlineOcrDetails
@@ -2586,10 +2614,11 @@ private fun MatchReviewContent(
             readyOcrUiState?.correctionDraft?.let { correctionDraft ->
                 MatchReviewFinalizeAction(
                     correctionDraft = correctionDraft,
-                    teamNamesBySlot = readyOcrUiState.teamNamesBySlot,
+                    teamNamesBySlot = finalizationTeamNamesBySlot,
                     calculationOrigin = readyOcrUiState.calculatedEvidenceOrigin,
                     finalization = readyOcrUiState.finalization,
                     isUuidBackedGroupRotation = readyOcrUiState.isUuidBackedGroupRotation,
+                    tournamentFormat = finalizationTournamentFormat,
                     onFinalizeOcrCorrection = onOcrFinalize,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2608,11 +2637,35 @@ private fun MatchReviewContent(
         }
         if (!showLegacyManualReviewContent && hasCombinedPositionCropPreviews) {
             readyOcrUiState?.finalization?.error?.let { error ->
-                Text(
-                    text = stringResource(error.toMatchReviewMessageRes()),
-                    color = MaterialTheme.colorScheme.error,
+                Column(
                     modifier = Modifier.testTag(MatchOcrReviewTestTags.FINALIZATION_ERROR),
-                )
+                    verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                ) {
+                    if (
+                        error == MatchOcrReviewFinalizationError.MISSING_ASSIGNED_TEAM_NAME &&
+                        readyOcrUiState.finalization.missingTeamSlotNumbers.isNotEmpty()
+                    ) {
+                        Text(
+                            text = stringResource(R.string.match_review_finalize_missing_team_names_title),
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = pluralStringResource(
+                                R.plurals.match_review_finalize_missing_assigned_team_names,
+                                readyOcrUiState.finalization.missingTeamSlotNumbers.size,
+                                readyOcrUiState.finalization.missingTeamSlotNumbers
+                                    .toTeamSlotListLabel(),
+                            ),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(error.toMatchReviewMessageRes()),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             }
         }
         if (uiState.isEditable &&
@@ -2745,6 +2798,31 @@ private fun MatchReviewContent(
         }
         if (uiState.status == MatchStatus.FINALIZED) {
             Spacer(modifier = Modifier.height(16.dp))
+            if (
+                reviewInteractionsEnabled &&
+                !uiState.resultDownloadUiState.isBusy &&
+                    uiState.finalizedMissingTeamNameSlotNumbers.isNotEmpty()
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(RankForgeSpacing.ExtraSmall),
+                ) {
+                    Text(
+                        text = stringResource(R.string.match_review_download_missing_team_names_title),
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.match_review_download_missing_assigned_team_names,
+                            uiState.finalizedMissingTeamNameSlotNumbers.size,
+                            uiState.finalizedMissingTeamNameSlotNumbers.toTeamSlotListLabel(),
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Spacer(modifier = Modifier.height(RankForgeSpacing.ExtraSmall))
+            }
             if (showLegacyManualReviewContent) {
                 ReviewMatchActionButton(
                     label = stringResource(R.string.match_review_download_result_action),
@@ -3088,6 +3166,7 @@ private fun MatchReviewFinalizeAction(
     calculationOrigin: MatchCalculatedEvidenceOrigin,
     finalization: MatchOcrReviewFinalizationUiState,
     isUuidBackedGroupRotation: Boolean,
+    tournamentFormat: TournamentFormat?,
     showBlockers: Boolean = true,
     onFinalizeOcrCorrection: () -> Unit,
 ) {
@@ -3095,6 +3174,7 @@ private fun MatchReviewFinalizeAction(
     val blockers = deriveMatchReviewFinalizationBlockers(
         correctionDraft = correctionDraft,
         teamNamesBySlot = teamNamesBySlot,
+        tournamentFormat = tournamentFormat,
     )
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -3171,7 +3251,24 @@ private fun MatchReviewFinalizeBlockerContainer(
                     lineHeight = 20.sp,
                 )
             }
-            if (blockers.missingTeamNameCount > 0) {
+            if (blockers.missingTeamSlotNumbers.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.match_review_finalize_missing_team_names_title),
+                    color = PointIqMatchReviewHeader,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.match_review_finalize_missing_assigned_team_names,
+                        blockers.missingTeamSlotNumbers.size,
+                        blockers.missingTeamSlotNumbers.toTeamSlotListLabel(),
+                    ),
+                    color = PointIqMatchReviewBlockerMessage,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            } else if (blockers.missingTeamNameCount > 0) {
                 Text(
                     text = pluralStringResource(
                         R.plurals.match_review_finalize_missing_team_names,
@@ -3191,9 +3288,12 @@ private data class MatchReviewFinalizationBlockers(
     val rowBlockers: List<MatchReviewRowBlocker>,
     val hasCorrectionBlockers: Boolean,
     val missingTeamNameCount: Int,
+    val missingTeamSlotNumbers: List<Int>,
 ) {
     val hasBlockers: Boolean
-        get() = hasCorrectionBlockers || missingTeamNameCount > 0
+        get() = hasCorrectionBlockers ||
+            missingTeamNameCount > 0 ||
+            missingTeamSlotNumbers.isNotEmpty()
 }
 
 private data class MatchReviewRowBlocker(
@@ -3205,6 +3305,7 @@ private data class MatchReviewRowBlocker(
 private fun deriveMatchReviewFinalizationBlockers(
     correctionDraft: MatchOcrReviewCorrectionDraft,
     teamNamesBySlot: Map<Int, String>,
+    tournamentFormat: TournamentFormat? = null,
 ): MatchReviewFinalizationBlockers {
     val blockerOrder = listOf(
         MatchOcrReviewCorrectionReason.MISSING_PLACEMENT,
@@ -3239,11 +3340,36 @@ private fun deriveMatchReviewFinalizationBlockers(
         correctionDraft.includedRows.size -
             teamNamesBySlot.values.count { teamName -> teamName.trim().isNotEmpty() }
         ).coerceAtLeast(0)
+    val shouldIdentifyMissingTeamSlots =
+        tournamentFormat == TournamentFormat.GROUP_ROTATION ||
+            (tournamentFormat == TournamentFormat.STANDARD &&
+                correctionDraft.includedRows.size == TeamSlot.MAX_SLOT_NUMBER)
+    val missingTeamSlotNumbers = if (shouldIdentifyMissingTeamSlots) {
+        correctionDraft.includedRows
+            .mapNotNull { row ->
+                val teamSlotNumber = row.assignedTeamSlotDraftValue.trim().toIntOrNull()
+                teamSlotNumber
+                    ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                    ?.takeIf { teamNamesBySlot[it].orEmpty().trim().isBlank() }
+            }
+            .distinct()
+            .sorted()
+    } else {
+        emptyList()
+    }
     return MatchReviewFinalizationBlockers(
         rowBlockers = rowBlockers,
         hasCorrectionBlockers = correctionDraft.blockerCount > 0,
         missingTeamNameCount = missingTeamNameCount,
+        missingTeamSlotNumbers = missingTeamSlotNumbers,
     )
+}
+
+private fun List<Int>.toTeamSlotListLabel(): String = when (size) {
+    0 -> ""
+    1 -> first().toString()
+    2 -> joinToString(" and ")
+    else -> dropLast(1).joinToString(", ") + ", and " + last()
 }
 
 internal fun MatchOcrReviewCorrectionReason.toMatchReviewFinalizeBlockerMessageRes(
@@ -4411,6 +4537,8 @@ private fun MatchReviewUiState.toFinalizedResultOcrUiState(): MatchOcrReviewUiSt
 @Composable
 private fun MatchReviewResultOcrDetailsContent(
     uiState: MatchOcrReviewUiState,
+    teamNamesBySlotForFinalization: Map<Int, String>,
+    tournamentFormat: TournamentFormat?,
     onPlacementChanged: (rowIndex: Int, value: String) -> Unit,
     onKillsChanged: (rowIndex: Int, value: String) -> Unit,
     onPlayerKillsChanged: (rowIndex: Int, playerSlot: Int, value: String) -> Unit,
@@ -4492,10 +4620,11 @@ private fun MatchReviewResultOcrDetailsContent(
                 uiState.correctionDraft?.let { correctionDraft ->
                     MatchReviewFinalizeAction(
                         correctionDraft = correctionDraft,
-                        teamNamesBySlot = uiState.teamNamesBySlot,
+                        teamNamesBySlot = teamNamesBySlotForFinalization,
                         calculationOrigin = uiState.calculatedEvidenceOrigin,
                         finalization = uiState.finalization,
                         isUuidBackedGroupRotation = uiState.isUuidBackedGroupRotation,
+                        tournamentFormat = tournamentFormat,
                         showBlockers = false,
                         onFinalizeOcrCorrection = onFinalizeOcrCorrection,
                     )
@@ -6019,6 +6148,8 @@ private fun MatchOcrReviewFinalizationError.toMatchReviewMessageRes(): Int = whe
         R.string.match_ocr_review_finalization_missing_match
     MatchOcrReviewFinalizationError.ALREADY_FINALIZED ->
         R.string.match_ocr_review_finalization_already_finalized
+    MatchOcrReviewFinalizationError.MISSING_ASSIGNED_TEAM_NAME ->
+        R.string.match_review_finalize_missing_team_names_title
     MatchOcrReviewFinalizationError.FINALIZATION_FAILED,
     MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE,
     -> R.string.match_ocr_review_finalization_failed

@@ -48,6 +48,26 @@ class GroupRotationMatchFinalizationTest {
     }
 
     @Test
+    fun clearedAssignmentIsRejectedOnlyForItsPairingOccurrence() {
+        val cleared = snapshot(
+            team(1, ALPHA_UUID, "Aarav").copy(nameCleared = true),
+            pairing = GroupPairing.fromCanonicalKey("A:B"),
+        )
+        val restored = snapshot(
+            team(2, ALPHA_UUID, "Aarav"),
+            pairing = GroupPairing.fromCanonicalKey("A:C"),
+        )
+        val results = listOf(participated(ALPHA_UUID, 1, 0))
+
+        assertTrue(
+            validator.validate(cleared, results).any {
+                it.code == GroupRotationMatchFinalizationIssueCode.INVALID_IDENTITY_SNAPSHOT
+            },
+        )
+        assertTrue(validator.validate(restored, results).isEmpty())
+    }
+
+    @Test
     fun registryRenameDoesNotChangeResultOwnership() {
         val snapshot = snapshot(team(3, ALPHA_UUID, "Alpha Renamed"))
 

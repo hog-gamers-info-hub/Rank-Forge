@@ -12,6 +12,7 @@ import com.hoggamers.rankforge.domain.tournament.MatchStatus
 import com.hoggamers.rankforge.domain.tournament.Match
 import com.hoggamers.rankforge.domain.tournament.MatchCorrectionRecord
 import com.hoggamers.rankforge.domain.tournament.GroupPairing
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
 import com.hoggamers.rankforge.domain.tournament.MAX_MATCHES_PER_TOURNAMENT
 import com.hoggamers.rankforge.domain.tournament.nextAvailableMatchNumber
@@ -258,9 +259,37 @@ data class MatchReviewUiState(
         get() = finalizedParticipantSlotNumbers.isNotEmpty() &&
             finalizedParticipantSlotNumbers.all { participantSlotNumber ->
                 rows.firstOrNull { row -> row.teamSlotNumber == participantSlotNumber }
-                    ?.teamName
-                    ?.isNotBlank() == true
+                    ?.let { row -> row.teamName.isNotBlank() && !row.isCurrentTeamNameCleared } == true
             }
+
+    val finalizedMissingTeamNameSlotNumbers: List<Int>
+        get() = if (
+            status == MatchStatus.FINALIZED &&
+                (
+                    isUuidBackedGroupRotation ||
+                        tournamentFormat == TournamentFormat.GROUP_ROTATION ||
+                        (tournamentFormat == TournamentFormat.STANDARD &&
+                            rows.size == TeamSlot.MAX_SLOT_NUMBER)
+                    ) &&
+                canPrepareMatchCsvExport &&
+                !participantTeamIdentitiesAreValid
+        ) {
+            rows.asSequence()
+                .filter { row -> row.teamSlotNumber in finalizedParticipantSlotNumbers }
+                .filter { row ->
+                    if (tournamentFormat == TournamentFormat.STANDARD) {
+                        row.teamName.isBlank()
+                    } else {
+                        row.isCurrentTeamNameCleared
+                    }
+                }
+                .map { row -> row.teamSlotNumber }
+                .distinct()
+                .sorted()
+                .toList()
+        } else {
+            emptyList()
+        }
 
     val canDownloadResult: Boolean
     get() = canPrepareMatchCsvExport &&
@@ -412,6 +441,7 @@ fun List<MatchResultScreenshotSlotUiState>.replaceSlot(
 data class MatchReviewRowUiState(
     val teamSlotNumber: Int,
     val teamName: String,
+    val isCurrentTeamNameCleared: Boolean = false,
     val playerNames: List<String> = emptyList(),
     val placementInput: String = "",
     val killsInput: String = "",

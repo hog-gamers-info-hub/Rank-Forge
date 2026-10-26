@@ -49,7 +49,10 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchIdentitySnaps
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
 import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput
 import com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchUseCase
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationFailure
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationIssueCode
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationValidator
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchParticipantResult
 import com.hoggamers.rankforge.domain.tournament.MatchParticipationStatus
 import com.hoggamers.rankforge.domain.tournament.SaveGroupRotationMatchParticipantResultsUseCase
@@ -928,6 +931,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     finalization = state.finalization.copy(
                         showWarningConfirmation = false,
                         error = null,
+                        missingTeamSlotNumbers = emptyList(),
                     ),
                 )
             } else {
@@ -961,6 +965,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     finalization = state.finalization.copy(
                         showWarningConfirmation = false,
                         error = null,
+                        missingTeamSlotNumbers = emptyList(),
                     ),
                 )
             } else {
@@ -1033,6 +1038,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     isFinalizing = true,
                     showWarningConfirmation = false,
                     error = null,
+                    missingTeamSlotNumbers = emptyList(),
                 ),
             )
         }
@@ -1063,6 +1069,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                             isFinalizing = false,
                             showWarningConfirmation = false,
                             error = result.failures.toUiError(),
+                            missingTeamSlotNumbers = result.missingTeamSlotNumbers.sorted(),
                         ),
                     )
                     FinalizeOcrCorrectionMatchResult.UnexpectedFailure -> ready.copy(
@@ -1096,6 +1103,7 @@ class MatchOcrReviewViewModel @Inject constructor(
                     isFinalizing = true,
                     showWarningConfirmation = false,
                     error = null,
+                    missingTeamSlotNumbers = emptyList(),
                 ),
             )
         }
@@ -1127,10 +1135,71 @@ class MatchOcrReviewViewModel @Inject constructor(
                     launchFinalizedMatchCloudSync(current.tournamentId)
                 }
                 is GroupRotationMatchFinalizationResult.Rejected -> {
-                    updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+                    val missingTeamSlotNumbers = if (
+                        result.reason == GroupRotationMatchFinalizationFailure.INVALID_DATA
+                    ) {
+                        (observeGroupRotationMatchDraft
+                            ?.invoke(current.tournamentId, current.matchId)
+                            ?.first() as? GroupRotationMatchDraftReadResult.Loaded)
+                            ?.state
+                            ?.currentMissingAssignedTeamSlots(
+                                correctionDraft = correctionDraft,
+                                participantResults = participantResults,
+                            )
+                            .orEmpty()
+                    } else {
+                        emptyList()
+                    }
+                    if (missingTeamSlotNumbers.isNotEmpty()) {
+                        updateMissingAssignedTeamNameError(missingTeamSlotNumbers)
+                    } else {
+                        updateFinalizationError(MatchOcrReviewFinalizationError.FINALIZATION_FAILED)
+                    }
                 }
             }
         }
+    }
+
+    private fun GroupRotationMatchDraftState.currentMissingAssignedTeamSlots(
+        correctionDraft: MatchOcrReviewCorrectionDraft,
+        participantResults: List<GroupRotationMatchParticipantResult>,
+    ): List<Int> {
+        val teamsByLobby = snapshot.teams.groupBy { it.lobbySlotNumber }
+        if (
+            snapshot.teams.any {
+                it.lobbySlotNumber !in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS ||
+                    it.teamUUID.isBlank()
+            } ||
+            teamsByLobby.any { (_, teams) -> teams.size != 1 } ||
+            snapshot.teams.groupBy { it.teamUUID }.any { (_, teams) -> teams.size != 1 }
+        ) {
+            return emptyList()
+        }
+
+        val missingTeamSlotNumbers = correctionDraft.includedRows
+            .mapNotNull { row ->
+                val lobbySlotNumber = row.assignedTeamSlotDraftValue.trim().toIntOrNull()
+                    ?.takeIf { it in GroupRotationPairingLobbySlot.LOBBY_SLOT_NUMBERS }
+                    ?: return@mapNotNull null
+                val team = teamsByLobby[lobbySlotNumber]?.singleOrNull()
+                    ?: return@mapNotNull null
+                lobbySlotNumber.takeIf {
+                    team.nameCleared || team.displayName.trim().isBlank()
+                }
+            }
+            .distinct()
+            .sorted()
+        if (missingTeamSlotNumbers.isEmpty()) return emptyList()
+
+        val validationIssues = GroupRotationMatchFinalizationValidator().validate(
+            snapshot = snapshot,
+            participantResults = participantResults,
+        )
+        return missingTeamSlotNumbers.takeIf {
+            validationIssues.isNotEmpty() && validationIssues.all { issue ->
+                issue.code == GroupRotationMatchFinalizationIssueCode.INVALID_IDENTITY_SNAPSHOT
+            }
+        }.orEmpty()
     }
 
     private fun GroupRotationMatchDraftState.toUuidParticipantResults(
@@ -1253,6 +1322,20 @@ class MatchOcrReviewViewModel @Inject constructor(
                     isFinalizing = false,
                     showWarningConfirmation = false,
                     error = error,
+                    missingTeamSlotNumbers = emptyList(),
+                ),
+            )
+        }
+    }
+
+    private fun updateMissingAssignedTeamNameError(teamSlotNumbers: List<Int>) {
+        _uiState.updateReady {
+            it.copy(
+                finalization = it.finalization.copy(
+                    isFinalizing = false,
+                    showWarningConfirmation = false,
+                    error = MatchOcrReviewFinalizationError.MISSING_ASSIGNED_TEAM_NAME,
+                    missingTeamSlotNumbers = teamSlotNumbers.distinct().sorted(),
                 ),
             )
         }
@@ -1347,6 +1430,8 @@ class MatchOcrReviewViewModel @Inject constructor(
                 MatchOcrReviewFinalizationError.MISSING_MATCH
             FinalizeOcrCorrectionMatchFailure.ALREADY_FINALIZED in this ->
                 MatchOcrReviewFinalizationError.ALREADY_FINALIZED
+            FinalizeOcrCorrectionMatchFailure.MISSING_ASSIGNED_TEAM_NAME in this ->
+                MatchOcrReviewFinalizationError.MISSING_ASSIGNED_TEAM_NAME
             FinalizeOcrCorrectionMatchFailure.UNEXPECTED_FAILURE in this ->
                 MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE
             else -> MatchOcrReviewFinalizationError.FINALIZATION_FAILED

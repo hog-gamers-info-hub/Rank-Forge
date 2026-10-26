@@ -491,6 +491,7 @@ data class MatchOcrReviewFinalizationUiState(
     val showWarningConfirmation: Boolean = false,
     val isFinalized: Boolean = false,
     val error: MatchOcrReviewFinalizationError? = null,
+    val missingTeamSlotNumbers: List<Int> = emptyList(),
 )
 
 enum class MatchOcrReviewFinalizationError {
@@ -499,6 +500,7 @@ enum class MatchOcrReviewFinalizationError {
     MISSING_TOURNAMENT,
     MISSING_MATCH,
     ALREADY_FINALIZED,
+    MISSING_ASSIGNED_TEAM_NAME,
     FINALIZATION_FAILED,
     UNEXPECTED_FAILURE,
 }

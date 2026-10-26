@@ -19,7 +19,7 @@ class GroupRotationTeamSetupTest {
     }
 
     @Test
-    fun groupRotationDerivedSlotsAreSequentialAndUnguardedByGroupMetadata() {
+    fun groupRotationDerivedSlotsAreSequentialAndCarryGroupMetadata() {
         val groupRotation = tournament(groupCount = 3, pairings = listOf("A:B"))
         val standard = Tournament(
             id = TOURNAMENT_ID,
@@ -30,7 +30,12 @@ class GroupRotationTeamSetupTest {
         )
 
         assertEquals((1..18).toList(), groupRotation.formatDerivedSlots().map { it.slotNumber })
-        assertTrue(groupRotation.formatDerivedSlots().all { it.group == null })
+        assertEquals(
+            listOf(TournamentGroup.A, TournamentGroup.B, TournamentGroup.C),
+            groupRotation.formatDerivedSlots()
+                .chunked(MAX_TEAMS_PER_GROUP)
+                .map { chunk -> chunk.map { it.group }.distinct().single() },
+        )
         assertEquals(12, standard.formatDerivedSlots().size)
         assertTrue(TeamSlot.create(TOURNAMENT_ID, 18).group == null)
     }

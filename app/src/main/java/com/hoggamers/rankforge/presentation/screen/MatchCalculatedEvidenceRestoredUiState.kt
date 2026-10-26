@@ -59,6 +59,17 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         val name = position.teamName?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
         slot to name
     }
+    val restoredDisplayTeamNames = if (usesPairRelativeIdentity) {
+        restoredTeamNames + lobby.teams.mapNotNull { team ->
+            val slot = team.teamSlotNumber ?: team.slotNumber ?: return@mapNotNull null
+            if (slot !in eligibleTeamSlots) return@mapNotNull null
+            val name = team.teamName?.trim()?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            slot to name
+        }
+    } else {
+        teamNamesBySlot
+    }
     val previewRows = positions
         .filter { it.hasRestorableGeometry() }
         .map { it.toRestoredPreviewRow() }
@@ -69,7 +80,7 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
             manualFallbackRowsByPosition.getValue(position.position)
         } else {
             position.toRestoredReviewRow(
-                teamNamesBySlot = teamNamesBySlot,
+                teamNamesBySlot = restoredDisplayTeamNames,
                 lobbySlotByTeamSlot = lobbySlotByTeamSlot,
                 usesPairRelativeIdentity = usesPairRelativeIdentity,
             )

@@ -54,6 +54,7 @@ enum class FinalizeOcrCorrectionMatchFailure {
     INVALID_TEAM_SLOT,
     DUPLICATE_TEAM_SLOT,
     TEAM_SLOT_UNAVAILABLE,
+    MISSING_ASSIGNED_TEAM_NAME,
     MISSING_TOURNAMENT,
     MISSING_MATCH,
     ALREADY_FINALIZED,
@@ -73,6 +74,7 @@ sealed interface FinalizeOcrCorrectionMatchResult {
         val failures: Set<FinalizeOcrCorrectionMatchFailure>,
         val failuresByRowIndex: Map<Int, Set<FinalizeOcrCorrectionMatchFailure>> = emptyMap(),
         val validation: MatchResultValidation = MatchResultValidation(),
+        val missingTeamSlotNumbers: Set<Int> = emptySet(),
     ) : FinalizeOcrCorrectionMatchResult
 
     data object UnexpectedFailure : FinalizeOcrCorrectionMatchResult
@@ -160,11 +162,30 @@ class FinalizeOcrCorrectionMatchUseCase(
                 failuresByRowIndex = rowValidation.failuresByRowIndex,
             )
         }
+        val missingAssignedTeamSlotNumbers = if (
+            tournament.format == TournamentFormat.STANDARD &&
+            rowValidation.finalizeRows.size == TeamSlot.MAX_SLOT_NUMBER
+        ) {
+            val slotsByNumber = slots.associateBy { it.slotNumber }
+            rowValidation.finalizeRows
+                .map { it.teamSlotNumber }
+                .filter { teamSlotNumber ->
+                    slotsByNumber[teamSlotNumber]?.teamName?.trim()?.isNullOrBlank() == true
+                }
+                .toSortedSet()
+        } else {
+            emptySet()
+        }
         val participation = slots.analyzeTeamSlotParticipation(eligibleTeamSlots)
         if (!participation.isReadyForMatchCreation) {
-            // Invalid participation is reported through the existing draft-integrity contract.
+            // Keep the existing blocked outcome while identifying a causal blank assigned name.
             return FinalizeOcrCorrectionMatchResult.Blocked(
-                failures = setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT),
+                failures = if (missingAssignedTeamSlotNumbers.isNotEmpty()) {
+                    setOf(FinalizeOcrCorrectionMatchFailure.MISSING_ASSIGNED_TEAM_NAME)
+                } else {
+                    setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT)
+                },
+                missingTeamSlotNumbers = missingAssignedTeamSlotNumbers,
             )
         }
 
@@ -172,13 +193,21 @@ class FinalizeOcrCorrectionMatchUseCase(
             rows = rowValidation.finalizeRows,
             registeredTeamSlots = participation.activeSlotNumbers,
         )
-        val positionedTeamSlots = rowValidation.finalizeRows
-            .map { it.teamSlotNumber }
-            .toSet()
         if (rowValidation.finalizeRows.isEmpty() || !participantValidation.isValid) {
+            val onlyMissingAssignedTeamNames =
+                missingAssignedTeamSlotNumbers.isNotEmpty() &&
+                    participantValidation.errorsByTeamSlot == missingAssignedTeamSlotNumbers
+                        .associateWith { setOf(MatchResultValidationError.DUPLICATE_TEAM) }
             return FinalizeOcrCorrectionMatchResult.Blocked(
-                failures = setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT),
+                failures = if (onlyMissingAssignedTeamNames) {
+                    setOf(FinalizeOcrCorrectionMatchFailure.MISSING_ASSIGNED_TEAM_NAME)
+                } else {
+                    setOf(FinalizeOcrCorrectionMatchFailure.INVALID_CORRECTION_DRAFT)
+                },
                 validation = participantValidation,
+                missingTeamSlotNumbers = missingAssignedTeamSlotNumbers
+                    .takeIf { onlyMissingAssignedTeamNames }
+                    ?: emptySet(),
             )
         }
 

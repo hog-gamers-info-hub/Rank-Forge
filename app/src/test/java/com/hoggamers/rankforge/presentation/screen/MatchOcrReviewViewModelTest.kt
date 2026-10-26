@@ -66,6 +66,7 @@ import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftReposito
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftReadResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftState
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchDraftMutationResult
+import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationFailure
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationRepository
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationResult
 import com.hoggamers.rankforge.domain.tournament.GroupRotationMatchFinalizationValidator
@@ -284,6 +285,32 @@ class MatchOcrReviewViewModelTest {
         assertNull(result.draftRepository.savedParticipantResults)
         assertNull(result.finalizationRepository.input)
         assertFalse((result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization.isFinalized)
+    }
+
+    @Test
+    fun uuidFinalizationRechecksCurrentClearedNameAfterDraftResultsAreSaved() = runTest(dispatcher) {
+        val snapshot = uuidSnapshot(listOf(7)).copy(
+            teams = listOf(
+                GroupRotationMatchTeamIdentity(
+                    lobbySlotNumber = 7,
+                    teamUUID = "uuid-7",
+                    displayName = "Aarav",
+                    nameCleared = true,
+                ),
+            ),
+        )
+        val result = runUuidFinalize(
+            snapshot = snapshot,
+            existing = emptyList(),
+            finalizationFailure = GroupRotationMatchFinalizationFailure.INVALID_DATA,
+        )
+        advanceUntilIdle()
+
+        val finalization = (result.viewModel.uiState.value as MatchOcrReviewUiState.Ready).finalization
+        assertEquals(MatchOcrReviewFinalizationError.MISSING_ASSIGNED_TEAM_NAME, finalization.error)
+        assertEquals(listOf(7), finalization.missingTeamSlotNumbers)
+        assertFalse(finalization.isFinalized)
+        assertNotNull(result.draftRepository.savedParticipantResults)
     }
 
     @Test
@@ -3047,8 +3074,9 @@ class MatchOcrReviewViewModelTest {
         ): GroupRotationMatchDraftMutationResult = GroupRotationMatchDraftMutationResult.SAVED
     }
 
-    private class RecordingGroupRotationMatchFinalizationRepository :
-        GroupRotationMatchFinalizationRepository {
+    private class RecordingGroupRotationMatchFinalizationRepository(
+        private val finalizationFailure: GroupRotationMatchFinalizationFailure? = null,
+    ) : GroupRotationMatchFinalizationRepository {
         var input: com.hoggamers.rankforge.domain.tournament.FinalizeGroupRotationMatchInput? = null
 
         override suspend fun finalizeGroupRotationMatchByOwner(
@@ -3056,6 +3084,9 @@ class MatchOcrReviewViewModelTest {
             ownerUserId: String,
         ): GroupRotationMatchFinalizationResult {
             this.input = input
+            finalizationFailure?.let { failure ->
+                return GroupRotationMatchFinalizationResult.Rejected(failure)
+            }
             val match = Match(
                 id = input.matchId,
                 tournamentId = input.tournamentId,
@@ -3269,6 +3300,7 @@ class MatchOcrReviewViewModelTest {
         rows: List<MatchOcrReviewRowUiState> = uuidCorrectionRows(snapshot.teams.map { it.lobbySlotNumber }),
         transform: (MatchOcrReviewCorrectionDraft) -> MatchOcrReviewCorrectionDraft = { it },
         saveResult: GroupRotationMatchDraftMutationResult = GroupRotationMatchDraftMutationResult.SAVED,
+        finalizationFailure: GroupRotationMatchFinalizationFailure? = null,
     ): UuidFinalizeRecording {
         val correctionDraft = transform(
             MatchOcrReviewCorrectionDraftReducer.createInitialDraft(rows),
@@ -3277,7 +3309,7 @@ class MatchOcrReviewViewModelTest {
             GroupRotationMatchDraftState(snapshot, existing, emptyMap()),
             saveResult,
         )
-        val finalizationRepository = RecordingGroupRotationMatchFinalizationRepository()
+        val finalizationRepository = RecordingGroupRotationMatchFinalizationRepository(finalizationFailure)
         val viewModel = viewModelWith(
             repository = InMemoryTournamentRepository(),
             initialUiState = readyState(

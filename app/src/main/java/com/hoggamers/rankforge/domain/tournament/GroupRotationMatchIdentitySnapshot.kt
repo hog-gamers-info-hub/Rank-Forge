@@ -5,6 +5,7 @@ data class GroupRotationMatchTeamIdentity(
     val lobbySlotNumber: Int,
     val teamUUID: String,
     val displayName: String,
+    val nameCleared: Boolean = false,
 )
 
 /** Read-only identity projection for one Group Rotation match pairing. */
@@ -52,6 +53,7 @@ class GroupRotationMatchIdentitySnapshotResolver {
         tournament: Tournament,
         pairing: GroupPairing,
         saved: GroupRotationTeamIdentityLocalSnapshot,
+        includeClearedAssignments: Boolean = false,
     ): GroupRotationMatchIdentitySnapshotResult {
         val issues = mutableListOf<GroupRotationMatchIdentitySnapshotIssue>()
         if (tournament.format != TournamentFormat.GROUP_ROTATION) {
@@ -164,7 +166,7 @@ class GroupRotationMatchIdentitySnapshotResolver {
                 tournamentId = tournament.id,
                 pairing = pairing,
                 teams = selectedAssignments
-                    .filterNot { it.nameCleared }
+                    .filter { includeClearedAssignments || !it.nameCleared }
                     .sortedBy { it.lobbySlotNumber }
                     .map { assignment ->
                         val identity = identitiesByUuid.getValue(assignment.teamUUID)
@@ -172,6 +174,7 @@ class GroupRotationMatchIdentitySnapshotResolver {
                             lobbySlotNumber = assignment.lobbySlotNumber,
                             teamUUID = identity.teamUUID,
                             displayName = identity.displayName,
+                            nameCleared = assignment.nameCleared,
                         )
                     },
             ),

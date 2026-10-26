@@ -75,7 +75,10 @@ class TournamentRosterCloudReplacementMapperTest {
 
         assertEquals(24, result.payloads.teamSlots.size)
         assertEquals(TournamentFormat.GROUP_ROTATION, result.payloads.format)
-        assertTrue(result.payloads.teamSlots.all { it.group == null })
+        assertEquals("A", result.payloads.teamSlots.single { it.slotNumber == 1 }.group)
+        assertEquals("B", result.payloads.teamSlots.single { it.slotNumber == 7 }.group)
+        assertEquals("C", result.payloads.teamSlots.single { it.slotNumber == 13 }.group)
+        assertEquals("D", result.payloads.teamSlots.single { it.slotNumber == 19 }.group)
     }
 
     @Test
@@ -90,7 +93,13 @@ class TournamentRosterCloudReplacementMapperTest {
         val result = TournamentRosterCloudReplacementMapper.map(
             groupRotation.copy(
                 slots = groupRotation.tournament.formatDerivedSlots().map { slot ->
-                    if (slot.slotNumber == 13) slot.copy(group = com.hoggamers.rankforge.domain.tournament.TournamentGroup.C) else slot
+                    slot.copy(
+                        group = if (slot.slotNumber == 13) {
+                            com.hoggamers.rankforge.domain.tournament.TournamentGroup.C
+                        } else {
+                            null
+                        },
+                    )
                 },
                 rosters = emptyMap(),
             ),
