@@ -145,7 +145,11 @@ class CreateTournamentUseCaseTest {
         val slots = repository.slotsByTournamentId.getValue(created.id)
         assertEquals(18, slots.size)
         assertEquals((1..18).toList(), slots.map { it.slotNumber })
-        assertTrue(slots.all { it.group == null })
+        assertEquals(
+            listOf(TournamentGroup.A, TournamentGroup.B, TournamentGroup.C)
+                .flatMap { group -> List(MAX_TEAMS_PER_GROUP) { group } },
+            slots.map { it.group },
+        )
     }
 
     private fun validInput() = CreateTournamentInput(
