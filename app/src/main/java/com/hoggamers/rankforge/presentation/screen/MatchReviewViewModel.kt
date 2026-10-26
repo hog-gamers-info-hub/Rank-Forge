@@ -945,7 +945,11 @@ class MatchReviewViewModel @Inject constructor(
         if (!calculatedEvidenceSaveEnabled) return
         val readyOcrState = ocrReviewState as? MatchOcrReviewUiState.Ready ?: return
         val reviewState = _uiState.value
-        val evidence = MatchCalculatedEvidenceMapper.map(reviewState, readyOcrState) ?: return
+        val evidence = MatchCalculatedEvidenceMapper.map(
+            reviewState = reviewState,
+            ocrState = readyOcrState,
+            existingEvidence = calculatedEvidenceSnapshot,
+        ) ?: return
         resumeReadyCalculatedEvidenceSnapshot = ResumeReadyCalculatedEvidenceSnapshot(
             tournamentId = readyOcrState.tournamentId,
             matchId = readyOcrState.matchId,

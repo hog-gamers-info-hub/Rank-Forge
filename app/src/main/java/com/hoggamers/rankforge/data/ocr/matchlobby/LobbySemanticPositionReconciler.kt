@@ -153,6 +153,7 @@ internal object LobbySemanticPositionReconciler {
     ): MatchLobbySlotNumberOcrScreenshotResult.Processed = when (val outcome = outcome) {
         is LobbyPhysicalProcessingOutcome.Resolved -> MatchLobbySlotNumberOcrScreenshotResult.Processed(
             screenshotPosition = semanticPosition,
+            sourceScreenshotPosition = outcome.storedPosition,
             slots = outcome.slots,
             teamCropPreviews = outcome.teamCropPreviews,
             resolutionSource = outcome.resolutionSource,
@@ -184,6 +185,7 @@ internal object LobbySemanticPositionReconciler {
         }
         return MatchLobbySlotNumberOcrScreenshotResult.Processed(
             screenshotPosition = semanticPosition,
+            sourceScreenshotPosition = storedPosition,
             slots = slots,
             teamCropPreviews = MatchLobbyTeamCropPreviewResult.Available(
                 previews = previews,

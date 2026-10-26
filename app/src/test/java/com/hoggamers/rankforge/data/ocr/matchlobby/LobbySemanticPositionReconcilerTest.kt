@@ -45,6 +45,21 @@ class LobbySemanticPositionReconcilerTest {
     }
 
     @Test
+    fun processedResultRetainsPhysicalAssetPositionAfterSemanticReconciliation() {
+        val processed = LobbySemanticPositionReconciler.reconcile(
+            listOf(
+                resolved(
+                    storedPosition = RosterScreenshotPosition.ONE,
+                    semanticPosition = RosterScreenshotPosition.THREE,
+                ),
+            ),
+        ).screenshots[2] as MatchLobbySlotNumberOcrScreenshotResult.Processed
+
+        assertEquals(RosterScreenshotPosition.THREE, processed.screenshotPosition)
+        assertEquals(RosterScreenshotPosition.ONE, processed.sourceScreenshotPosition)
+    }
+
+    @Test
     fun duplicateSemanticPositionIsAnExplicitConflictWithNoSilentOverwrite() {
         val result = LobbySemanticPositionReconciler.reconcile(
             listOf(

@@ -92,58 +92,62 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
         evidence: MatchCalculatedEvidence,
     ): Map<Int, MatchLobbyTeamCropPreviewResult>? {
         if (evidence.lobby.teams.isEmpty()) return null
-        val teamsByScreenshot = evidence.lobby.teams.groupBy { it.sourceScreenshotIndex }
+        val teamsByScreenshot = evidence.lobby.teams.groupBy {
+            it.sourceAssetScreenshotIndex ?: it.sourceScreenshotIndex
+        }
         val restored = mutableMapOf<Int, MatchLobbyTeamCropPreviewResult>()
         teamsByScreenshot.forEach { (screenshotIndex, teams) ->
-            val position = RosterScreenshotPosition.fromIndex(screenshotIndex) ?: return null
-            val asset = lobbyScreenshotAssetRepository.getByIdentityAndOwner(
-                MatchLobbyScreenshotIdentity(tournamentId, matchId, screenshotIndex),
-                ownerUserId,
-            ) ?: return null
-            val source = asset.toRosterOcrScreenshotSource(position, MatchLobbyScreenshotIdentity(tournamentId, matchId, screenshotIndex))
-                ?: return null
-            val prepared = rosterOcrPanelPreparer.prepare(source)
-            val panel = (prepared as? RosterOcrPanelPreparationResult.Prepared)?.panel ?: return null
-            try {
-                val panelImage = panel.croppedPanelImage
-                val byVisiblePosition = mutableMapOf<RosterVisibleSlotPosition, MatchLobbyTeamCropPreview>()
-                teams.forEach { team ->
-                    val slot = team.slotNumber ?: return null
-                    if (slot !in 1..12 || team.playerNames.size != 4) return null
-                    val visiblePosition = RosterVisibleSlotPosition.entries.singleOrNull {
-                        position.tournamentSlotFor(it) == slot
-                    } ?: return null
-                    if (byVisiblePosition.containsKey(visiblePosition)) return null
-                    val bounds = LobbyTeamCropBounds(
-                        team.cropLeft,
-                        team.cropTop,
-                        team.cropRight,
-                        team.cropBottom,
-                    ).takeIf { bounds ->
-                        listOf(bounds.left, bounds.top, bounds.right, bounds.bottom).all(Double::isFinite) &&
-                            bounds.right > bounds.left && bounds.bottom > bounds.top
-                    } ?: return null
-                    val crop = LobbyTeamCrop(visiblePosition, slot, bounds)
-                    val rowPreviews = LobbyPlayerRow.entries.mapIndexed { index, row ->
-                        LobbyPlayerRowCropPreview(
-                            row = row,
-                            boundsInTeamCrop = LobbyPlayerRowCropBounds(0, 0, 1, 1),
-                            slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
-                            slotAnchorY = 0.5,
-                            structuralEvidence = null,
-                            playerName = team.playerNames[index]?.trim()?.takeIf { it.isNotBlank() },
-                        )
-                    }
-                    byVisiblePosition[visiblePosition] = MatchLobbyTeamCropPreview(
-                        visibleSlotPosition = visiblePosition,
-                        detectedSlotNumber = slot,
-                        image = createAndroidMatchLobbyTeamCropPreviewImage(panelImage, crop),
-                        playerRowPreviews = rowPreviews,
-                        authoritativeTeamSlotNumber = slot,
-                        bounds = bounds,
-                    )
+            restoreLobbyScreenshot(
+                tournamentId = tournamentId,
+                matchId = matchId,
+                ownerUserId = ownerUserId,
+                screenshotIndex = screenshotIndex,
+                teams = teams,
+            )?.let { restored[screenshotIndex] = it }
+        }
+        return restored
+    }
+
+    private suspend fun restoreLobbyScreenshot(
+        tournamentId: String,
+        matchId: String,
+        ownerUserId: String,
+        screenshotIndex: Int,
+        teams: List<com.hoggamers.rankforge.data.local.LobbyTeamCalculatedEvidence>,
+    ): MatchLobbyTeamCropPreviewResult? {
+        val physicalPosition = RosterScreenshotPosition.fromIndex(screenshotIndex) ?: return null
+        val identity = MatchLobbyScreenshotIdentity(tournamentId, matchId, screenshotIndex)
+        val asset = try {
+            lobbyScreenshotAssetRepository.getByIdentityAndOwner(identity, ownerUserId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return null
+        } ?: return null
+        val source = asset.toRosterOcrScreenshotSource(physicalPosition, identity) ?: return null
+        val prepared = try {
+            rosterOcrPanelPreparer.prepare(source)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            return null
+        }
+        val panel = (prepared as? RosterOcrPanelPreparationResult.Prepared)?.panel ?: return null
+        return try {
+            val byVisiblePosition = mutableMapOf<RosterVisibleSlotPosition, MatchLobbyTeamCropPreview>()
+            teams.forEach teamLoop@{ team ->
+                val preview = restoreLobbyTeamPreview(
+                    team = team,
+                    panelImage = panel.croppedPanelImage,
+                ) ?: return@teamLoop
+                if (!byVisiblePosition.containsKey(preview.visibleSlotPosition)) {
+                    byVisiblePosition[preview.visibleSlotPosition] = preview
                 }
-                restored[screenshotIndex] = MatchLobbyTeamCropPreviewResult.Available(
+            }
+            if (byVisiblePosition.isEmpty()) {
+                null
+            } else {
+                MatchLobbyTeamCropPreviewResult.Available(
                     previews = byVisiblePosition.values.toList(),
                     unavailable = RosterVisibleSlotPosition.entries
                         .filterNot(byVisiblePosition::containsKey)
@@ -154,11 +158,62 @@ class AndroidMatchCalculatedEvidencePreviewRestorer @Inject constructor(
                             )
                         },
                 )
-            } finally {
-                panel.release()
             }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            null
+        } finally {
+            runCatching { panel.release() }
         }
-        return restored
+    }
+
+    private fun restoreLobbyTeamPreview(
+        team: com.hoggamers.rankforge.data.local.LobbyTeamCalculatedEvidence,
+        panelImage: com.hoggamers.rankforge.domain.ocr.preprocessing.OcrPreprocessingImage,
+    ): MatchLobbyTeamCropPreview? {
+        val slot = team.slotNumber?.takeIf { it in 1..12 } ?: return null
+        val semanticPosition = RosterScreenshotPosition.fromIndex(team.sourceScreenshotIndex)
+            ?: return null
+        val visiblePosition = team.visibleSlotPositionOffset
+            ?.let { offset -> RosterVisibleSlotPosition.entries.singleOrNull { it.offset == offset } }
+            ?: RosterVisibleSlotPosition.entries.singleOrNull {
+                semanticPosition.tournamentSlotFor(it) == slot
+            }
+            ?: return null
+        if (team.playerNames.size != 4) return null
+        val bounds = LobbyTeamCropBounds(
+            team.cropLeft,
+            team.cropTop,
+            team.cropRight,
+            team.cropBottom,
+        ).takeIf { candidate ->
+            listOf(candidate.left, candidate.top, candidate.right, candidate.bottom).all(Double::isFinite) &&
+                candidate.right > candidate.left && candidate.bottom > candidate.top
+        } ?: return null
+        val crop = LobbyTeamCrop(visiblePosition, slot, bounds)
+        val rowPreviews = LobbyPlayerRow.entries.mapIndexed { index, row ->
+            LobbyPlayerRowCropPreview(
+                row = row,
+                boundsInTeamCrop = LobbyPlayerRowCropBounds(0, 0, 1, 1),
+                slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+                slotAnchorY = 0.5,
+                structuralEvidence = null,
+                playerName = team.playerNames[index]?.trim()?.takeIf { it.isNotBlank() },
+            )
+        }
+        return try {
+            MatchLobbyTeamCropPreview(
+                visibleSlotPosition = visiblePosition,
+                detectedSlotNumber = slot,
+                image = createAndroidMatchLobbyTeamCropPreviewImage(panelImage, crop),
+                playerRowPreviews = rowPreviews,
+                authoritativeTeamSlotNumber = slot,
+                bounds = bounds,
+            )
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private suspend fun restoreResult(

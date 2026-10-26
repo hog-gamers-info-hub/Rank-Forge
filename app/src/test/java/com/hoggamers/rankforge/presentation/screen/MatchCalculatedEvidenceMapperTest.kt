@@ -132,6 +132,47 @@ class MatchCalculatedEvidenceMapperTest {
     }
 
     @Test
+    fun restoredCalculatedSavePreservesExistingLobbyEvidenceWithoutFreshLobbyOcr() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val existingEvidence = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(reviewState, sourceOcrState),
+        )
+        val restoredOcrState = sourceOcrState.copy(
+            evidenceSource = MatchOcrReviewEvidenceSource.RESTORED_CALCULATED,
+            phase1LobbySlotNumberOcr = null,
+        )
+
+        val saved = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(
+                reviewState = reviewState,
+                ocrState = restoredOcrState,
+                existingEvidence = existingEvidence,
+            ),
+        )
+
+        assertEquals(existingEvidence.lobby, saved.lobby)
+    }
+
+    @Test
+    fun liveSaveWithoutFreshLobbyOcrDoesNotReuseExistingLobbyEvidence() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val existingEvidence = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(reviewState, sourceOcrState),
+        )
+        val liveOcrState = sourceOcrState.copy(phase1LobbySlotNumberOcr = null)
+
+        val saved = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(
+                reviewState = reviewState,
+                ocrState = liveOcrState,
+                existingEvidence = existingEvidence,
+            ),
+        )
+
+        assertTrue(saved.lobby.teams.isEmpty())
+    }
+
+    @Test
     fun persistsSemanticRoleSeparatelyFromPhysicalCropSourceRole() {
         val (reviewState, sourceOcrState) = mapperInput()
         val sourcePreview = sourceOcrState.matchResultOcrPreview as MatchResultOcrPreviewUiState.Ready
@@ -172,6 +213,40 @@ class MatchCalculatedEvidenceMapperTest {
         assertEquals(12, lobbyTeam.slotNumber)
         assertEquals(13, lobbyTeam.teamSlotNumber)
         assertEquals("Team 13", lobbyTeam.teamName)
+    }
+
+    @Test
+    fun persistsPhysicalLobbyAssetPositionAndVisibleSlotSeparatelyFromSemanticPosition() {
+        val (reviewState, sourceOcrState) = mapperInput()
+        val semanticScreenshot = sourceOcrState.phase1LobbySlotNumberOcr
+            ?.screenshots
+            ?.get(2) as MatchLobbySlotNumberOcrScreenshotResult.Processed
+        val reorderedOcr = sourceOcrState.copy(
+            phase1LobbySlotNumberOcr = MatchLobbySlotNumberOcrResult(
+                screenshots = listOf(
+                    MatchLobbySlotNumberOcrScreenshotResult.Unavailable(
+                        RosterScreenshotPosition.ONE,
+                        MatchLobbySlotNumberOcrUnavailableReason.SEMANTIC_POSITION_UNRESOLVED,
+                    ),
+                    MatchLobbySlotNumberOcrScreenshotResult.Unavailable(
+                        RosterScreenshotPosition.TWO,
+                        MatchLobbySlotNumberOcrUnavailableReason.SEMANTIC_POSITION_UNRESOLVED,
+                    ),
+                    semanticScreenshot.copy(
+                        screenshotPosition = RosterScreenshotPosition.THREE,
+                        sourceScreenshotPosition = RosterScreenshotPosition.ONE,
+                    ),
+                ),
+            ),
+        )
+
+        val lobbyTeam = requireNotNull(
+            MatchCalculatedEvidenceMapper.map(reviewState, reorderedOcr),
+        ).lobby.teams.single()
+
+        assertEquals(3, lobbyTeam.sourceScreenshotIndex)
+        assertEquals(1, lobbyTeam.sourceAssetScreenshotIndex)
+        assertEquals(4, lobbyTeam.visibleSlotPositionOffset)
     }
 
     @Test

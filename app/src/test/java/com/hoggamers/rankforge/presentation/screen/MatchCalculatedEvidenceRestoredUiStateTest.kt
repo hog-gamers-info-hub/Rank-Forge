@@ -1,6 +1,8 @@
 package com.hoggamers.rankforge.presentation.screen
 
 import com.hoggamers.rankforge.R
+import com.hoggamers.rankforge.data.local.LobbyCalculatedEvidence
+import com.hoggamers.rankforge.data.local.LobbyTeamCalculatedEvidence
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidenceOrigin
 import com.hoggamers.rankforge.data.local.ResultCalculatedEvidence
@@ -12,6 +14,112 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MatchCalculatedEvidenceRestoredUiStateTest {
+    @Test
+    fun restoresLobbyPlayerDetailsFromSavedEvidenceInLocalSlotOrder() {
+        val state = MatchCalculatedEvidence(
+            lobby = LobbyCalculatedEvidence(
+                teams = listOf(
+                    LobbyTeamCalculatedEvidence(
+                        slotNumber = 4,
+                        teamName = "Team 4",
+                        sourceScreenshotIndex = 1,
+                        cropLeft = 1.0,
+                        cropTop = 2.0,
+                        cropRight = 3.0,
+                        cropBottom = 4.0,
+                        playerNames = listOf("R", "A", "R", "Y"),
+                    ),
+                    LobbyTeamCalculatedEvidence(
+                        slotNumber = 1,
+                        teamName = "Team 1",
+                        sourceScreenshotIndex = 1,
+                        cropLeft = 5.0,
+                        cropTop = 6.0,
+                        cropRight = 7.0,
+                        cropBottom = 8.0,
+                        playerNames = listOf("Rahul", null, "Rohit", "Aryan"),
+                    ),
+                ),
+            ),
+            result = ResultCalculatedEvidence(
+                positions = listOf(ResultPositionCalculatedEvidence(position = 1)),
+            ),
+        ).toRestoredOcrReviewUiState(
+            tournamentId = "tournament",
+            matchId = "match",
+            teamNamesBySlot = mapOf(1 to "Team 1", 4 to "Team 4"),
+        ) as MatchOcrReviewUiState.Ready
+
+        assertEquals(listOf(1, 4), state.lobbyPlayers.map { it.slotNumber })
+        assertEquals(
+            listOf("Rahul", null, "Rohit", "Aryan"),
+            state.lobbyPlayers.first().players.map { it.playerName },
+        )
+        assertEquals("Team 1", state.teamNamesBySlot[1])
+        assertEquals("Team 4", state.teamNamesBySlot[4])
+    }
+
+    @Test
+    fun restoresGroupRotationLobbySlotAndCanonicalTeamNameSeparately() {
+        val state = MatchCalculatedEvidence(
+            lobby = LobbyCalculatedEvidence(
+                teams = listOf(
+                    LobbyTeamCalculatedEvidence(
+                        slotNumber = 3,
+                        teamName = "Phoenix",
+                        sourceScreenshotIndex = 1,
+                        cropLeft = 1.0,
+                        cropTop = 2.0,
+                        cropRight = 3.0,
+                        cropBottom = 4.0,
+                        playerNames = listOf("A", "B", "C", "D"),
+                        teamSlotNumber = 18,
+                    ),
+                ),
+            ),
+            result = ResultCalculatedEvidence(
+                positions = listOf(
+                    ResultPositionCalculatedEvidence(
+                        position = 1,
+                        slotNumber = 18,
+                        teamName = "Phoenix",
+                        placement = 1,
+                        totalKills = 5,
+                    ),
+                ),
+            ),
+        ).toRestoredOcrReviewUiState(
+            tournamentId = "tournament",
+            matchId = "match",
+            teamNamesBySlot = mapOf(3 to ""),
+            eligibleTeamSlots = setOf(18),
+            lobbySlotByTeamSlot = mapOf(18 to 3),
+            usesPairRelativeIdentity = true,
+        ) as MatchOcrReviewUiState.Ready
+
+        assertEquals(3, state.lobbyPlayers.single().slotNumber)
+        assertEquals(listOf("A", "B", "C", "D"), state.lobbyPlayers.single().players.map { it.playerName })
+        assertEquals("Phoenix", state.teamNamesBySlot[3])
+        assertEquals("Phoenix", state.teamNamesBySlot[18])
+        assertEquals("1", state.correctionDraft!!.rows.single().placementDraftValue)
+        assertEquals("5", state.correctionDraft.rows.single().killsDraftValue)
+    }
+
+    @Test
+    fun emptyLobbyEvidenceDoesNotCreateLobbyPlayerDetails() {
+        val state = MatchCalculatedEvidence(
+            result = ResultCalculatedEvidence(
+                positions = listOf(ResultPositionCalculatedEvidence(position = 1)),
+            ),
+        ).toRestoredOcrReviewUiState(
+            tournamentId = "tournament",
+            matchId = "match",
+            teamNamesBySlot = emptyMap(),
+        ) as MatchOcrReviewUiState.Ready
+
+        assertTrue(state.lobbyPlayers.isEmpty())
+    }
+
     @Test
     fun aggregateCalculatedRowDoesNotCreatePlayerKillDrafts() {
         val state = restore(

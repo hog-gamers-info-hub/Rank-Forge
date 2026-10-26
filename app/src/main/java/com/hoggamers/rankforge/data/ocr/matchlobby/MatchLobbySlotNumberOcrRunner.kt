@@ -110,6 +110,8 @@ sealed interface MatchLobbySlotNumberOcrScreenshotResult {
 
     data class Processed(
         override val screenshotPosition: RosterScreenshotPosition,
+        /** Physical asset position before semantic screenshot reconciliation. */
+        val sourceScreenshotPosition: RosterScreenshotPosition = screenshotPosition,
         val slots: List<MatchLobbySlotNumberOcrSlot>,
         val teamCropPreviews: MatchLobbyTeamCropPreviewResult = MatchLobbyTeamCropPreviewResult.Unavailable(
             MatchLobbyTeamCropPreviewUnavailableReason.REQUIRED_SLOT_NUMBER_UNAVAILABLE,

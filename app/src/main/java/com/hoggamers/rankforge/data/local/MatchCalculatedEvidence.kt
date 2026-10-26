@@ -28,6 +28,7 @@ data class LobbyCalculatedEvidence(
 data class LobbyTeamCalculatedEvidence(
     val slotNumber: Int?,
     val teamName: String?,
+    /** Semantic screenshot position; legacy payloads also used it for asset lookup. */
     val sourceScreenshotIndex: Int,
     val cropLeft: Double,
     val cropTop: Double,
@@ -36,6 +37,10 @@ data class LobbyTeamCalculatedEvidence(
     val playerNames: List<String?>,
     /** Canonical tournament identity; absent in legacy payloads. */
     val teamSlotNumber: Int? = null,
+    /** Physical local screenshot asset index; absent in legacy payloads. */
+    val sourceAssetScreenshotIndex: Int? = null,
+    /** Physical panel slot offset used to create this crop; absent in legacy payloads. */
+    val visibleSlotPositionOffset: Int? = null,
 ) {
     init {
         require(playerNames.size == 4) { "Lobby calculated evidence must contain four player names." }
