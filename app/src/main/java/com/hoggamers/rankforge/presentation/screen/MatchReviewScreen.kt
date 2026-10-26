@@ -1793,6 +1793,9 @@ private fun MatchReviewContent(
         .orEmpty()
     val lobbyTeamCropPreviewsByScreenshotIndex = liveLobbyTeamCropPreviewsByScreenshotIndex
         .ifEmpty { uiState.restoredLobbyTeamCropPreviews }
+    val standaloneLobbyPlayers = ocrUiState.lobbyPlayersNotCoveredByDisplayedCrops(
+        lobbyTeamCropPreviewsByScreenshotIndex,
+    )
     val lobbyTeamNamesBySlot = uiState.rows.associate { row -> row.teamSlotNumber to row.teamName } +
         uiState.restoredLobbyTeamNamesBySlot
     val hasProcessedLobbyOcrData = lobbyTeamCropPreviewsByScreenshotIndex.values.any { result ->
@@ -2426,8 +2429,11 @@ private fun MatchReviewContent(
                             matchLobbyScreenshotIntake()
                         }
                     }
-                    if (hasLobbyPlayerOcrEvidence) {
-                        MatchReviewLobbyPlayerDetailsContent(ocrUiState)
+                    if (hasLobbyPlayerOcrEvidence && standaloneLobbyPlayers.isNotEmpty()) {
+                        MatchReviewLobbyPlayerDetailsContent(
+                            ocrUiState = ocrUiState,
+                            lobbyPlayers = standaloneLobbyPlayers,
+                        )
                     }
                 }
                 if (
@@ -4279,6 +4285,7 @@ private fun OcrScreenshotPreflightItem.actionLabel(): String? {
 @Composable
 private fun MatchReviewLobbyPlayerDetailsContent(
     ocrUiState: MatchOcrReviewUiState,
+    lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
 ) {
     Column(
         modifier = Modifier
@@ -4291,10 +4298,12 @@ private fun MatchReviewLobbyPlayerDetailsContent(
                 text = stringResource(R.string.match_ocr_review_loading),
             )
             is MatchOcrReviewUiState.Empty -> {
-                if (ocrUiState.lobbyPlayers.isNotEmpty()) {
+                if (lobbyPlayers.isNotEmpty()) {
                     MatchReviewLobbyPlayersPager(
-                        lobbyPlayers = ocrUiState.lobbyPlayers,
+                        lobbyPlayers = lobbyPlayers,
                         teamNamesBySlot = ocrUiState.teamNamesBySlot,
+                        lobbySlotByTeamSlot = ocrUiState.lobbySlotByTeamSlot,
+                        usesPairRelativeIdentity = ocrUiState.usesPairRelativeIdentity,
                     )
                 } else {
                     Text(text = stringResource(R.string.match_ocr_review_empty_message))
@@ -4306,10 +4315,12 @@ private fun MatchReviewLobbyPlayerDetailsContent(
             )
             is MatchOcrReviewUiState.Calculating -> Unit
             is MatchOcrReviewUiState.Ready -> {
-                if (ocrUiState.lobbyPlayers.isNotEmpty()) {
+                if (lobbyPlayers.isNotEmpty()) {
                     MatchReviewLobbyPlayersPager(
-                        lobbyPlayers = ocrUiState.lobbyPlayers,
+                        lobbyPlayers = lobbyPlayers,
                         teamNamesBySlot = ocrUiState.teamNamesBySlot,
+                        lobbySlotByTeamSlot = ocrUiState.lobbySlotByTeamSlot,
+                        usesPairRelativeIdentity = ocrUiState.usesPairRelativeIdentity,
                     )
                 } else {
                     Text(text = stringResource(R.string.match_ocr_review_empty_message))
@@ -4319,10 +4330,62 @@ private fun MatchReviewLobbyPlayerDetailsContent(
     }
 }
 
+internal fun MatchOcrReviewUiState.lobbyPlayersNotCoveredByDisplayedCrops(
+    teamCropPreviewsByScreenshotIndex: Map<Int, MatchLobbyTeamCropPreviewResult>,
+): List<MatchOcrReviewLobbySlotUiState> {
+    val lobbySlotMapping = when (this) {
+        is MatchOcrReviewUiState.Empty -> lobbySlotByTeamSlot
+        is MatchOcrReviewUiState.Ready -> lobbySlotByTeamSlot
+        MatchOcrReviewUiState.Loading,
+        is MatchOcrReviewUiState.Calculating,
+        is MatchOcrReviewUiState.Error,
+        -> emptyMap()
+    }
+    val pairRelativeIdentity = when (this) {
+        is MatchOcrReviewUiState.Empty -> usesPairRelativeIdentity
+        is MatchOcrReviewUiState.Ready -> usesPairRelativeIdentity
+        MatchOcrReviewUiState.Loading,
+        is MatchOcrReviewUiState.Calculating,
+        is MatchOcrReviewUiState.Error,
+        -> false
+    }
+    val displayedCropSlots = teamCropPreviewsByScreenshotIndex.values
+        .asSequence()
+        .filterIsInstance<MatchLobbyTeamCropPreviewResult.Available>()
+        .flatMap { result -> result.previews.asSequence() }
+        .filter { preview -> preview.playerRowPreviews.isNotEmpty() }
+        .mapNotNull { preview ->
+            if (!pairRelativeIdentity) {
+                preview.detectedSlotNumber
+            } else {
+                val mappedLocalSlot = lobbySlotMapping[preview.authoritativeTeamSlotNumber]
+                when {
+                    mappedLocalSlot != null &&
+                        preview.authoritativeTeamSlotNumber !in TeamSlot.SLOT_NUMBERS -> mappedLocalSlot
+                    mappedLocalSlot != null &&
+                        preview.authoritativeTeamSlotNumber != preview.detectedSlotNumber -> mappedLocalSlot
+                    else -> preview.detectedSlotNumber
+                }
+            }
+        }
+        .toSet()
+
+    return when (this) {
+        is MatchOcrReviewUiState.Empty -> lobbyPlayers
+        is MatchOcrReviewUiState.Ready -> lobbyPlayers
+        MatchOcrReviewUiState.Loading,
+        is MatchOcrReviewUiState.Calculating,
+        is MatchOcrReviewUiState.Error,
+        -> emptyList()
+    }.filterNot { playerSlot -> playerSlot.slotNumber in displayedCropSlots }
+}
+
 @Composable
 private fun MatchReviewLobbyPlayersPager(
     lobbyPlayers: List<MatchOcrReviewLobbySlotUiState>,
     teamNamesBySlot: Map<Int, String>,
+    lobbySlotByTeamSlot: Map<Int, Int> = emptyMap(),
+    usesPairRelativeIdentity: Boolean = false,
 ) {
     val reviewInteractionsEnabled = LocalMatchReviewInteractionsEnabled.current
     val orderedSlots = lobbyPlayers.sortedBy { it.slotNumber }
@@ -4354,6 +4417,8 @@ private fun MatchReviewLobbyPlayersPager(
                         MatchOcrReviewLobbySlotContent(
                             slot = slot,
                             teamNamesBySlot = teamNamesBySlot,
+                            lobbySlotByTeamSlot = lobbySlotByTeamSlot,
+                            usesPairRelativeIdentity = usesPairRelativeIdentity,
                         )
                     }
                 }

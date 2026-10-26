@@ -3,6 +3,7 @@ package com.hoggamers.rankforge.presentation.screen
 import com.hoggamers.rankforge.data.local.MatchCalculatedEvidence
 import com.hoggamers.rankforge.data.local.ResultPositionCalculatedEvidence
 import com.hoggamers.rankforge.domain.ocr.matchresult.MatchResultOcrFieldStatus
+import com.hoggamers.rankforge.domain.tournament.TeamSlot
 
 private const val RESTORED_EVIDENCE_LABEL = "Restored calculated evidence"
 private const val UNAVAILABLE_LABEL = "Unavailable"
@@ -28,11 +29,33 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
     }
     val excludedSourcePositions = result.excludedSourcePositions
     val positions = result.positions.sortedBy { it.position }
+    val restoredTeamNames = teamNamesBySlot + positions.mapNotNull { position ->
+        val slot = position.slotNumber ?: return@mapNotNull null
+        val name = position.teamName?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        slot to name
+    }
+    val restoredDisplayTeamNames = restoredTeamNames.toMutableMap().apply {
+        lobby.teams.forEach { team ->
+            val name = team.teamName?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
+            val localSlot = team.slotNumber?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+            if (localSlot != null && this[localSlot].orEmpty().isBlank()) {
+                this[localSlot] = name
+            }
+            if (usesPairRelativeIdentity) {
+                val canonicalSlot = team.teamSlotNumber ?: team.slotNumber
+                if (canonicalSlot != null && canonicalSlot in eligibleTeamSlots) {
+                    this[canonicalSlot] = name
+                }
+            }
+        }
+    }.toMap()
+    val restoredLobbyPlayers = toRestoredLobbyPlayers()
     if (positions.isEmpty()) {
         return MatchOcrReviewUiState.Empty(
             tournamentId = tournamentId,
             matchId = matchId,
-            teamNamesBySlot = teamNamesBySlot,
+            teamNamesBySlot = restoredDisplayTeamNames,
+            lobbyPlayers = restoredLobbyPlayers,
             eligibleTeamSlots = eligibleTeamSlots,
             lobbySlotByTeamSlot = lobbySlotByTeamSlot,
             usesPairRelativeIdentity = usesPairRelativeIdentity,
@@ -54,22 +77,6 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
                 savedPosition.cropBottom == null
         }
         .toSet()
-    val restoredTeamNames = teamNamesBySlot + positions.mapNotNull { position ->
-        val slot = position.slotNumber ?: return@mapNotNull null
-        val name = position.teamName?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-        slot to name
-    }
-    val restoredDisplayTeamNames = if (usesPairRelativeIdentity) {
-        restoredTeamNames + lobby.teams.mapNotNull { team ->
-            val slot = team.teamSlotNumber ?: team.slotNumber ?: return@mapNotNull null
-            if (slot !in eligibleTeamSlots) return@mapNotNull null
-            val name = team.teamName?.trim()?.takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-            slot to name
-        }
-    } else {
-        teamNamesBySlot
-    }
     val previewRows = positions
         .filter { it.hasRestorableGeometry() }
         .map { it.toRestoredPreviewRow() }
@@ -168,7 +175,8 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         hasUnavailableEvidence = reviewRows.any { it.blockerLabels.isNotEmpty() },
         correctionDraft = correctionDraft,
         matchResultOcrPreview = preview,
-        teamNamesBySlot = restoredTeamNames,
+        teamNamesBySlot = restoredDisplayTeamNames,
+        lobbyPlayers = restoredLobbyPlayers,
         eligibleTeamSlots = eligibleTeamSlots,
         lobbySlotByTeamSlot = lobbySlotByTeamSlot,
         usesPairRelativeIdentity = usesPairRelativeIdentity,
@@ -177,6 +185,27 @@ internal fun MatchCalculatedEvidence.toRestoredOcrReviewUiState(
         manuallyRevealedPositions = restoredManualPositions,
     )
 }
+
+private fun MatchCalculatedEvidence.toRestoredLobbyPlayers(): List<MatchOcrReviewLobbySlotUiState> =
+    lobby.teams
+        .asSequence()
+        .mapNotNull { team ->
+            val slotNumber = team.slotNumber
+                ?.takeIf { it in TeamSlot.SLOT_NUMBERS }
+                ?: return@mapNotNull null
+            MatchOcrReviewLobbySlotUiState(
+                slotNumber = slotNumber,
+                players = team.playerNames.mapIndexed { index, playerName ->
+                    MatchOcrReviewLobbyPlayerUiState(
+                        playerNumber = index + 1,
+                        playerName = playerName,
+                    )
+                },
+            )
+        }
+        .distinctBy { it.slotNumber }
+        .sortedBy { it.slotNumber }
+        .toList()
 
 private fun ResultPositionCalculatedEvidence.hasRestorableGeometry(): Boolean =
     sourceScreenshotRole != null &&

@@ -19,6 +19,7 @@ internal object MatchCalculatedEvidenceMapper {
     fun map(
         reviewState: MatchReviewUiState,
         ocrState: MatchOcrReviewUiState.Ready,
+        existingEvidence: MatchCalculatedEvidence? = null,
     ): MatchCalculatedEvidence? {
         if (!reviewState.isAvailable ||
             reviewState.tournamentId != ocrState.tournamentId ||
@@ -29,7 +30,11 @@ internal object MatchCalculatedEvidenceMapper {
 
         val lobbyTeams = ocrState.phase1LobbySlotNumberOcr
             ?.toLobbyCalculatedEvidence(reviewState, ocrState)
-            .orEmpty()
+            ?: if (ocrState.evidenceSource == MatchOcrReviewEvidenceSource.RESTORED_CALCULATED) {
+                existingEvidence?.lobby?.teams.orEmpty()
+            } else {
+                emptyList()
+            }
         val resultPositions = ocrState.toResultCalculatedEvidence(reviewState)
 
         return MatchCalculatedEvidence(
@@ -211,6 +216,8 @@ internal object MatchCalculatedEvidenceMapper {
                                 }
                         },
                         teamSlotNumber = canonicalTeamSlot,
+                        sourceAssetScreenshotIndex = screenshot.sourceScreenshotPosition.index,
+                        visibleSlotPositionOffset = preview.visibleSlotPosition.offset,
                     )
                 }
             }

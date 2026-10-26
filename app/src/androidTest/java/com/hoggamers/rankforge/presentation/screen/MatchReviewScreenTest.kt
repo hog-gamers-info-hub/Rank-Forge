@@ -987,6 +987,86 @@ class MatchReviewScreenTest {
     }
 
     @Test
+    fun groupRotationCroppedLobbyPlayerRowsAreNotRenderedAgainInStandaloneDetails() {
+        val cropPreviews = groupRotationLobbyCropPreviews(1..12)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                        isUuidBackedGroupRotation = true,
+                        restoredLobbyTeamCropPreviews = cropPreviews,
+                    ),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = groupRotationLobbyPlayerState(1..12),
+                    matchLobbyScreenshotIntake = {
+                        MatchLobbyScreenshotIntakeScreen(
+                            uiState = allLobbyReadyState(),
+                            onSelect = {},
+                            onCrop = {},
+                            onRemove = {},
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onAllNodesWithTag(MATCH_REVIEW_LOBBY_PLAYER_DETAILS_SECTION_TEST_TAG)
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_TEAM_CROP_DATA_TEST_TAG_PREFIX + "slot_1")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun groupRotationPartialCropRestorationKeepsUncoveredLobbyPlayersInStandaloneDetails() {
+        val cropPreviews = groupRotationLobbyCropPreviews(1..4)
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        tournamentFormat = TournamentFormat.GROUP_ROTATION,
+                        isUuidBackedGroupRotation = true,
+                        restoredLobbyTeamCropPreviews = cropPreviews,
+                    ),
+                    lobbyUiState = allLobbyReadyState(),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showInlineOcrDetails = true,
+                    ocrUiState = groupRotationLobbyPlayerState(1..8),
+                    matchLobbyScreenshotIntake = {
+                        MatchLobbyScreenshotIntakeScreen(
+                            uiState = allLobbyReadyState(),
+                            onSelect = {},
+                            onCrop = {},
+                            onRemove = {},
+                        )
+                    },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag(MATCH_LOBBY_TEAM_CROP_DATA_TEST_TAG_PREFIX + "slot_1")
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_LOBBY_PLAYER_DETAILS_SECTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onAllNodesWithTag(MatchOcrReviewTestTags.lobbySlot(1))
+            .assertCountEquals(0)
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.lobbySlot(5))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_RESULT_SCREENSHOTS_SECTION_TEST_TAG)
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun inlineOcrContentFollowsItsScreenshotSectionsAndKeepsExistingStructure() {
         composeTestRule.setContent {
             RankForgeTheme {
@@ -5951,6 +6031,61 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             cropProfileId = "match-result",
         ),
     )
+
+    private fun groupRotationLobbyPlayerState(
+        localSlots: IntRange,
+    ) = MatchOcrReviewUiState.Empty(
+        isUuidBackedGroupRotation = true,
+        usesPairRelativeIdentity = true,
+        teamNamesBySlot = (1..12).associate { localSlot ->
+            (localSlot + 12) to "Team $localSlot"
+        },
+        lobbyPlayers = localSlots.map { localSlot ->
+            MatchOcrReviewLobbySlotUiState(
+                slotNumber = localSlot,
+                players = listOf(
+                    MatchOcrReviewLobbyPlayerUiState(
+                        playerNumber = 1,
+                        playerName = "Player $localSlot",
+                    ),
+                ),
+            )
+        },
+        lobbySlotByTeamSlot = (1..12).associate { localSlot ->
+            (localSlot + 12) to localSlot
+        },
+    )
+
+    private fun groupRotationLobbyCropPreviews(
+        localSlots: IntRange,
+    ): Map<Int, MatchLobbyTeamCropPreviewResult> = localSlots
+        .toList()
+        .chunked(RosterVisibleSlotPosition.entries.size)
+        .mapIndexed { screenshotIndex, screenshotSlots ->
+            screenshotIndex + 1 to MatchLobbyTeamCropPreviewResult.Available(
+                previews = screenshotSlots.mapIndexed { visibleIndex, localSlot ->
+                    MatchLobbyTeamCropPreview(
+                        visibleSlotPosition = RosterVisibleSlotPosition.entries[visibleIndex],
+                        detectedSlotNumber = localSlot,
+                        image = AndroidMatchLobbyTeamCropPreviewImage(
+                            Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888),
+                        ),
+                        playerRowPreviews = listOf(
+                            LobbyPlayerRowCropPreview(
+                                row = LobbyPlayerRow.ROW_1,
+                                boundsInTeamCrop = LobbyPlayerRowCropBounds(0, 0, 4, 2),
+                                slotAnchorSource = LobbySlotAnchorSource.TEAM_CROP_CENTER_FALLBACK,
+                                slotAnchorY = 0.5,
+                                structuralEvidence = null,
+                                playerName = "Player $localSlot",
+                            ),
+                        ),
+                        authoritativeTeamSlotNumber = localSlot + 12,
+                    )
+                },
+            )
+        }
+        .toMap()
 
     private fun processedLobbySlotNumberOcrWithPlayerRows(): MatchLobbySlotNumberOcrResult {
         val image = AndroidMatchLobbyTeamCropPreviewImage(
