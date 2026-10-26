@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hoggamers.rankforge.data.local.GroupRotationPairingTeamIdentityAssignmentEntity
 import com.hoggamers.rankforge.data.local.GroupRotationTeamIdentityEntity
+import com.hoggamers.rankforge.data.local.MatchDraftValueEntity
 import com.hoggamers.rankforge.data.local.MatchEntity
 import com.hoggamers.rankforge.data.local.RankForgeDatabase
 import com.hoggamers.rankforge.data.local.TournamentEntity
@@ -143,7 +144,18 @@ class GroupRotationMatchIdentityPersistenceTest {
 
     @Test
     fun renamedRegistryTeamUsesCurrentNameWithoutChangingSavedUuid() = runBlocking {
-        repository.save(tournament(), MATCH_ONE, snapshot(pairing("A:B"), 4 to alpha()))
+        val participant = GroupRotationMatchParticipantResult(
+            teamUUID = ALPHA_UUID,
+            participationStatus = MatchParticipationStatus.PARTICIPATED,
+            placement = 1,
+            kills = 4,
+        )
+        repository.save(
+            tournament(),
+            MATCH_ONE,
+            snapshot(pairing("A:B"), 4 to alpha()),
+            participantResults = listOf(participant),
+        )
         database.groupRotationTeamIdentityDao().upsertAll(
             listOf(identity(ALPHA_UUID, "Alpha Renamed")),
         )
@@ -152,6 +164,7 @@ class GroupRotationMatchIdentityPersistenceTest {
         val restored = loaded(MATCH_ONE).identity.teams.single()
         assertEquals(ALPHA_UUID, restored.teamUUID)
         assertEquals("Alpha Renamed", restored.displayName)
+        assertEquals(listOf(participant), loaded(MATCH_ONE).participantResults)
     }
 
     @Test
@@ -310,6 +323,88 @@ class GroupRotationMatchIdentityPersistenceTest {
     }
 
     @Test
+    fun draftReadRetainsClearedUuidAndExistingDraftValuesAndResults() = runBlocking {
+        val participant = GroupRotationMatchParticipantResult(
+            teamUUID = ALPHA_UUID,
+            participationStatus = MatchParticipationStatus.PARTICIPATED,
+            placement = 1,
+            kills = 4,
+            pointAdjustment = 2,
+        )
+        repository.save(
+            tournament(),
+            MATCH_ONE,
+            snapshot(pairing("A:B"), 3 to alpha()),
+            participantResults = listOf(participant),
+        )
+        database.matchDraftValueDao().upsert(
+            MatchDraftValueEntity(MATCH_ONE, 3, "1", "4", 2),
+        )
+        setCurrentAssignments(
+            currentAssignment("A:B", 3, ALPHA_UUID, nameCleared = true),
+        )
+
+        val refreshed = loaded(MATCH_ONE)
+
+        assertEquals(ALPHA_UUID, refreshed.identity.teams.single().teamUUID)
+        assertEquals(3, refreshed.identity.teams.single().lobbySlotNumber)
+        assertEquals("", refreshed.identity.teams.single().displayName)
+        assertEquals(listOf(participant), refreshed.participantResults)
+        assertEquals(
+            listOf(MatchDraftValueEntity(MATCH_ONE, 3, "1", "4", 2)),
+            database.matchDraftValueDao().observeByMatchId(MATCH_ONE).first(),
+        )
+
+        val saved = repository.save(
+            tournament(),
+            MATCH_ONE,
+            refreshed.identity,
+            refreshed.participantResults,
+        )
+        assertTrue(saved is GroupRotationMatchPersistenceResult.Saved)
+        assertEquals(
+            "",
+            (saved as GroupRotationMatchPersistenceResult.Saved)
+                .snapshot.identity.teams.single().displayName,
+        )
+    }
+
+    @Test
+    fun draftReadRetainsClearedUuidWhenNoDraftResultsExist() = runBlocking {
+        repository.save(tournament(), MATCH_ONE, snapshot(pairing("A:B"), 3 to alpha()))
+        setCurrentAssignments(
+            currentAssignment("A:B", 3, ALPHA_UUID, nameCleared = true),
+        )
+
+        val refreshed = loaded(MATCH_ONE)
+
+        assertEquals(ALPHA_UUID, refreshed.identity.teams.single().teamUUID)
+        assertEquals("", refreshed.identity.teams.single().displayName)
+        assertTrue(refreshed.participantResults.isEmpty())
+    }
+
+    @Test
+    fun draftReadDoesNotAddClearedAssignmentThatWasAbsentFromStoredMatch() = runBlocking {
+        database.matchDao().upsert(match(MATCH_TWO, "B:C"))
+        val saved = repository.save(tournament(), MATCH_TWO, snapshot(pairing("B:C")))
+        assertTrue(saved is GroupRotationMatchPersistenceResult.Saved)
+
+        setCurrentAssignments(
+            currentAssignment("B:C", 4, ALPHA_UUID, nameCleared = true),
+        )
+
+        val refreshed = loaded(MATCH_TWO)
+
+        assertTrue(refreshed.identity.teams.isEmpty())
+        assertTrue(refreshed.participantResults.isEmpty())
+        assertTrue(
+            database.groupRotationMatchTeamAssignmentDao()
+                .readByMatchId(MATCH_TWO)
+                .isEmpty(),
+        )
+    }
+
+    @Test
     fun finalizedReadKeepsImmutableMatchIdentityWhenCurrentPairingChanges() = runBlocking {
         repository.save(
             tournament(),
@@ -361,6 +456,9 @@ class GroupRotationMatchIdentityPersistenceTest {
             snapshot(pairing("A:C"), 9 to alpha()),
             participantResults = listOf(participant),
         )
+        database.groupRotationTeamIdentityDao().upsertAll(
+            listOf(identity(ALPHA_UUID, "Alpha Esports")),
+        )
         setCurrentAssignments(
             currentAssignment("A:B", 3, ALPHA_UUID, nameCleared = true),
             currentAssignment("A:C", 9, ALPHA_UUID),
@@ -378,7 +476,7 @@ class GroupRotationMatchIdentityPersistenceTest {
         assertEquals(3, clearedPairingMatch.identity.teams.single().lobbySlotNumber)
         assertEquals("", clearedPairingMatch.identity.teams.single().displayName)
         assertEquals(participant, clearedPairingMatch.participantResults.single())
-        assertEquals("Alpha", activePairingMatch.identity.teams.single().displayName)
+        assertEquals("Alpha Esports", activePairingMatch.identity.teams.single().displayName)
         assertEquals(assignmentsBefore, database.groupRotationMatchTeamAssignmentDao().readByMatchId(MATCH_ONE))
         assertEquals(resultsBefore, database.groupRotationMatchParticipantResultDao().readByMatchId(MATCH_ONE))
     }
