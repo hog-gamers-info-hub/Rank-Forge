@@ -556,6 +556,16 @@
     <string name="match_review_finalize_invalid_team_slot">Team slot is invalid.</string>
     <string name="match_review_finalize_duplicate_team_slot">Team slot is already assigned.</string>
     <string name="match_review_finalize_malformed_row">Result row contains invalid data.</string>
+    <string name="match_review_finalize_missing_team_names_title">Cannot Finalize Match</string>
+    <plurals name="match_review_finalize_missing_assigned_team_names">
+        <item quantity="one">Team Slot %1$s has no name. Restore its name in Enter Teams before finalizing.</item>
+        <item quantity="other">Team Slots %1$s have no names. Restore their names in Enter Teams before finalizing.</item>
+    </plurals>
+    <string name="match_review_download_missing_team_names_title">Cannot Download Result</string>
+    <plurals name="match_review_download_missing_assigned_team_names">
+        <item quantity="one">Team Slot %1$s has no name. Restore its name in Enter Teams before downloading.</item>
+        <item quantity="other">Team Slots %1$s have no names. Restore their names in Enter Teams before downloading.</item>
+    </plurals>
     <plurals name="match_review_finalize_missing_team_names">
         <item quantity="one">%1$d team name is missing.</item>
         <item quantity="other">%1$d team names are missing.</item>

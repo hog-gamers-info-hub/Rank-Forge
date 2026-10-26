@@ -390,6 +390,7 @@ class MatchReviewViewModel @Inject constructor(
                                 MatchReviewRowUiState(
                                     teamSlotNumber = team.lobbySlotNumber,
                                     teamName = team.displayName,
+                                    isCurrentTeamNameCleared = team.nameCleared,
                                     placementInput = team.placementInput,
                                     killsInput = team.killsInput,
                                     pointAdjustment = team.pointAdjustment,

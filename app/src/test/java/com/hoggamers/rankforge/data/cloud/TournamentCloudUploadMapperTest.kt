@@ -98,7 +98,9 @@ class TournamentCloudUploadMapperTest {
         assertEquals(3, result.payloads.tournament.groupCount)
         assertEquals(3, result.payloads.tournament.selectedGroupPairings.size)
         assertEquals(18, result.payloads.teamSlots.size)
-        assertTrue(result.payloads.teamSlots.all { it.group == null })
+        assertEquals("A", result.payloads.teamSlots.single { it.slotNumber == 1 }.group)
+        assertEquals("B", result.payloads.teamSlots.single { it.slotNumber == 7 }.group)
+        assertEquals("C", result.payloads.teamSlots.single { it.slotNumber == 13 }.group)
         assertEquals(
             TournamentCloudIdentity.teamSlotId(UUID.fromString(TENANT_ID), 18),
             result.payloads.teamSlots.single { it.slotNumber == 18 }.id,
@@ -147,7 +149,7 @@ class TournamentCloudUploadMapperTest {
     fun preservesValidLegacyGroupMetadataForGroupRotationSlots() {
         val snapshot = groupRotationSnapshot().copy(
             slots = groupRotationSnapshot().slots.map { slot ->
-                if (slot.slotNumber == 13) slot.copy(group = TournamentGroup.C) else slot
+                slot.copy(group = if (slot.slotNumber == 13) TournamentGroup.C else null)
             },
         )
 

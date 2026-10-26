@@ -160,6 +160,26 @@ class FinalizeOcrCorrectionMatchUseCaseTest {
     }
 
     @Test
+    fun assignedBlankStandardTeamNamesHaveSpecificDiagnosticSlots() = runTest {
+        val repository = createRepository()
+        repository.saveTeamNames(
+            tournamentId = TOURNAMENT_ID,
+            teamNamesBySlotNumber = TeamSlot.SLOT_NUMBERS.associateWith { slotNumber ->
+                if (slotNumber in setOf(3, 7, 9)) "" else "Team $slotNumber"
+            },
+        )
+
+        val result = createUseCase(repository)(validInput())
+
+        val blocked = assertBlocked(
+            result,
+            FinalizeOcrCorrectionMatchFailure.MISSING_ASSIGNED_TEAM_NAME,
+        )
+        assertEquals(setOf(3, 7, 9), blocked.missingTeamSlotNumbers)
+        assertEquals(MatchStatus.DRAFT, repository.observeMatchById(MATCH_ID).first()!!.status)
+    }
+
+    @Test
     fun participantCountMismatchBlocksFinalization() = runTest {
         val repository = RejectingFinalizeRepository(
             availableTeamSlots = TeamSlot.SLOT_NUMBERS.toList().dropLast(1).toSet(),

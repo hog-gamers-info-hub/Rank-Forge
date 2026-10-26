@@ -216,6 +216,8 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                 GroupRotationMatchPersistenceIssueCode.INVALID_PAIRING_KEY,
                 matchId,
             )
+        val pairingAssignments = database.groupRotationPairingTeamIdentityAssignmentDao()
+            .readByTournamentId(tournament.id)
         val assignmentDao = database.groupRotationMatchTeamAssignmentDao()
         val storedAssignments = assignmentDao.readByMatchId(matchId)
         val storedAssignmentIssues = validateStoredHeaderAndAssignments(
@@ -238,6 +240,13 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                             lobbySlotNumber = assignment.lobbySlotNumber,
                             teamUUID = identity.teamUUID,
                             displayName = identity.displayName,
+                            nameCleared = pairingAssignments.any { pairingAssignment ->
+                                pairingAssignment.tournamentId == tournament.id &&
+                                    pairingAssignment.pairingKey == pairing.canonicalKey &&
+                                    pairingAssignment.lobbySlotNumber == assignment.lobbySlotNumber &&
+                                    pairingAssignment.teamUUID == assignment.teamUUID &&
+                                    pairingAssignment.nameCleared
+                            },
                         )
                     } ?: return@withTransaction invalid(
                         GroupRotationMatchPersistenceIssueCode.TEAM_UUID_NOT_FOUND,
@@ -259,8 +268,7 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
             projectFinalizedIdentitySnapshot(
                 snapshot = authoritativeIdentitySnapshot,
                 pairing = pairing,
-                assignments = database.groupRotationPairingTeamIdentityAssignmentDao()
-                    .readByTournamentId(tournament.id),
+                assignments = pairingAssignments,
             )
         } else {
             authoritativeIdentitySnapshot
@@ -362,7 +370,11 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
                     assignment.teamUUID == team.teamUUID &&
                     assignment.nameCleared
             }
-            if (clearedInExactOccurrence) team.copy(displayName = "") else team
+            if (clearedInExactOccurrence) {
+                team.copy(displayName = "", nameCleared = true)
+            } else {
+                team
+            }
         },
     )
 
@@ -398,6 +410,10 @@ class RoomGroupRotationMatchIdentityRepository @Inject constructor(
         return snapshotResolver.resolve(
             tournament = tournament,
             pairing = pairing,
+            // Existing drafts must retain a cleared UUID-backed occurrence so their saved
+            // participant results remain addressable. The resolver default still excludes
+            // cleared assignments from new-match identity snapshots.
+            includeClearedAssignments = true,
             saved = GroupRotationTeamIdentityLocalSnapshot(
                 teams = identities.map { identity ->
                     GroupRotationTeamIdentity(

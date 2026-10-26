@@ -2460,6 +2460,219 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
     }
 
     @Test
+    fun standardFinalizeBlockerListsAssignedMissingTeamSlot() {
+        val baseOcrState = inlineOcrState()
+        val baseRow = baseOcrState.rows.single()
+        val baseDraft = baseOcrState.correctionDraft!!
+        val baseCorrectionRow = baseDraft.rows.single()
+        val ocrState = baseOcrState.copy(
+            rowCount = 12,
+            rows = (1..12).map { position ->
+                baseRow.copy(
+                    rowIndex = position - 1,
+                    expectedPlacementLabel = position.toString(),
+                    detectedPlacementDisplayValue = position.toString(),
+                    suggestedTeamSlotDisplayValue = position.toString(),
+                    originalParsedPlacementValue = position,
+                    originalSuggestedTeamSlot = position,
+                )
+            },
+            correctionDraft = baseDraft.copy(
+                rows = (1..12).map { position ->
+                    baseCorrectionRow.copy(
+                        rowIndex = position - 1,
+                        originalPlacementValue = position.toString(),
+                        originalAssignedTeamSlotValue = position.toString(),
+                        placementDraftValue = position.toString(),
+                        assignedTeamSlotDraftValue = position.toString(),
+                    )
+                },
+            ),
+        )
+        val reviewState = availableState().copy(
+            tournamentFormat = TournamentFormat.STANDARD,
+            rows = availableState().rows.map { row ->
+                if (row.teamSlotNumber == 7) row.copy(teamName = "") else row
+            },
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = reviewState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = ocrState,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Cannot Finalize Match").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Team Slot 7 has no name. Restore its name in Enter Teams before finalizing.",
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun groupRotationHistoricalTeamNameDoesNotSatisfyCurrentMissingNameBlocker() {
+        val baseOcrState = inlineOcrState()
+        val baseRow = baseOcrState.rows.single()
+        val baseDraft = baseOcrState.correctionDraft!!
+        val baseCorrectionRow = baseDraft.rows.single()
+        val ocrState = baseOcrState.copy(
+            rows = listOf(
+                baseRow.copy(
+                    suggestedTeamSlotDisplayValue = "1",
+                    originalSuggestedTeamSlot = 1,
+                ),
+            ),
+            correctionDraft = baseDraft.copy(
+                rows = listOf(
+                    baseCorrectionRow.copy(
+                        originalAssignedTeamSlotValue = "1",
+                        assignedTeamSlotDraftValue = "1",
+                    ),
+                ),
+            ),
+            teamNamesBySlot = mapOf(1 to "Aarav"),
+            isUuidBackedGroupRotation = true,
+            usesPairRelativeIdentity = true,
+        )
+        var reviewState by mutableStateOf(availableState().copy(
+            isUuidBackedGroupRotation = true,
+            rows = availableState().rows.map { row ->
+                if (row.teamSlotNumber == 1) {
+                    row.copy(teamName = "Aarav", isCurrentTeamNameCleared = true)
+                } else {
+                    row
+                }
+            },
+        ))
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = reviewState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = ocrState,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Cannot Finalize Match").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Team Slot 1 has no name. Restore its name in Enter Teams before finalizing.",
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsNotEnabled()
+
+        composeTestRule.runOnIdle {
+            reviewState = reviewState.copy(
+                rows = reviewState.rows.map { row ->
+                    if (row.teamSlotNumber == 1) {
+                        row.copy(isCurrentTeamNameCleared = false)
+                    } else {
+                        row
+                    }
+                },
+            )
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Cannot Finalize Match").assertDoesNotExist()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun groupRotationMissingNameBlockerListsClearedSlotsInAscendingOrder() {
+        val baseOcrState = inlineOcrState()
+        val baseRow = baseOcrState.rows.single()
+        val baseDraft = baseOcrState.correctionDraft!!
+        val baseCorrectionRow = baseDraft.rows.single()
+        val ocrState = baseOcrState.copy(
+            rowCount = 2,
+            rows = listOf(
+                baseRow.copy(
+                    rowIndex = 0,
+                    suggestedTeamSlotDisplayValue = "9",
+                    originalSuggestedTeamSlot = 9,
+                ),
+                baseRow.copy(
+                    rowIndex = 1,
+                    expectedPlacementLabel = "2",
+                    detectedPlacementDisplayValue = "2",
+                    suggestedTeamSlotDisplayValue = "3",
+                    originalParsedPlacementValue = 2,
+                    originalSuggestedTeamSlot = 3,
+                ),
+            ),
+            correctionDraft = baseDraft.copy(
+                rows = listOf(
+                    baseCorrectionRow.copy(
+                        rowIndex = 0,
+                        originalAssignedTeamSlotValue = "9",
+                        assignedTeamSlotDraftValue = "9",
+                    ),
+                    baseCorrectionRow.copy(
+                        rowIndex = 1,
+                        originalPlacementValue = "2",
+                        originalAssignedTeamSlotValue = "3",
+                        placementDraftValue = "2",
+                        assignedTeamSlotDraftValue = "3",
+                    ),
+                ),
+            ),
+            teamNamesBySlot = mapOf(3 to "Aarav", 9 to "Nine"),
+            isUuidBackedGroupRotation = true,
+            usesPairRelativeIdentity = true,
+        )
+        val reviewState = availableState().copy(
+            isUuidBackedGroupRotation = true,
+            rows = availableState().rows.map { row ->
+                when (row.teamSlotNumber) {
+                    3 -> row.copy(teamName = "Aarav", isCurrentTeamNameCleared = true)
+                    9 -> row.copy(teamName = "Nine", isCurrentTeamNameCleared = true)
+                    else -> row
+                }
+            },
+        )
+
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = reviewState,
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                    showLegacyManualReviewContent = false,
+                    showInlineOcrDetails = true,
+                    ocrUiState = ocrState,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Cannot Finalize Match").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Team Slots 3 and 9 have no names. Restore their names in Enter Teams before finalizing.",
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MatchOcrReviewTestTags.FINALIZE_ACTION)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
     fun simplifiedInlineFinalizeShowsOneWarningDialogWithCombinedPositionPreviews() {
         var finalizeCount = 0
         composeTestRule.setContent {
@@ -5109,6 +5322,71 @@ fun legacyReviewKeepsResultSourceWhenDisplayableOcrDataExists() {
             }
         }
 
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun finalizedGroupRotationMissingNameShowsDownloadWarning() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        isUuidBackedGroupRotation = true,
+                        finalizedParticipantSlotNumbers = setOf(1),
+                        rows = availableState().rows.map { row ->
+                            if (row.teamSlotNumber == 1) {
+                                row.copy(
+                                    teamName = "Aarav",
+                                    isCurrentTeamNameCleared = true,
+                                )
+                            } else {
+                                row
+                            }
+                        },
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Cannot Download Result").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Team Slot 1 has no name. Restore its name in Enter Teams before downloading.",
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun finalizedStandardMissingNameShowsDownloadWarning() {
+        composeTestRule.setContent {
+            RankForgeTheme {
+                MatchReviewScreen(
+                    uiState = availableState().copy(
+                        status = MatchStatus.FINALIZED,
+                        tournamentFormat = TournamentFormat.STANDARD,
+                        finalizedParticipantSlotNumbers = setOf(7),
+                        rows = availableState().rows.map { row ->
+                            if (row.teamSlotNumber == 7) row.copy(teamName = "") else row
+                        },
+                    ),
+                    onEnterPlacements = {},
+                    onEnterKills = {},
+                    onBackToDetails = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Cannot Download Result").assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Team Slot 7 has no name. Restore its name in Enter Teams before downloading.",
+        ).assertIsDisplayed()
         composeTestRule.onNodeWithTag(MATCH_REVIEW_DOWNLOAD_RESULT_ACTION_TEST_TAG)
             .performScrollTo()
             .assertIsNotEnabled()

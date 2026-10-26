@@ -2343,6 +2343,8 @@ private fun MatchOcrReviewFinalizationError.toMessageRes(): Int = when (this) {
         R.string.match_ocr_review_finalization_missing_match
     MatchOcrReviewFinalizationError.ALREADY_FINALIZED ->
         R.string.match_ocr_review_finalization_already_finalized
+    MatchOcrReviewFinalizationError.MISSING_ASSIGNED_TEAM_NAME ->
+        R.string.match_review_finalize_missing_team_names_title
     MatchOcrReviewFinalizationError.FINALIZATION_FAILED ->
         R.string.match_ocr_review_finalization_failed
     MatchOcrReviewFinalizationError.UNEXPECTED_FAILURE ->

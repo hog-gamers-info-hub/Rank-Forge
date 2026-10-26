@@ -6,6 +6,7 @@ import com.hoggamers.rankforge.domain.ocr.screenshot.MatchResultScreenshotRole
 import com.hoggamers.rankforge.domain.tournament.MatchResultValidationError
 import com.hoggamers.rankforge.data.export.ResultDownloadScope
 import com.hoggamers.rankforge.data.export.ResultExportFileFormat
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -114,6 +115,94 @@ class MatchReviewUiStateTest {
 
         assertTrue(active.resultDownloadUiState.isBusy)
         assertFalse(active.canDownloadResult)
+    }
+
+    @Test
+    fun finalizedGroupRotationUsesClearedAssignmentsForDownloadDiagnostic() {
+        val clearedSlots = setOf(3, 7, 9)
+        val cleared = state().copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+            isUuidBackedGroupRotation = true,
+            validationErrors = emptyMap(),
+            finalizedParticipantSlotNumbers = clearedSlots,
+            rows = state().rows.map { row ->
+                row.copy(isCurrentTeamNameCleared = row.teamSlotNumber in clearedSlots)
+            },
+        )
+
+        assertEquals(listOf(3, 7, 9), cleared.finalizedMissingTeamNameSlotNumbers)
+        assertFalse(cleared.canDownloadResult)
+    }
+
+    @Test
+    fun restoringFinalizedGroupRotationNamesRemovesDownloadDiagnostic() {
+        val cleared = state().copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+            isUuidBackedGroupRotation = true,
+            validationErrors = emptyMap(),
+            finalizedParticipantSlotNumbers = setOf(1, 2),
+            rows = state().rows.map { row ->
+                row.copy(
+                    teamName = if (row.teamSlotNumber == 1) "Aarav" else row.teamName,
+                    isCurrentTeamNameCleared = row.teamSlotNumber == 1,
+                )
+            },
+        )
+
+        val restored = cleared.copy(
+            rows = cleared.rows.map { row -> row.copy(isCurrentTeamNameCleared = false) },
+        )
+
+        assertEquals(listOf(1), cleared.finalizedMissingTeamNameSlotNumbers)
+        assertFalse(cleared.canDownloadResult)
+        assertEquals("Aarav", cleared.rows.first { it.teamSlotNumber == 1 }.teamName)
+        assertTrue(restored.finalizedMissingTeamNameSlotNumbers.isEmpty())
+        assertTrue(restored.canDownloadResult)
+    }
+
+    @Test
+    fun finalizedStandardTwelveTeamReportsOnlyParticipatingBlankNamesInOrder() {
+        val standard = state().copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+            tournamentFormat = com.hoggamers.rankforge.domain.tournament.TournamentFormat.STANDARD,
+            finalizedParticipantSlotNumbers = setOf(3, 7, 9),
+            rows = state().rows.map { row ->
+                row.copy(teamName = if (row.teamSlotNumber == 7 || row.teamSlotNumber == 3) "" else row.teamName)
+            },
+        )
+
+        assertEquals(listOf(3, 7), standard.finalizedMissingTeamNameSlotNumbers)
+        assertFalse(standard.canDownloadResult)
+    }
+
+    @Test
+    fun restoringStandardNameRemovesDiagnosticAndUnusedBlankSlotIsIgnored() {
+        val withUnusedBlank = state().copy(
+            status = com.hoggamers.rankforge.domain.tournament.MatchStatus.FINALIZED,
+            tournamentFormat = com.hoggamers.rankforge.domain.tournament.TournamentFormat.STANDARD,
+            finalizedParticipantSlotNumbers = setOf(1),
+            rows = state().rows.map { row ->
+                row.copy(teamName = if (row.teamSlotNumber == 12) "" else row.teamName)
+            },
+        )
+        assertTrue(withUnusedBlank.finalizedMissingTeamNameSlotNumbers.isEmpty())
+        assertTrue(withUnusedBlank.canDownloadResult)
+
+        val cleared = withUnusedBlank.copy(
+            rows = withUnusedBlank.rows.map { row ->
+                row.copy(teamName = if (row.teamSlotNumber == 1) "" else row.teamName)
+            },
+        )
+        assertEquals(listOf(1), cleared.finalizedMissingTeamNameSlotNumbers)
+        assertFalse(cleared.canDownloadResult)
+
+        val restored = cleared.copy(
+            rows = cleared.rows.map { row ->
+                row.copy(teamName = if (row.teamSlotNumber == 1) "Team 1" else row.teamName)
+            },
+        )
+        assertTrue(restored.finalizedMissingTeamNameSlotNumbers.isEmpty())
+        assertTrue(restored.canDownloadResult)
     }
 
     @Test

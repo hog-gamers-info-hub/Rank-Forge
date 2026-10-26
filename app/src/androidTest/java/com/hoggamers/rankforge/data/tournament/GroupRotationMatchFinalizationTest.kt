@@ -189,6 +189,19 @@ class GroupRotationMatchFinalizationTest {
     }
 
     @Test
+    fun clearedPairingAssignmentRejectsFinalizationEvenWhenRegistryNameRemains() = runBlocking {
+        createMatch(MATCH_ONE, pairing("A:B"), 1 to alpha().copy(nameCleared = true))
+
+        val result = finalize(MATCH_ONE, participated(ALPHA_UUID, 1, 1))
+
+        assertEquals(
+            GroupRotationMatchFinalizationFailure.INVALID_DATA,
+            (result as GroupRotationMatchFinalizationResult.Rejected).reason,
+        )
+        assertEquals(MatchStatus.DRAFT.name, database.matchDao().readById(MATCH_ONE)?.status)
+    }
+
+    @Test
     fun unauthorizedAndRepeatedFinalizationCannotOverwriteResults() = runBlocking {
         createMatch(MATCH_ONE, pairing("A:B"), 1 to alpha())
 
@@ -262,6 +275,7 @@ class GroupRotationMatchFinalizationTest {
                     pairingKey = pairing.canonicalKey,
                     lobbySlotNumber = lobbySlot,
                     teamUUID = team.teamUUID,
+                    nameCleared = team.nameCleared,
                 )
             },
         )

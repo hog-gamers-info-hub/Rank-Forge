@@ -84,6 +84,39 @@ class GroupRotationMatchPresentationProjectionTest {
     }
 
     @Test
+    fun clearedCurrentNameKeepsCalculatedDraftValuesByUuid() {
+        val result = GroupRotationMatchPresentationProjection.project(
+            state(
+                teams = listOf(team(7, "uuid-cleared", "Aarav", nameCleared = true)),
+                participants = listOf(
+                    GroupRotationMatchParticipantResult(
+                        teamUUID = "uuid-cleared",
+                        participationStatus = MatchParticipationStatus.PARTICIPATED,
+                        placement = 1,
+                        kills = 5,
+                        pointAdjustment = 2,
+                    ),
+                ),
+                values = mapOf(
+                    7 to MatchDraftFieldValues(
+                        placementInput = "1",
+                        killsInput = "5",
+                        pointAdjustment = 2,
+                    ),
+                ),
+            ),
+        ) as GroupRotationMatchPresentationProjectionResult.Loaded
+
+        val row = result.rows.single()
+        assertEquals("uuid-cleared", row.teamUUID)
+        assertEquals("Aarav", row.displayName)
+        assertTrue(row.nameCleared)
+        assertEquals("1", row.placementInput)
+        assertEquals("5", row.killsInput)
+        assertEquals(2, row.pointAdjustment)
+    }
+
+    @Test
     fun staleLobbyDraftAndDuplicateUuidFailClosed() {
         val stale = GroupRotationMatchPresentationProjection.project(
             state(
@@ -119,9 +152,15 @@ class GroupRotationMatchPresentationProjectionTest {
         valuesByLobbySlot = values,
     )
 
-    private fun team(lobby: Int, uuid: String, name: String) = GroupRotationMatchTeamIdentity(
+    private fun team(
+        lobby: Int,
+        uuid: String,
+        name: String,
+        nameCleared: Boolean = false,
+    ) = GroupRotationMatchTeamIdentity(
         lobbySlotNumber = lobby,
         teamUUID = uuid,
         displayName = name,
+        nameCleared = nameCleared,
     )
 }

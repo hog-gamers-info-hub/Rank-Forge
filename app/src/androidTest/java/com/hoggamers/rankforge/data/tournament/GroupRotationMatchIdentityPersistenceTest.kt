@@ -310,6 +310,45 @@ class GroupRotationMatchIdentityPersistenceTest {
     }
 
     @Test
+    fun draftReadRetainsClearedUuidAndCalculatedResultsUntilNameIsRestored() = runBlocking {
+        val participant = GroupRotationMatchParticipantResult(
+            teamUUID = ALPHA_UUID,
+            participationStatus = MatchParticipationStatus.PARTICIPATED,
+            placement = 1,
+            kills = 5,
+            pointAdjustment = 2,
+        )
+        repository.save(
+            tournament(),
+            MATCH_ONE,
+            snapshot(pairing("A:B"), 7 to alpha()),
+            participantResults = listOf(participant),
+        )
+        database.groupRotationTeamIdentityDao().upsertAll(
+            listOf(identity(ALPHA_UUID, "")),
+        )
+        setCurrentAssignments(currentAssignment("A:B", 7, ALPHA_UUID, nameCleared = true))
+
+        val cleared = loaded(MATCH_ONE)
+
+        assertEquals(ALPHA_UUID, cleared.identity.teams.single().teamUUID)
+        assertEquals(7, cleared.identity.teams.single().lobbySlotNumber)
+        assertEquals("", cleared.identity.teams.single().displayName)
+        assertEquals(participant, cleared.participantResults.single())
+
+        database.groupRotationTeamIdentityDao().upsertAll(
+            listOf(identity(ALPHA_UUID, "Alpha Restored")),
+        )
+        setCurrentAssignments(currentAssignment("A:B", 7, ALPHA_UUID))
+
+        val restored = loaded(MATCH_ONE)
+
+        assertEquals(ALPHA_UUID, restored.identity.teams.single().teamUUID)
+        assertEquals("Alpha Restored", restored.identity.teams.single().displayName)
+        assertEquals(participant, restored.participantResults.single())
+    }
+
+    @Test
     fun finalizedReadKeepsImmutableMatchIdentityWhenCurrentPairingChanges() = runBlocking {
         repository.save(
             tournament(),

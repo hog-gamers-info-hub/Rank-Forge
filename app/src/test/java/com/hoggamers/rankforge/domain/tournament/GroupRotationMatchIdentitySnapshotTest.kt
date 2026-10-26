@@ -86,6 +86,58 @@ class GroupRotationMatchIdentitySnapshotTest {
     }
 
     @Test
+    fun existingDraftModeRetainsClearedAssignmentUuid() {
+        val uuid = "team-uuid-cleared"
+        val result = resolver.resolve(
+            tournament = tournament(),
+            pairing = pairing("A:B"),
+            saved = GroupRotationTeamIdentityLocalSnapshot(
+                teams = listOf(identity(uuid, "Aarav")),
+                assignments = listOf(assignment("A:B", 7, uuid, nameCleared = true)),
+            ),
+            includeClearedAssignments = true,
+        )
+
+        val team = loaded(result).teams.single()
+        assertEquals(7, team.lobbySlotNumber)
+        assertEquals(uuid, team.teamUUID)
+        assertEquals("Aarav", team.displayName)
+        assertTrue(team.nameCleared)
+    }
+
+    @Test
+    fun clearedNameIsPairingSpecificWhenUuidIsShared() {
+        val uuid = "team-uuid-shared"
+        val saved = GroupRotationTeamIdentityLocalSnapshot(
+            teams = listOf(identity(uuid, "Aarav")),
+            assignments = listOf(
+                assignment("A:B", 1, uuid, nameCleared = true),
+                assignment("A:C", 2, uuid),
+            ),
+        )
+
+        val first = loaded(
+            resolver.resolve(
+                tournament = tournament(),
+                pairing = pairing("A:B"),
+                saved = saved,
+                includeClearedAssignments = true,
+            ),
+        )
+        val second = loaded(
+            resolver.resolve(
+                tournament = tournament(),
+                pairing = pairing("A:C"),
+                saved = saved,
+                includeClearedAssignments = true,
+            ),
+        )
+
+        assertTrue(first.teams.single().nameCleared)
+        assertTrue(second.teams.single().nameCleared.not())
+    }
+
+    @Test
     fun missingUuidFails() {
         val result = resolve(
             assignments = listOf(assignment("A:B", 1, "missing")),

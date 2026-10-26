@@ -80,6 +80,35 @@ class MatchCalculatedEvidenceRestoredUiStateTest {
     }
 
     @Test
+    fun clearedCurrentNameUsesHistoricalCalculatedNameForDisplay() {
+        val state = MatchCalculatedEvidence(
+            result = ResultCalculatedEvidence(
+                positions = listOf(
+                    ResultPositionCalculatedEvidence(
+                        position = 1,
+                        slotNumber = 7,
+                        teamName = "HOG ESPORTS",
+                        placement = 1,
+                        totalKills = 5,
+                    ),
+                ),
+            ),
+        ).toRestoredOcrReviewUiState(
+            tournamentId = "tournament",
+            matchId = "match",
+            teamNamesBySlot = mapOf(7 to ""),
+            eligibleTeamSlots = setOf(7),
+            lobbySlotByTeamSlot = mapOf(7 to 7),
+            usesPairRelativeIdentity = true,
+        ) as MatchOcrReviewUiState.Ready
+
+        assertEquals("HOG ESPORTS", state.teamNamesBySlot[7])
+        assertEquals("Lobby 07 · HOG ESPORTS", state.rows.single().teamIdentityDisplayValue)
+        assertEquals("1", state.correctionDraft!!.rows.single().placementDraftValue)
+        assertEquals("5", state.correctionDraft.rows.single().killsDraftValue)
+    }
+
+    @Test
     fun playerLevelCalculatedEvidenceStillCreatesPlayerKillDrafts() {
         val state = restore(
             ResultPositionCalculatedEvidence(
