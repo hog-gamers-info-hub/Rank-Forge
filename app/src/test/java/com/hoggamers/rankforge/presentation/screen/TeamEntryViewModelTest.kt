@@ -26,7 +26,9 @@ import com.hoggamers.rankforge.domain.tournament.RosterValidator
 import com.hoggamers.rankforge.domain.tournament.ValidateTournamentRosterUseCase
 import com.hoggamers.rankforge.domain.tournament.Tournament
 import com.hoggamers.rankforge.domain.tournament.TournamentFormat
+import com.hoggamers.rankforge.domain.tournament.TournamentGroup
 import com.hoggamers.rankforge.domain.tournament.TournamentStatus
+import com.hoggamers.rankforge.domain.tournament.MAX_TEAMS_PER_GROUP
 import com.hoggamers.rankforge.domain.tournament.defaultGroupPairings
 import com.hoggamers.rankforge.domain.tournament.SignedInTournamentTestAuthRepository
 import com.hoggamers.rankforge.domain.sync.QueueAwareActionResult
@@ -76,7 +78,12 @@ class TeamEntryViewModelTest {
         advanceUntilIdle()
 
         assertEquals((1..24).toList(), viewModel.uiState.value.slots.map { it.slotNumber })
-        assertTrue(viewModel.uiState.value.slots.all { it.group == null })
+        assertEquals(
+            TournamentGroup.entries
+                .take(4)
+                .flatMap { group -> List(MAX_TEAMS_PER_GROUP) { group } },
+            viewModel.uiState.value.slots.map { it.group },
+        )
 
         viewModel.onTeamNameChanged(24, "  Delta Team  ")
         advanceUntilIdle()
