@@ -142,6 +142,76 @@ class RankForgeDatabaseMigrationTest {
     }
 
     @Test
+    fun productionDatabaseProviderMigratesRepresentativeVersion27DataToVersion37() = runBlocking {
+        createVersion27Database().use { database ->
+            database.execSQL(
+                "INSERT INTO account_deletion_markers (owner_user_id, phase, updated_at) " +
+                    "VALUES ('legacy-owner', 'REMOTE_CONFIRMED', 1800000000000)",
+            )
+        }
+
+        val redirectedContext = ProductionMigrationDatabaseContext(
+            baseContext = context,
+            redirectedDatabaseFile = context.getDatabasePath(MIGRATION_DATABASE_NAME),
+        )
+        val database = TournamentDataProvidersModule.provideRankForgeDatabase(redirectedContext)
+        try {
+            val openedDatabase = database.openHelper.writableDatabase
+
+            openedDatabase.query("PRAGMA user_version").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(37, cursor.getInt(0))
+            }
+            openedDatabase.query(
+                "SELECT payload FROM rank_forge_state WHERE id = 1",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("{\"legacyVersion\":\"0.1.9\"}", cursor.getString(0))
+            }
+            openedDatabase.query(
+                "SELECT name FROM tournaments WHERE id = 'legacy-0-1-9'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            openedDatabase.query(
+                "SELECT team_name FROM team_slots " +
+                    "WHERE tournament_id = 'legacy-0-1-9' AND slot_number = 1",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Legacy Team", cursor.getString(0))
+            }
+            openedDatabase.query(
+                "SELECT display_name FROM roster_players " +
+                    "WHERE tournament_id = 'legacy-0-1-9' AND slot_number = 1",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Legacy Player", cursor.getString(0))
+            }
+            openedDatabase.query(
+                "SELECT id FROM matches WHERE id = 'legacy-match-0-1-9'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+            }
+            assertTrue(openedDatabase.hasTable("account_deletion_markers"))
+            openedDatabase.query(
+                "SELECT owner_user_id, phase, updated_at FROM account_deletion_markers " +
+                    "WHERE owner_user_id = 'legacy-owner'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("legacy-owner", cursor.getString(0))
+                assertEquals("REMOTE_CONFIRMED", cursor.getString(1))
+                assertEquals(1_800_000_000_000L, cursor.getLong(2))
+            }
+            assertTrue(!openedDatabase.hasIndex("index_matches_tournament_id_group_pairing_key"))
+            openedDatabase.query("PRAGMA foreign_key_check").use { cursor ->
+                assertTrue(!cursor.moveToFirst())
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun migrationFromVersion15AddsDeletionIntentsWithoutDroppingExistingData() {
         migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 15).use { database ->
             database.execSQL(
@@ -2602,6 +2672,32 @@ class RankForgeDatabaseMigrationTest {
             MIGRATION_DATABASE_NAME,
             1,
         )
+
+    private fun createVersion27Database(): SupportSQLiteDatabase =
+        migrationTestHelper().createDatabase(MIGRATION_DATABASE_NAME, 27).also { database ->
+            database.execSQL(
+                "INSERT INTO rank_forge_state (id, payload) VALUES (1, '{\"legacyVersion\":\"0.1.9\"}')",
+            )
+            database.execSQL(
+                "INSERT INTO tournaments " +
+                    "(id, name, organizer_name, organizer_contact_number, status, creation_order) " +
+                    "VALUES ('legacy-0-1-9', 'Legacy Cup', 'Legacy Stage', '123', 'CONFIRMED', 9)",
+            )
+            database.execSQL(
+                "INSERT INTO team_slots (tournament_id, slot_number, team_name) " +
+                    "VALUES ('legacy-0-1-9', 1, 'Legacy Team')",
+            )
+            database.execSQL(
+                "INSERT INTO roster_players " +
+                    "(tournament_id, slot_number, roster_position, display_name) " +
+                    "VALUES ('legacy-0-1-9', 1, 1, 'Legacy Player')",
+            )
+            database.execSQL(
+                "INSERT INTO matches " +
+                    "(id, tournament_id, match_number, date, map_name, status) " +
+                    "VALUES ('legacy-match-0-1-9', 'legacy-0-1-9', 1, '2026-09-01', 'Bermuda', 'DRAFT')",
+            )
+        }
 
     private fun createVersion2Database(): SupportSQLiteDatabase =
         migrationTestHelper().createDatabase(
