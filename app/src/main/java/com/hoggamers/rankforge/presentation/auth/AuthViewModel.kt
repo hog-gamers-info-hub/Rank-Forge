@@ -82,10 +82,7 @@ class AuthViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val deletionRecovery = recoverAccountDeletionBeforeSessionRestore()
-            if (deletionRecovery == AccountDeletionRecovery.NONE) {
-                restoreSessionGuarded(force = true)
-            }
+            restoreSessionGuarded(force = true)
 
             launch {
                 observeAuthState().collectLatest { authState ->
@@ -473,9 +470,14 @@ class AuthViewModel @Inject constructor(
         if (!restorationMutex.tryLock()) return null
         try {
             val currentState = _uiState.value
-            if ((!force && !currentState.isRestorationRetryPending) ||
-                currentState.accountDeletionState != AccountDeletionUiState.IDLE
-            ) {
+            if (!force && !currentState.isRestorationRetryPending) {
+                return null
+            }
+            val deletionRecovery = recoverAccountDeletionBeforeSessionRestore()
+            if (deletionRecovery != AccountDeletionRecovery.NONE) {
+                return null
+            }
+            if (_uiState.value.accountDeletionState != AccountDeletionUiState.IDLE) {
                 return null
             }
             _uiState.update(AuthUiStateReducer::beginRestoration)
@@ -552,7 +554,14 @@ class AuthViewModel @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {
-            _uiState.update(AuthUiStateReducer::restoreAccountDeletionAfterProcessDeath)
+            _uiState.update {
+                AuthUiStateReducer.reduceRestoration(
+                    it,
+                    AuthRestorationResult.TemporaryFailure(
+                        AuthFailure(AuthFailureCategory.UnknownAuthenticationFailure),
+                    ),
+                )
+            }
             return AccountDeletionRecovery.BLOCKED
         } ?: return AccountDeletionRecovery.NONE
 

@@ -326,6 +326,89 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun markerReadFailureShowsRetryableWarningWithoutEnteringDeletionRecovery() = runTest {
+        accountDeletionLocalCleanupRepository.marker = AccountDeletionMarker(
+            ownerUserId = "owner-a",
+            phase = AccountDeletionPhase.REMOTE_REQUESTED,
+            updatedAtEpochMillis = 1L,
+        )
+        accountDeletionLocalCleanupRepository.readMarkerFailure = IOException("marker unavailable")
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+        assertFalse(viewModel.uiState.value.isSessionLoading)
+        assertTrue(viewModel.uiState.value.isRestorationRetryPending)
+        assertEquals(
+            AuthUiMessage.RestorationWarning(AuthFailureCategory.UnknownAuthenticationFailure),
+            viewModel.uiState.value.warningMessage,
+        )
+        assertEquals(0, repository.restoreCalls)
+        assertEquals(AccountDeletionPhase.REMOTE_REQUESTED, accountDeletionLocalCleanupRepository.marker?.phase)
+    }
+
+    @Test
+    fun retryAfterMarkerReadFailureRechecksMarkerBeforeRestoringSession() = runTest {
+        accountDeletionLocalCleanupRepository.readMarkerFailure = IOException("marker unavailable")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        accountDeletionLocalCleanupRepository.readMarkerFailure = null
+        repository.restoreResult = AuthRestorationResult.NoSavedSession
+        viewModel.retrySessionRestoration()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.restoreCalls)
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+        assertFalse(viewModel.uiState.value.isRestorationRetryPending)
+    }
+
+    @Test
+    fun retryAfterMarkerReadFailureHonorsARealDeletionMarkerBeforeRestoringSession() = runTest {
+        accountDeletionLocalCleanupRepository.readMarkerFailure = IOException("marker unavailable")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        accountDeletionLocalCleanupRepository.readMarkerFailure = null
+        accountDeletionLocalCleanupRepository.marker = AccountDeletionMarker(
+            ownerUserId = "owner-a",
+            phase = AccountDeletionPhase.REMOTE_REQUESTED,
+            updatedAtEpochMillis = 1L,
+        )
+        accountDeletionRepository.remoteStatus = AccountDeletionRemoteAccountStatus.PRESENT
+        viewModel.retrySessionRestoration()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionUiState.RECOVERY_REQUIRED, viewModel.uiState.value.accountDeletionState)
+        assertEquals(0, repository.restoreCalls)
+        assertEquals(1, accountDeletionRepository.probeCalls)
+        assertEquals(
+            AccountDeletionPhase.REMOTE_REQUESTED,
+            accountDeletionLocalCleanupRepository.marker?.phase,
+        )
+    }
+
+    @Test
+    fun connectivityRetryAfterMarkerReadFailureRechecksMarkerBeforeRestoringSession() = runTest {
+        accountDeletionLocalCleanupRepository.readMarkerFailure = IOException("marker unavailable")
+        val connectivityCoordinator = AuthRestorationConnectivityCoordinator()
+        val viewModel = createViewModel(connectivityCoordinator = connectivityCoordinator)
+        advanceUntilIdle()
+
+        accountDeletionLocalCleanupRepository.readMarkerFailure = null
+        repository.restoreResult = AuthRestorationResult.Restored(
+            AuthUser("user-id", "restored@example.com"),
+        )
+        connectivityCoordinator.onConnectivityAvailable()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.restoreCalls)
+        assertTrue(viewModel.uiState.value.isSignedIn)
+        assertEquals(AccountDeletionUiState.IDLE, viewModel.uiState.value.accountDeletionState)
+    }
+
+    @Test
     fun retryRestoresSessionAfterTemporaryFailure() = runTest {
         repository.restoreResult = AuthRestorationResult.TemporaryFailure(
             AuthFailure(AuthFailureCategory.NetworkUnavailable),
@@ -1565,10 +1648,14 @@ class AuthViewModelTest {
 
     private class FakeAccountDeletionLocalCleanupRepository : AccountDeletionLocalCleanupRepository {
         var marker: AccountDeletionMarker? = null
+        var readMarkerFailure: Throwable? = null
         var purgeResult: AccountDeletionLocalCleanupResult = AccountDeletionLocalCleanupResult.Completed
         var purgeOwners = mutableListOf<String>()
 
-        override suspend fun readMarker(): AccountDeletionMarker? = marker
+        override suspend fun readMarker(): AccountDeletionMarker? {
+            readMarkerFailure?.let { throw it }
+            return marker
+        }
 
         override suspend fun markRemoteRequested(ownerUserId: String) {
             marker = AccountDeletionMarker(ownerUserId, com.hoggamers.rankforge.domain.auth.AccountDeletionPhase.REMOTE_REQUESTED, 1L)
