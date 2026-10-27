@@ -19,8 +19,8 @@ room = "2.8.3"
 supabase = "3.6.0"
 ktor = "3.5.1"
 mlKitTextRecognition = "16.0.1"
-onnxruntime = "1.21.1"
-opencv = "4.5.3.0"
+onnxruntime = "1.27.0"
+opencv = "4.14.0"
 androidxTestRunner = "1.2.0"
 androidxTestExtJunitKtx = "1.2.1"
 androidxTestMonitor = "1.7.2"
@@ -61,7 +61,7 @@ supabase-storage = { module = "io.github.jan-tennert.supabase:storage-kt" }
 ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "ktor" }
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlKitTextRecognition" }
 onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
-opencv-android = { module = "com.quickbirdstudios:opencv", version.ref = "opencv" }
+opencv-android = { module = "org.opencv:opencv", version.ref = "opencv" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
 androidx-test-ext-junit-ktx = { module = "androidx.test.ext:junit-ktx", version.ref = "androidxTestExtJunitKtx" }
